@@ -1,0 +1,12 @@
+{
+  "durationSeconds": 35,
+  "size": [
+    1280,
+    720
+  ],
+  "video": "H.264 yuv420p 25fps",
+  "audio": "AAC stereo silent; no narration/music",
+  "slides": 5,
+  "sha256": "8daf9b75227d47b478360fe2187312edc775eedb95c30a20aa1a73ee4e7d8e91",
+  "toolSource": "https://www.ffmpeg.org/download.html"
+}

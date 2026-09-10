@@ -1,0 +1,30 @@
+{
+  "revision": "0.6",
+  "profile": "xiao-s3-plus-3rx-motor",
+  "board": "Seeed Studio XIAO ESP32-S3 Plus",
+  "flashMB": 16,
+  "psramMB": 8,
+  "wifi": "2.4GHz",
+  "schematicStatus": "v0.5 retained; NOT compatible with this target",
+  "cadStatus": "v0.5 retained; redesign pending",
+  "receivers": [
+    {"id":"rx1","position":"front","gpio":2,"pad":"D1","rmt":4},
+    {"id":"rx2","position":"left","gpio":4,"pad":"D3","rmt":5},
+    {"id":"rx3","position":"right","gpio":5,"pad":"D4","rmt":6}
+  ],
+  "outputs": {
+    "ir":{"gpio":6,"pad":"D5","rmt":0},
+    "led":{"gpio":7,"pad":"D8","rmt":1,"pixels":8,"maxChannel":28},
+    "buzzer":{"gpio":8,"pad":"D9","frequencyHz":4000},
+    "motor":{"gpio":40,"pad":"D13 / bottom pad","activeHigh":true,"pulseMs":180,"maxPulseMs":250,"feedbackMaxAgeMs":500,"minIntervalMs":300}
+  },
+  "inputs": {
+    "trigger":{"gpio":9,"pad":"D10"},
+    "reload":{"gpio":38,"pad":"D11 / bottom pad"},
+    "service":{"gpio":39,"pad":"D12 / bottom pad"},
+    "battery":{"gpio":1,"pad":"D0 / ADC1","adcScale":2.0}
+  },
+  "motorPart": {"manufacturer":"Vybronics","mpn":"VC1030B028F","voltage":3.0,"operatingVoltage":[2.7,3.3],"ratedMaxMA":85,"startingMaxMA":120,"source":"https://www.vybronics.com/wp-content/uploads/datasheet-files/Vybronics-VC1030B028F-datasheet.pdf"},
+  "power": {"battery":"3x AA NiMH, external charger only","xiaoSupply":"regulated 5V with reverse-current isolation","motorSupply":"separate regulated 3.0V branch; not GPIO or XIAO BAT","usb":"disconnect all external wiring before USB provisioning","antenna":"connect supplied compatible U.FL antenna"},
+  "sources": ["https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/","https://files.seeedstudio.com/wiki/SeeedStudio-XIAO-ESP32S3/res/XIAO_ESP32S3_Plus_V1.1_SCH_260115.pdf"]
+}

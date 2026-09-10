@@ -1,0 +1,26 @@
+{
+  "revision": "0.6.0",
+  "hardwareProfile": "xiao-s3-plus-3rx-motor",
+  "chip": "esp32s3",
+  "flashMB": 16,
+  "psramMB": 8,
+  "environment": "xiao_s3_plus",
+  "platform": "espressif32@6.9.0",
+  "arduino": "2.0.17",
+  "builtAt": "2026-09-10T10:21:29.445Z",
+  "physicalTests": "NOT PERFORMED",
+  "offsets": {
+    "bootloader.bin": "0x0",
+    "partitions.bin": "0x8000",
+    "boot_app0.bin": "0xe000",
+    "firmware.bin": "0x10000"
+  },
+  "sourceHashes": {
+    "firmware/src/main.cpp": "fbb17a8d0d819b9d6d7d5eef4438e26f1a1b710b6fc6f0bf2dd1b2075f05f7dd",
+    "firmware/include/ir_protocol.h": "871bde4cda72112a156736140dea4fae0a65649b78600b590b1daa760bdb1b83",
+    "firmware/include/feedback.h": "0d0e33cb1408ca7a84a8100bb547dc19cbdef33b9514e8ae23477e154b23978d",
+    "firmware/include/hardware_profile.h": "4885bf9e26eb91dff5dd8790d6e24b97926a526ad17a8fd9b5b848c0f99120f3",
+    "firmware/platformio.ini": "98516c57360213ae74217e9f19d30808f599339cb48813dbe509f8a607b7bb18",
+    "specs/hardware-profile.json": "d33cdc38fa3adeaae79811b0e7ad451e2767a9c92114c1124ddf445dd0848b67"
+  }
+}

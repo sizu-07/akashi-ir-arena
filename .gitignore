@@ -1,0 +1,50 @@
+# Firmware / PlatformIO
+.pio/
+.vscode/
+
+# PC application
+node_modules/
+dist/
+build/
+.venv/
+__pycache__/
+
+# Runtime data and secrets
+data/
+logs/
+.env
+*.key
+*.pem
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.swp
+config/local.json
+config/provision/
+.tools/
+artifacts/
+
+# Local package caches
+.pnpm-store/
+
+# Local authentication and machine settings
+.env.*
+!.env.example
+config/
+*.credentials
+
+# KiCad editor-local state and locks (design files remain tracked)
+*.kicad_prl
+*.lck
+*.kicad_sch-bak
+*.kicad_pcb-bak
+*-backups/
+artifacts/*.bundle
+
+# Generated standalone projector copies
+投影画面_編集用/
+投影画面_編集用.zip
+
+# Local archive of superseded circuit/CAD materials (not shared)
+.local-archive/

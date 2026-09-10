@@ -1,0 +1,2 @@
+# Preserve exact bytes: CAD/firmware validation records include file hashes.
+* -text
