@@ -11001,10 +11001,9 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "e9277e59-46c8-4d97-bf08-d54616be1e43")
 		(property "Reference" "R9"
-			(at 195.58 57.1499 0)
+			(at 194.564 57.912 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -11015,7 +11014,7 @@
 			)
 		)
 		(property "Value" "10k"
-			(at 195.58 59.6899 0)
+			(at 194.564 60.452 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
