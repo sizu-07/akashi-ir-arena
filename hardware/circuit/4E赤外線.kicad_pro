@@ -683,7 +683,7 @@
       {
         "filename": "4E赤外線.kicad_sch",
         "name": "4E赤外線",
-        "uuid": "00000000-0000-0000-0000-000000000000"
+        "uuid": "ad091eeb-32bb-44c1-b406-6c9f259bf6f7"
       }
     ],
     "used_designators": "",
@@ -692,7 +692,7 @@
   "sheets": [
     [
       "ad091eeb-32bb-44c1-b406-6c9f259bf6f7",
-      "Root"
+      "4E赤外線"
     ]
   ],
   "text_variables": {},
