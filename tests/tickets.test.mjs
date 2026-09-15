@@ -7,6 +7,7 @@ import {TicketQueue} from '../apps/ticket-server/tickets.mjs';
 import {createTicketApp} from '../apps/ticket-server/main.mjs';
 import {createTicketBridge} from '../apps/server/ticket-bridge.mjs';
 import {supabaseTicketStorage} from '../apps/ticket-server/store.mjs';
+import {createApp as createGameApp} from '../apps/server/main.mjs';
 
 let requestNumber = 0;
 const register = (queue, nickname, partySize) => queue.register({requestId: `test-request-${++requestNumber}`, nickname, partySize, consent: true});
@@ -143,5 +144,31 @@ test('Supabase保存は状態と監査ログを応答前に確定できる', asy
     assert.match(await store.csv(), /test/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('ゲーム運営と整理券運営を上部タブで相互に移動できる', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'operator-tabs-test-'));
+  const config = {
+    httpPort: 0,
+    mqttPort: 0,
+    operatorPin: '12345678',
+    ticketServerUrl: 'https://tickets.example.test',
+    devices: [1, 2, 3, 4].map((number) => ({id: `gun-00${number}`, key: `test-${number}`, name: `P${number}`, team: number < 3 ? 'A' : 'B', shooterId: number})),
+  };
+  const app = await createGameApp({config, dataDir: dir, bind: '127.0.0.1'});
+  const base = `http://127.0.0.1:${app.httpServer.address().port}`;
+  try {
+    const gamePage = await (await fetch(base)).text();
+    assert.match(gamePage, /ゲーム運営/);
+    assert.match(gamePage, /href="\/tickets">整理券運営/);
+    const redirect = await fetch(`${base}/tickets`, {redirect: 'manual'});
+    assert.equal(redirect.status, 302);
+    const target = new URL(redirect.headers.get('location'));
+    assert.equal(`${target.origin}${target.pathname}`, 'https://tickets.example.test/operator');
+    assert.equal(target.searchParams.get('game'), `${base}/`);
+  } finally {
+    await app.close();
+    rmSync(dir, {recursive: true, force: true});
   }
 });

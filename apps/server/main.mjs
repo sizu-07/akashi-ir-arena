@@ -84,6 +84,14 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
         db.log({at:Date.now(),gameId:game.s.id,type:'operator_action',operator:s.id,action:b.action,reason:b.reason});const result={ok:true,commandId:b.commandId};commands.set(key,result);if(commands.size>2000)commands.delete(commands.keys().next().value);db.save(game.s);sync();return reply(res,200,result);
       }return reply(res,404,{});
     }
+    if(url.pathname==='/tickets'){
+      const gameOrigin=`http://${req.headers.host}`;
+      let ticketBase;
+      if(config.ticketServerUrl)ticketBase=new URL(config.ticketServerUrl);
+      else {ticketBase=new URL(gameOrigin);ticketBase.port=8787;}
+      const target=new URL('/operator',ticketBase);target.searchParams.set('game',`${gameOrigin}/`);
+      res.writeHead(302,{Location:target.href});return res.end();
+    }
     const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.mp4':'assets/rules.mp4'};
     if(url.pathname==='/display'&&!local(req))return reply(res,403,{error:'投影画面はメインPCのlocalhostで開いてください'});
     const rel=files[url.pathname];if(!rel||!existsSync(path.join(root,rel)))return reply(res,404,{});const file=readFileSync(path.join(root,rel));

@@ -28,6 +28,35 @@ header {
   border-bottom: 1px solid var(--line);
 }
 
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 5vw 0;
+  border-bottom: 1px solid var(--line);
+  background: #0f1827;
+}
+
+.mode-tabs a {
+  padding: 10px 18px;
+  color: var(--muted);
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+}
+
+.mode-tabs a:hover {
+  color: var(--text);
+  background: #1b293d;
+}
+
+.mode-tabs a.active {
+  color: var(--text);
+  background: var(--panel);
+  border-color: var(--line);
+}
+
 h1 {
   margin: 0;
   font-size: 26px;

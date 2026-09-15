@@ -7,6 +7,9 @@ let socket;
 let heartbeat;
 let selectedTicket;
 const commandId = () => `${Date.now()}-${crypto.randomUUID()}`;
+const gameFromQuery = new URLSearchParams(location.search).get('game');
+if (gameFromQuery && /^https?:\/\/[^/]+\/?$/.test(gameFromQuery)) localStorage.setItem('akashi-game-operator-url', gameFromQuery);
+$('gameOperatorTab').href = localStorage.getItem('akashi-game-operator-url') || 'http://localhost:8080/';
 const showMessage = (text, ok = false) => { $('message').textContent = text; $('message').className = ok ? 'success' : 'error'; };
 async function request(url, options = {}) {
   const response = await fetch(url, options);
