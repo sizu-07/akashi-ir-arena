@@ -237,7 +237,14 @@ export async function createTicketApp({
     });
   });
 
-  await new Promise((resolve) => server.listen(port, bind, resolve));
+  await new Promise((resolve, reject) => {
+    const cleanupListeners = () => { server.off('error', failed); server.off('listening', listening); };
+    const failed = (error) => { cleanupListeners(); reject(error); };
+    const listening = () => { cleanupListeners(); resolve(); };
+    server.once('error', failed);
+    server.once('listening', listening);
+    server.listen(port, bind);
+  });
   const cleanup = setInterval(() => {
     for (const [key, item] of sessions) if (item.expiresAt <= Date.now()) sessions.delete(key);
     for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN) ws.ping();
