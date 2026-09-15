@@ -133,7 +133,8 @@ function render() {
   const connectedPlayers = state.players.filter((player) => player.connected).length;
   $('readiness').textContent =
     `投影: ${state.displayReady ? '準備完了' : '準備が必要'} ／ ` +
-    `接続: ${connectedPlayers}/4`;
+    `接続: ${connectedPlayers}/4 ／ ` +
+    `整理券: ${!state.ticketBridge?.enabled ? '未設定' : state.ticketBridge.connected ? '同期済み' : `未同期（再送待ち${state.ticketBridge.pending}件）`}`;
 
   const playerElements = state.players.map((player) => {
     const element = document.createElement('article');

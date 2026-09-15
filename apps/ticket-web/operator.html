@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ja">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>明石光線 | 整理券運営</title><link rel="stylesheet" href="/ticket.css"></head>
+  <body>
+    <header><div><small>AKASHI IR ARENA</small><h1>整理券 運営コントロール</h1></div><span id="connection" class="badge offline">未接続</span></header>
+    <main>
+      <section id="login" class="card narrow">
+        <h2>運営ログイン</h2>
+        <form id="loginForm" class="form-grid"><label>運営パスワード<input name="password" type="password" minlength="12" required autocomplete="current-password"></label><button class="primary">ログイン</button></form>
+      </section>
+      <div id="app" hidden>
+        <div class="toolbar"><div class="actions"><span id="role" class="badge"></span><button id="takeover">操作権を取得</button></div><div class="actions"><a href="/scanner" target="_blank">入場QR読取</a><a href="/api/operator/export.csv">履歴CSV</a></div></div>
+        <section class="dashboard">
+          <div class="metric"><span>受付</span><strong id="registrationStatus">—</strong></div>
+          <div class="metric"><span>待機</span><strong id="waitingGroups">—</strong></div>
+          <div class="metric"><span>待機人数</span><strong id="waitingPeople">—</strong></div>
+          <div class="metric"><span>次回空席</span><strong id="emptySeats">—</strong></div>
+          <div class="metric"><span>呼出中</span><strong id="calledRound">—</strong></div>
+          <div class="metric"><span>体験中</span><strong id="playingRound">—</strong></div>
+          <div class="metric"><span>最長待ち</span><strong id="maxWait">—</strong></div>
+          <div class="metric"><span>標準サイクル</span><strong id="cycle">—</strong></div>
+          <div class="metric"><span>ゲーム連携</span><strong id="gameConnection">未受信</strong></div>
+        </section>
+        <section class="card">
+          <h2>主要操作</h2>
+          <div class="actions"><button id="openRegistration" class="primary">受付開始</button><button id="closeRegistration" class="warning">受付停止</button><button id="callNext" class="primary">次回を呼び出す</button></div>
+          <form id="messageForm" class="settings"><label>全体メッセージ<textarea name="message" maxlength="500" rows="2"></textarea></label><button>全体へ反映</button></form>
+        </section>
+        <section class="card">
+          <h2>教室前掲示用QRコード</h2>
+          <p>公開受付画面のURLだけを格納しています。外部公開後の運営画面から表示・印刷してください。</p>
+          <img class="qr" src="/api/operator/register-qr.svg" alt="教室前掲示用の整理券受付QRコード">
+        </section>
+        <section class="card">
+          <h2>予定回</h2><div id="rounds" class="round-grid"></div>
+        </section>
+        <section class="card">
+          <h2>整理券一覧</h2>
+          <div class="table-wrap"><table><thead><tr><th>受付</th><th>整理券</th><th>呼出名</th><th>人数</th><th>状態</th><th>予定回</th><th>受付時刻</th><th>操作</th></tr></thead><tbody id="tickets"></tbody></table></div>
+        </section>
+        <section class="card">
+          <h2>時間・受付設定</h2>
+          <form id="settingsForm" class="settings">
+            <label>標準サイクル（分）<input name="cycleMinutes" type="number" min="1" max="120" required></label>
+            <label>全体遅延（分）<input name="globalDelayMinutes" type="number" min="0" max="600" required></label>
+            <label>呼出猶予（分）<input name="graceMinutes" type="number" min="1" max="60" required></label>
+            <label>最大待機組数<input name="maxWaitingGroups" type="number" min="1" max="1000" required></label>
+            <label class="check"><input name="autoCall" type="checkbox"><span>ゲーム終了後に次回を自動呼出</span></label><button>設定を保存</button>
+          </form>
+        </section>
+      </div>
+      <p id="message" class="error" role="alert"></p>
+    </main>
+    <dialog id="ticketDialog"><form method="dialog" class="form-grid"><h2 id="dialogTitle">整理券操作</h2><label>操作<select id="ticketAction"><option value="hold">保留</option><option value="release">保留解除</option><option value="cancel">キャンセル</option><option value="no_show">来場なし</option><option value="return_queue">待機列へ戻す</option><option value="move_round">予定回を変更</option><option value="undo_checkin">入場処理を取り消す</option><option value="message">個別メッセージ</option></select></label><label>変更先の予定回<select id="ticketRound"></select></label><label>理由・メッセージ<textarea id="ticketReason" maxlength="300" rows="3"></textarea></label><div class="actions"><button value="cancel">閉じる</button><button id="applyTicketAction" value="default" class="primary">実行</button></div></form></dialog>
+    <script src="/operator.js" type="module"></script>
+  </body>
+</html>

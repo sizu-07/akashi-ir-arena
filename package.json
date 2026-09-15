@@ -7,6 +7,8 @@
   "scripts": {
     "start": "node apps/server/main.mjs",
     "demo": "node apps/server/main.mjs --demo",
+    "ticket:setup": "node tools/setup-ticket.mjs",
+    "ticket:start": "node tools/start-ticket.mjs",
     "test": "node --test tests/*.test.mjs",
     "setup": "node tools/setup.mjs",
     "validate": "node tools/validate-release.mjs"

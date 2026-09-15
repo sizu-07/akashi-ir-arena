@@ -5,6 +5,7 @@
 ## 現在の状態
 
 - PC管理プログラム、iPad運営画面、投影画面、ESP32ファームウェアを収録しています。
+- 来場者向け整理券受付・待機表示、整理券運営、入場QR読取、ゲーム状態連携を収録しています。
 - 回路設計と銃の3Dモデルは別担当です。`hardware/circuit/` と `hardware/gun-model/` は提出先として空にしています。
 - 電気・機械設計に必要な接続条件は `specs/` にあります。
 - 新しい回路・筐体での通電試験、連続稼働試験、会場試験は未実施です。
@@ -15,6 +16,8 @@
 2. このフォルダで `npm install` を一度実行します。
 3. PCだけで確認する場合は `起動_デモ.cmd` を開きます。
 4. 運営画面は `http://localhost:8080/`、投影画面は `http://localhost:8080/display` です。
+
+整理券システムは `npm run ticket:setup` の後に `npm run ticket:start` で起動する。詳細は [整理券システム 運用・配置手順](docs/整理券システム.md) を参照。
 
 ~~詳しい手順は次の順で読んでください。~~
 
@@ -31,6 +34,8 @@
 |---|---|
 | `apps/server/` | Windows PCで動く試合管理・通信サーバー |
 | `apps/web/` | iPad運営画面とプロジェクター投影画面 |
+| `apps/ticket-server/` | 外部整理券API、割当、認証、履歴、WebSocket |
+| `apps/ticket-web/` | 来場者受付・整理券・運営・入場QR読取画面 |
 | `assets/` | ルール説明動画などの共通素材 |
 | `firmware/` | XIAO ESP32-S3 Plus用プログラムと書込み用BIN |
 | `specs/` | GPIO、受信機3個、モーターなどのハードウェア要求 |
@@ -41,4 +46,3 @@
 | `tests/` | 自動テストと実機試験記録 |
 
 `config/`、`data/`、`logs/`、`.local-archive/` は各PCだけで使い、GitHubには共有しません。Wi-Fiパスワード、運営PIN、銃ごとの鍵も共有しないでください。
-

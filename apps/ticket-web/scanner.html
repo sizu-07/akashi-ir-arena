@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ja">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>明石光線 | 入場確認</title><link rel="stylesheet" href="/ticket.css"></head>
+  <body>
+    <header><div><small>AKASHI IR ARENA</small><h1>入場QR読取</h1></div><span id="connection" class="badge offline">確認中</span></header>
+    <main class="narrow">
+      <section id="loginRequired" class="card" hidden><h2>運営ログインが必要です</h2><p><a href="/operator">運営画面でログイン</a>してから、この画面へ戻ってください。</p></section>
+      <section id="scanner" class="card" hidden>
+        <video id="video" playsinline muted></video>
+        <div class="actions"><button id="start" class="primary">カメラを開始</button><button id="stop">停止</button></div>
+        <p class="hint">背面カメラを整理券のQRコードへ向けてください。HTTPS環境またはlocalhostでのみカメラを利用できます。</p>
+        <form id="manualForm" class="form-grid"><label>手動入力<input name="token" autocomplete="off" placeholder="QRの内容またはトークン"></label><button>確認する</button></form>
+      </section>
+      <section id="result" class="scan-result" hidden></section>
+      <p id="message" class="error" role="alert"></p>
+    </main>
+    <script src="/scanner.js" type="module"></script>
+  </body>
+</html>

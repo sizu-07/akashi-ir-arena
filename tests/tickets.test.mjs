@@ -1,0 +1,147 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync, rmSync} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {TicketQueue} from '../apps/ticket-server/tickets.mjs';
+import {createTicketApp} from '../apps/ticket-server/main.mjs';
+import {createTicketBridge} from '../apps/server/ticket-bridge.mjs';
+import {supabaseTicketStorage} from '../apps/ticket-server/store.mjs';
+
+let requestNumber = 0;
+const register = (queue, nickname, partySize) => queue.register({requestId: `test-request-${++requestNumber}`, nickname, partySize, consent: true});
+
+test('4席へ後続組を充当し、飛ばされた組を次回で優先する', () => {
+  const queue = new TicketQueue();
+  for (const [name, size] of [['A', 3], ['B', 2], ['C', 1], ['D', 2]]) register(queue, name, size);
+  const [first, second] = queue.operatorView().rounds;
+  assert.deepEqual(first.tickets.map((ticket) => ticket.nickname), ['A', 'C']);
+  assert.deepEqual(second.tickets.map((ticket) => ticket.nickname), ['B', 'D']);
+  assert.equal(first.assignedPeople, 4);
+  assert.equal(second.assignedPeople, 4);
+  assert.equal(new Set(queue.state.tickets.map((ticket) => ticket.receptionNumber)).size, 4);
+});
+
+test('呼出済みの回を固定し、QR入場とゲームイベントを1回だけ処理する', () => {
+  const queue = new TicketQueue();
+  register(queue, 'A', 3); register(queue, 'B', 1); register(queue, 'C', 4);
+  const called = queue.callNext('operator');
+  register(queue, 'D', 1);
+  assert.deepEqual(queue.round(called.id).ticketIds.map((id) => queue.ticket(id).nickname), ['A', 'B']);
+  const ticket = queue.ticket(called.ticketIds[0]);
+  assert.equal(queue.checkIn(ticket.qrToken, 'operator').code, 'OK');
+  assert.equal(queue.checkIn(ticket.qrToken, 'operator').code, 'ALREADY_USED');
+  const event = {eventId: 'event-1', type: 'GAME_STARTED', targetRoundId: called.id, occurredAt: Date.now(), source: 'test'};
+  assert.equal(queue.applyGameEvent(event).duplicate, false);
+  assert.equal(queue.applyGameEvent(event).duplicate, true);
+  assert.equal(queue.round(called.id).status, 'PLAYING');
+});
+
+test('キャンセル後に呼出前の予定回だけを再計算する', () => {
+  const queue = new TicketQueue();
+  const a = register(queue, 'A', 3); register(queue, 'B', 2); const c = register(queue, 'C', 1); register(queue, 'D', 2);
+  queue.cancelByVisitor(c.accessToken);
+  const rounds = queue.operatorView().rounds;
+  assert.deepEqual(rounds[0].tickets.map((ticket) => ticket.nickname), ['A']);
+  assert.deepEqual(rounds[1].tickets.map((ticket) => ticket.nickname), ['B', 'D']);
+  assert.equal(queue.publicTicket(a.accessToken).status, 'ASSIGNED');
+});
+
+test('運営は理由付きで予定回と予定時刻を手動固定できる', () => {
+  const queue = new TicketQueue();
+  register(queue, 'A', 2); register(queue, 'B', 2); register(queue, 'C', 2);
+  const [first, second] = queue.operatorView().rounds;
+  const b = first.tickets.find((ticket) => ticket.nickname === 'B');
+  queue.operatorAction({action: 'move_round', ticketId: b.id, roundId: second.id, reason: '同行者対応', operator: 'operator'});
+  assert.equal(queue.ticket(b.id).roundId, second.id);
+  assert.equal(queue.round(second.id).status, 'LOCKED_SCHEDULED');
+  const newTime = Date.now() + 30 * 60_000;
+  queue.operatorAction({action: 'round_time', roundId: second.id, value: newTime, reason: '休憩時間調整', operator: 'operator'});
+  assert.equal(queue.round(second.id).scheduledAt, newTime);
+  assert.throws(() => queue.operatorAction({action: 'round_time', roundId: second.id, value: newTime, reason: '', operator: 'operator'}), /理由/);
+});
+
+test('HTTP同時登録、運営認証、操作冪等性、閲覧分離', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-test-'));
+  const password = 'operator-password-123';
+  const apiKey = 'game-api-key-12345678901234567890';
+  const app = await createTicketApp({dataDir: dir, operatorPassword: password, gameApiKey: apiKey});
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  try {
+    const registrations = await Promise.all(Array.from({length: 20}, (_, index) => fetch(`${base}/api/public/register`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({requestId: `http-request-${index}`, nickname: `組${index}`, partySize: index % 4 + 1, consent: true})})));
+    assert.ok(registrations.every((response) => response.status === 201));
+    assert.equal(new Set(app.queue.state.tickets.map((ticket) => ticket.receptionNumber)).size, 20);
+    assert.equal((await fetch(`${base}/api/public/ticket/not-a-token`)).status, 404);
+
+    const loginResponse = await fetch(`${base}/api/operator/login`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password})});
+    assert.equal(loginResponse.status, 200);
+    const login = await loginResponse.json();
+    const cookie = loginResponse.headers.get('set-cookie').split(';')[0];
+    const actionBody = {action: 'registration', value: false, commandId: 'same-command'};
+    const action = () => fetch(`${base}/api/operator/action`, {method: 'POST', headers: {'Content-Type': 'application/json', Cookie: cookie, 'X-CSRF-Token': login.csrf}, body: JSON.stringify(actionBody)});
+    assert.equal((await action()).status, 200);
+    assert.equal((await action()).status, 200);
+    assert.equal(app.queue.state.registrationOpen, false);
+
+    const gameEvent = {eventId: 'missing-round', type: 'GAME_STARTED', occurredAt: Date.now(), source: 'test'};
+    assert.equal((await fetch(`${base}/api/game/events`, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer wrong'}, body: JSON.stringify(gameEvent)})).status, 401);
+  } finally {
+    await app.close();
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('ゲームイベントは同じIDのまま外部サーバーへ再送する', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-bridge-test-'));
+  const received = [];
+  const server = (await import('node:http')).createServer(async (request, response) => {
+    let text = '';
+    for await (const chunk of request) text += chunk;
+    received.push(JSON.parse(text));
+    response.writeHead(received.length === 1 ? 500 : 200, {'Content-Type': 'application/json'});
+    response.end(JSON.stringify({ok: received.length > 1}));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const bridge = createTicketBridge({url: `http://127.0.0.1:${server.address().port}`, apiKey: 'test-key', dataDir: dir});
+  try {
+    bridge.observe({id: 'game-1', phase: 'LOBBY'});
+    bridge.observe({id: 'game-1', phase: 'ACTIVE'});
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await bridge.close();
+    assert.equal(received.length, 2);
+    assert.equal(received[0].eventId, received[1].eventId);
+    assert.equal(received[0].retryNumber, 1);
+    assert.equal(received[1].retryNumber, 2);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('Supabase保存は状態と監査ログを応答前に確定できる', async () => {
+  const requests = [];
+  const server = (await import('node:http')).createServer(async (request, response) => {
+    let text = '';
+    for await (const chunk of request) text += chunk;
+    requests.push({method: request.method, url: request.url, body: text && JSON.parse(text)});
+    if (request.method === 'GET' && request.url.startsWith('/rest/v1/ticket_state')) {
+      response.writeHead(200, {'Content-Type': 'application/json'}); response.end('[]'); return;
+    }
+    if (request.method === 'GET' && request.url.startsWith('/rest/v1/ticket_events')) {
+      response.writeHead(200, {'Content-Type': 'application/json'}); response.end(JSON.stringify([{payload: {at: 1, type: 'test', operator: 'operator', details: {ok: true}}}])); return;
+    }
+    response.writeHead(204); response.end();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const store = supabaseTicketStorage({url: `http://127.0.0.1:${server.address().port}`, serviceRoleKey: 'service-role-test'});
+    assert.equal(await store.load(), null);
+    store.log({id: '00000000-0000-4000-8000-000000000001', at: 1, type: 'test'});
+    store.save({tickets: [{id: 'one'}]});
+    await store.flush();
+    assert.equal(requests.filter((item) => item.method === 'POST').length, 2);
+    assert.match(await store.csv(), /test/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
