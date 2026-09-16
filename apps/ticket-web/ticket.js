@@ -14,6 +14,10 @@ function render(ticket) {
   $('status').className = `status ${ticket.status}`;
   $('identity').textContent = `${(ticket.playerNicknames || [ticket.nickname]).join('・')} / ${ticket.partySize}名`;
   $('called').hidden = ticket.status !== 'CALLED';
+  const scheduleVisible = !terminal.has(ticket.status);
+  $('guestTiming').hidden = !scheduleVisible;
+  $('slotWindow').hidden = !scheduleVisible;
+  $('queueAhead').hidden = !scheduleVisible;
   $('groups').textContent = `${ticket.groupsAhead}組・${ticket.peopleAhead}人`;
   $('wait').textContent = ticket.waitMinutes === null ? '計算中' : `約${ticket.waitMinutes}分`;
   $('estimate').textContent = ticket.estimatedCallAt ? `${new Date(ticket.estimatedCallAt).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}ごろ` : '計算中';

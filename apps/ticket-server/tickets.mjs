@@ -62,6 +62,7 @@ export class TicketQueue {
       updatedAt: now(),
     };
     this.state.settings = {...this.state.settings, cycleMinutes: SLOT_MINUTES, autoCall: true};
+    this.state.settings.globalDelayMinutes = Math.min(600, Math.max(0, Math.ceil((Number(this.state.settings.globalDelayMinutes) || 0) / SLOT_MINUTES) * SLOT_MINUTES));
     this.state.version = 2;
     for (const ticket of this.state.tickets) {
       if (!Array.isArray(ticket.playerNicknames) || ticket.playerNicknames.length !== ticket.partySize) {
@@ -316,8 +317,9 @@ export class TicketQueue {
       if (round && itemRound) return itemRound.number < round.number;
       return item.receptionNumber < ticket.receptionNumber;
     });
-    const plannedCallAt = round?.scheduledAt ? round.scheduledAt - SLOT_MS : null;
-    const estimatedCallAt = round ? (['CALLED', 'CHECKED_IN', 'PLAYING', 'COMPLETED'].includes(ticket.status) && ticket.calledAt
+    const showSchedule = !terminalStates.has(ticket.status);
+    const plannedCallAt = showSchedule && round?.scheduledAt ? round.scheduledAt - SLOT_MS : null;
+    const estimatedCallAt = showSchedule && round ? (['CALLED', 'CHECKED_IN', 'PLAYING'].includes(ticket.status) && ticket.calledAt
       ? ticket.calledAt
       : plannedCallAt ? Math.max(plannedCallAt, this.now()) : null) : null;
     const waitMinutes = estimatedCallAt ? Math.max(0, Math.ceil((estimatedCallAt - this.now()) / 60_000)) : null;
@@ -332,8 +334,8 @@ export class TicketQueue {
       peopleAhead: ahead.reduce((sum, item) => sum + item.partySize, 0),
       waitMinutes,
       estimatedCallAt,
-      slotStartAt: round?.slotStartAt ?? null,
-      slotEndAt: round?.slotStartAt ? round.slotStartAt + SLOT_MS : null,
+      slotStartAt: showSchedule ? round?.scheduledAt ?? null : null,
+      slotEndAt: showSchedule && round?.scheduledAt ? round.scheduledAt + SLOT_MS : null,
       globalMessage: this.state.globalMessage,
       personalMessage: ticket.personalMessage,
       qrToken: ticket.qrToken,
@@ -354,6 +356,8 @@ export class TicketQueue {
       return {
         ...round,
         callAt,
+        effectiveSlotStartAt: round.scheduledAt ?? round.slotStartAt ?? null,
+        effectiveSlotEndAt: (round.scheduledAt ?? round.slotStartAt) ? (round.scheduledAt ?? round.slotStartAt) + SLOT_MS : null,
         slotEndAt: round.slotStartAt ? round.slotStartAt + SLOT_MS : null,
         assignedPeople: round.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.partySize ?? 0), 0),
         checkedInPeople: round.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.status === 'CHECKED_IN' ? this.ticket(id).partySize : 0), 0),
@@ -632,7 +636,10 @@ export class TicketQueue {
       return parsed;
     };
     this.state.settings.cycleMinutes = SLOT_MINUTES;
-    this.state.settings.globalDelayMinutes = number('globalDelayMinutes', 0, 600);
+    const delaySlots = input.globalDelaySlots === undefined
+      ? Math.ceil(number('globalDelayMinutes', 0, 600) / SLOT_MINUTES)
+      : number('globalDelaySlots', 0, 40);
+    this.state.settings.globalDelayMinutes = delaySlots * SLOT_MINUTES;
     this.state.settings.graceMinutes = number('graceMinutes', 1, 60);
     this.state.settings.maxWaitingGroups = number('maxWaitingGroups', 1, 1000);
     this.state.settings.autoCall = true;
@@ -659,10 +666,10 @@ export class TicketQueue {
     if (event.type === 'GAME_PAUSED') {
       if (round.status !== 'PLAYING') throw Error('体験中の枠だけ一時停止できます');
       round.pausedAt = Number(event.occurredAt) || this.now();
-      this.state.settings.globalDelayMinutes += 1;
+      this.state.settings.globalDelayMinutes = Math.min(600, this.state.settings.globalDelayMinutes + SLOT_MINUTES);
     } else if (event.type === 'EQUIPMENT_TROUBLE') {
       const delay = Math.max(0, Math.min(120, Number(event.delayMinutes) || 0));
-      this.state.settings.globalDelayMinutes += delay;
+      this.state.settings.globalDelayMinutes = Math.min(600, this.state.settings.globalDelayMinutes + Math.ceil(delay / SLOT_MINUTES) * SLOT_MINUTES);
       if (event.message) this.state.globalMessage = String(event.message).slice(0, 500);
     } else if (map[event.type]) {
       round.status = map[event.type];

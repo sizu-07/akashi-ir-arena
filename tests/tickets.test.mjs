@@ -63,6 +63,24 @@ test('現在時刻に依存せず切りのよい15分枠へ割り当て、前枠
   assert.equal(queue.publicTicket(second.accessToken).waitMinutes, 8);
 });
 
+test('遅延を15分枠単位で設定し、実施枠と来場者予定を後ろへ移動する', () => {
+  const now = new Date('2026-09-17T17:07:00+09:00').getTime();
+  const queue = new TicketQueue({now: () => now});
+  const ticket = queue.register({requestId: 'delayed-slot-ticket', nicknames: ['遅延確認'], partySize: 1, consent: true});
+  const nominalStart = queue.operatorView().rounds[0].slotStartAt;
+  queue.operatorAction({
+    action: 'settings',
+    value: {globalDelaySlots: 2, graceMinutes: 3, maxWaitingGroups: 100},
+    operator: 'operator',
+  });
+  const round = queue.operatorView().rounds[0];
+  assert.equal(queue.state.settings.globalDelayMinutes, 30);
+  assert.equal(round.effectiveSlotStartAt, nominalStart + 30 * 60_000);
+  assert.equal(round.effectiveSlotEndAt - round.effectiveSlotStartAt, 15 * 60_000);
+  assert.equal(queue.publicTicket(ticket.accessToken).slotStartAt, round.effectiveSlotStartAt);
+  assert.equal(queue.publicTicket(ticket.accessToken).estimatedCallAt, round.effectiveSlotStartAt - 15 * 60_000);
+});
+
 test('ゲーム開始で先頭枠が進行し、体験中に次枠を自動呼出する', () => {
   const queue = new TicketQueue();
   queue.register({requestId: 'first-four-players', nicknames: ['A1', 'A2', 'A3', 'A4'], partySize: 4, consent: true});
@@ -184,6 +202,9 @@ test('呼出中の登録グループだけをスキップし、空席を後続�
   assert.match(skipResult.notice, /スキップ済み/);
   assert.equal(queue.round(first.id).status, 'CALLED');
   assert.equal(queue.ticket(firstGroupId).status, 'NO_SHOW');
+  assert.equal(queue.publicTicket(firstGroup.accessToken).waitMinutes, null);
+  assert.equal(queue.publicTicket(firstGroup.accessToken).estimatedCallAt, null);
+  assert.equal(queue.publicTicket(firstGroup.accessToken).slotStartAt, null);
   assert.deepEqual(
     queue.round(first.id).ticketIds.map((id) => queue.ticket(id).ticketNumber),
     [secondGroup.ticketNumber, replacementGroup.ticketNumber],
