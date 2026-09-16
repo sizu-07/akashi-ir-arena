@@ -21,6 +21,8 @@ test('4席へ後続組を充当し、飛ばされた組を次回で優先する'
   assert.deepEqual(second.tickets.map((ticket) => ticket.nickname), ['B', 'D']);
   assert.equal(first.assignedPeople, 4);
   assert.equal(second.assignedPeople, 4);
+  assert.equal(first.slotStartAt % (15 * 60_000), 0);
+  assert.equal(second.slotStartAt - first.slotStartAt, 15 * 60_000);
   assert.equal(new Set(queue.state.tickets.map((ticket) => ticket.receptionNumber)).size, 4);
 });
 
@@ -46,7 +48,22 @@ test('1枠15分で参加者ごとのニックネームを保存する', () => {
   assert.throws(() => queue.register({requestId: 'missing-name-request', nicknames: ['1人だけ'], partySize: 2, consent: true}), /一致/);
 });
 
-test('ゲーム開始で先頭枠が進行し、終了すると次枠を自動呼出する', () => {
+test('現在時刻に依存せず切りのよい15分枠へ割り当て、前枠の開始時刻を入場予定にする', () => {
+  let now = new Date('2026-09-17T17:07:00+09:00').getTime();
+  const queue = new TicketQueue({now: () => now});
+  const first = queue.register({requestId: 'fixed-slot-first', nicknames: ['A1', 'A2', 'A3', 'A4'], partySize: 4, consent: true});
+  const second = queue.register({requestId: 'fixed-slot-second', nicknames: ['B1', 'B2', 'B3', 'B4'], partySize: 4, consent: true});
+
+  const rounds = queue.operatorView().rounds;
+  assert.equal(new Date(rounds[0].slotStartAt).toISOString(), '2026-09-17T08:15:00.000Z');
+  assert.equal(new Date(rounds[0].slotEndAt).toISOString(), '2026-09-17T08:30:00.000Z');
+  assert.equal(new Date(rounds[1].slotStartAt).toISOString(), '2026-09-17T08:30:00.000Z');
+  assert.equal(queue.publicTicket(first.accessToken).waitMinutes, 0);
+  assert.equal(queue.publicTicket(second.accessToken).estimatedCallAt, rounds[0].slotStartAt);
+  assert.equal(queue.publicTicket(second.accessToken).waitMinutes, 8);
+});
+
+test('ゲーム開始で先頭枠が進行し、体験中に次枠を自動呼出する', () => {
   const queue = new TicketQueue();
   queue.register({requestId: 'first-four-players', nicknames: ['A1', 'A2', 'A3', 'A4'], partySize: 4, consent: true});
   queue.register({requestId: 'next-four-players', nicknames: ['B1', 'B2', 'B3', 'B4'], partySize: 4, consent: true});
@@ -56,6 +73,9 @@ test('ゲーム開始で先頭枠が進行し、終了すると次枠を自動�
   for (const id of queue.round(first.id).ticketIds) queue.checkIn(queue.ticket(id).qrToken, 'operator');
   queue.applyGameEvent({eventId: 'automatic-start', type: 'GAME_STARTED', targetRoundId: first.id, occurredAt: Date.now(), source: 'game'});
   assert.equal(queue.round(first.id).status, 'PLAYING');
+  assert.equal(queue.round(second.id).status, 'CALLED');
+  assert.ok(queue.round(second.id).ticketIds.every((id) => queue.ticket(id).status === 'CALLED'));
+  const secondSlotBeforeEnd = queue.round(second.id).slotStartAt;
   queue.applyGameEvent({eventId: 'automatic-pause', type: 'GAME_PAUSED', targetRoundId: first.id, occurredAt: Date.now(), source: 'game'});
   assert.equal(queue.round(first.id).status, 'PLAYING');
   assert.ok(queue.round(first.id).ticketIds.every((id) => queue.ticket(id).status === 'PLAYING'));
@@ -63,6 +83,7 @@ test('ゲーム開始で先頭枠が進行し、終了すると次枠を自動�
   queue.applyGameEvent({eventId: 'automatic-end', type: 'GAME_ENDED', targetRoundId: first.id, occurredAt: Date.now(), source: 'game'});
   assert.equal(queue.round(first.id).status, 'COMPLETED');
   assert.equal(queue.round(second.id).status, 'CALLED');
+  assert.equal(queue.round(second.id).slotStartAt, secondSlotBeforeEnd);
   assert.ok(queue.round(second.id).ticketIds.every((id) => queue.ticket(id).status === 'CALLED'));
 });
 
@@ -111,7 +132,7 @@ test('呼出中枠の空席を後続の入れる組で4人まで自動補完す�
   );
 });
 
-test('進行中の枠を重ねて呼び出さず、既存の重複状態も安全に修復する', () => {
+test('呼出中の枠を二重に作らず、既存の重複呼出も安全に修復する', () => {
   const queue = new TicketQueue();
   register(queue, '先頭', 4); register(queue, '次', 4);
   const [first, second] = queue.operatorView().rounds;
@@ -124,8 +145,21 @@ test('進行中の枠を重ねて呼び出さず、既存の重複状態も安�
   const active = recovered.state.rounds.filter((round) => ['CALLED', 'PLAYING'].includes(round.status));
   assert.equal(active.length, 1);
   assert.ok(active[0].ticketIds.some((id) => recovered.ticket(id).status === 'CHECKED_IN'));
-  assert.equal(active[0].number, 1);
+  assert.equal(active[0].number, second.number);
   assert.ok(logs.some((event) => event.type === 'state_repaired'));
+});
+
+test('体験中の1枠と次の呼出中1枠を同時に保持できる', () => {
+  const queue = new TicketQueue();
+  register(queue, '体験組', 4); register(queue, '次の組', 4);
+  const [first, second] = queue.operatorView().rounds;
+  queue.callNext('operator');
+  for (const id of first.ticketIds) queue.checkIn(queue.ticket(id).qrToken, 'operator');
+  queue.applyGameEvent({eventId: 'parallel-start', type: 'GAME_STARTED', targetRoundId: first.id, occurredAt: Date.now(), source: 'game'});
+  const recovered = new TicketQueue({saved: structuredClone(queue.state)});
+  assert.equal(recovered.round(first.id).status, 'PLAYING');
+  assert.equal(recovered.round(second.id).status, 'CALLED');
+  assert.equal(recovered.round(second.id).slotStartAt - recovered.round(first.id).slotStartAt, 15 * 60_000);
 });
 
 test('対象枠のないイベントと呼出中への終了イベントを拒否する', () => {
@@ -289,9 +323,9 @@ test('運営は理由付きで予定回と予定時刻を手動固定できる',
   queue.operatorAction({action: 'move_round', ticketId: b.id, roundId: second.id, reason: '同行者対応', operator: 'operator'});
   assert.equal(queue.ticket(b.id).roundId, second.id);
   assert.equal(queue.round(second.id).status, 'LOCKED_SCHEDULED');
-  const newTime = Date.now() + 30 * 60_000;
+  const newTime = (Math.floor(Date.now() / (15 * 60_000)) + 3) * 15 * 60_000;
   queue.operatorAction({action: 'round_time', roundId: second.id, value: newTime, reason: '休憩時間調整', operator: 'operator'});
-  assert.equal(queue.round(second.id).scheduledAt, newTime);
+  assert.equal(queue.round(second.id).slotStartAt, newTime);
   assert.throws(() => queue.operatorAction({action: 'round_time', roundId: second.id, value: newTime, reason: '', operator: 'operator'}), /理由/);
 });
 
@@ -342,7 +376,10 @@ test('HTTP同時登録、運営認証、操作冪等性、閲覧分離', async (
     assert.doesNotMatch(await (await fetch(`${base}/ticket`)).text(), /id="round"/);
     const scannerPage = await (await fetch(`${base}/scanner`)).text();
     assert.match(scannerPage, /\/vendor\/jsqr\.js/);
-    assert.match(await (await fetch(`${base}/scanner.js`)).text(), /detectWithFallback/);
+    assert.match(scannerPage, /id="scanSuccess"/);
+    const scannerScript = await (await fetch(`${base}/scanner.js`)).text();
+    assert.match(scannerScript, /detectWithFallback/);
+    assert.match(scannerScript, /showSuccess/);
     const jsQrResponse = await fetch(`${base}/vendor/jsqr.js`);
     assert.equal(jsQrResponse.status, 200);
     assert.match(await jsQrResponse.text(), /jsQR/);
@@ -467,6 +504,9 @@ test('登録から呼出・入場・ゲーム開始終了・次枠呼出までHT
     const event = (eventId, type, targetRoundId) => fetch(`${base}/api/game/events`, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`}, body: JSON.stringify({eventId, type, targetRoundId, occurredAt: Date.now(), source: 'e2e-game'})});
     assert.equal((await event('e2e-start', 'GAME_STARTED', current.roundId)).status, 200);
     assert.equal((await (await fetch(`${base}/api/public/ticket/${first.accessToken}`)).json()).status, 'PLAYING');
+    const nextDuringPlay = await (await fetch(`${base}/api/game/current-round`, {headers: {Authorization: `Bearer ${apiKey}`}})).json();
+    assert.equal(nextDuringPlay.status, 'CALLED');
+    assert.notEqual(nextDuringPlay.roundId, current.roundId);
     assert.equal((await event('e2e-end', 'GAME_ENDED', current.roundId)).status, 200);
     assert.equal((await (await fetch(`${base}/api/public/ticket/${first.accessToken}`)).json()).status, 'COMPLETED');
     assert.equal(app.queue.state.rounds.find((round) => round.status === 'CALLED')?.number, 2);

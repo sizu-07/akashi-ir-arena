@@ -93,6 +93,7 @@ label { display: grid; gap: 6px; font-weight: 650; }
 .guest-time strong { display: block; color: var(--green); font-size: clamp(34px, 8vw, 52px); line-height: 1.2; }
 .entrance-time { border-color: #efd2aa; background: #fff7e9; }
 .entrance-time strong { color: var(--amber); }
+.slot-window { margin: 12px 0 0; color: var(--muted); font-size: 16px; font-weight: 750; }
 .queue-ahead { margin: 18px 0 0; color: var(--muted); font-size: 17px; }
 .qr { display: block; width: min(300px, 100%); margin: 16px auto; }
 .toolbar, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
@@ -112,6 +113,7 @@ label { display: grid; gap: 6px; font-weight: 650; }
 .timeline-round:not(:last-child)::before { content: ""; position: absolute; z-index: 1; top: calc(50% - 5px); right: -18px; border-width: 5px 0 5px 8px; border-style: solid; border-color: transparent transparent transparent #afbbb5; }
 .timeline-round.playing { position: sticky; z-index: 3; left: 4px; border-color: var(--green); box-shadow: 0 10px 30px #146b4c1c; }
 .timeline-round.called { position: sticky; z-index: 3; left: 4px; border-color: #e5a13e; box-shadow: 0 10px 30px #a85f0818; }
+.timeline-round.called-after-playing { position: relative; left: auto; }
 .timeline-round.ready { border-color: #48a97d; box-shadow: 0 10px 30px #146b4c25; }
 .timeline-round.completed { border-color: #a8cdbd; background: #f4fbf7; }
 .timeline-round.skipped { border-color: #d6c5c5; background: #fcf7f7; }
@@ -186,6 +188,12 @@ video { width: 100%; max-height: 55vh; border-radius: 14px; background: #111; }
 .scan-result.OK { background: #dff4e9; color: var(--green); }
 .scan-result.TOO_EARLY { background: #fff1cf; color: var(--amber); }
 .scan-result.ALREADY_USED, .scan-result.CANCELED, .scan-result.NOT_FOUND { background: #fde2e2; color: var(--red); }
+.scan-success-overlay { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(8 38 27 / 82%); }
+.scan-success-panel { width: min(560px, 100%); padding: clamp(30px, 7vw, 54px); border-radius: 24px; background: white; box-shadow: 0 24px 90px #0008; text-align: center; }
+.scan-success-panel h2 { margin: 8px 0; color: var(--green); font-size: clamp(38px, 10vw, 64px); line-height: 1.15; }
+.scan-success-icon { display: grid; width: 108px; height: 108px; margin: 0 auto; place-items: center; border-radius: 50%; background: var(--green); color: white; font-size: 72px; font-weight: 900; line-height: 1; }
+.scan-success-ticket { margin: 18px 0 6px; color: var(--ink); font-size: clamp(24px, 6vw, 34px); font-weight: 850; }
+.scan-success-panel #nextScan { width: 100%; margin-top: 18px; font-size: 20px; }
 [hidden] { display: none !important; }
 
 @media (max-width: 760px) {

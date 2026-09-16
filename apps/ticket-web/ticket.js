@@ -17,6 +17,8 @@ function render(ticket) {
   $('groups').textContent = `${ticket.groupsAhead}組・${ticket.peopleAhead}人`;
   $('wait').textContent = ticket.waitMinutes === null ? '計算中' : `約${ticket.waitMinutes}分`;
   $('estimate').textContent = ticket.estimatedCallAt ? `${new Date(ticket.estimatedCallAt).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}ごろ` : '計算中';
+  const time = (value) => new Date(value).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+  $('slotWindow').textContent = ticket.slotStartAt && ticket.slotEndAt ? `体験時間の目安：${time(ticket.slotStartAt)}〜${time(ticket.slotEndAt)}` : '';
   $('messages').hidden = !ticket.globalMessage && !ticket.personalMessage;
   $('globalMessage').textContent = ticket.globalMessage;
   $('personalMessage').textContent = ticket.personalMessage ? `あなたへの連絡：${ticket.personalMessage}` : '';

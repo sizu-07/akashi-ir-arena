@@ -14,6 +14,15 @@
       <section id="result" class="scan-result" hidden></section>
       <p id="message" class="error" role="alert"></p>
     </main>
+    <section id="scanSuccess" class="scan-success-overlay" role="alertdialog" aria-modal="true" aria-labelledby="scanSuccessTitle" hidden>
+      <div class="scan-success-panel">
+        <div class="scan-success-icon" aria-hidden="true">✓</div>
+        <h2 id="scanSuccessTitle">読み取り成功</h2>
+        <p id="scanSuccessTicket" class="scan-success-ticket"></p>
+        <p id="scanSuccessRound"></p>
+        <button id="nextScan" class="primary">次のQRコードを読み取る</button>
+      </div>
+    </section>
     <script src="/vendor/jsqr.js"></script>
     <script src="/scanner.js" type="module"></script>
   </body>

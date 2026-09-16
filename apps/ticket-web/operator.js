@@ -10,6 +10,7 @@ const groupColors = ['#2f6fbb', '#b85c38', '#6d5aad', '#27856a'];
 const groupColor = (ticket) => groupColors[[...ticket.ticketNumber].reduce((sum, character) => sum + character.charCodeAt(0), 0) % groupColors.length];
 const commandId = () => `${Date.now()}-${crypto.randomUUID()}`;
 const formatTime = (value) => value ? new Date(value).toLocaleTimeString('ja-JP', {hour: '2-digit', minute: '2-digit'}) : '時刻計算中';
+const formatSlot = (round) => round.slotStartAt && round.slotEndAt ? `${formatTime(round.slotStartAt)}〜${formatTime(round.slotEndAt)}` : '時刻計算中';
 let csrf = '';
 let sessionId = '';
 let state;
@@ -98,7 +99,7 @@ function playerNames(ticket) {
 function renderTimeline() {
   const visible = state.rounds
     .filter((round) => ['CALLED', 'PLAYING', 'SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status) && (round.tickets.length || ['CALLED', 'PLAYING'].includes(round.status)))
-    .sort((a, b) => Number(!['CALLED', 'PLAYING'].includes(a.status)) - Number(!['CALLED', 'PLAYING'].includes(b.status)) || a.number - b.number)
+    .sort((a, b) => ({PLAYING: 0, CALLED: 1}[a.status] ?? 2) - ({PLAYING: 0, CALLED: 1}[b.status] ?? 2) || a.number - b.number)
     .slice(0, 5);
   $('queueTimeline').replaceChildren(...visible.map((round, index) => timelineRound(round, index)));
   if (!visible.length) {
@@ -113,7 +114,8 @@ function renderTimeline() {
   if (activeRoundId && activeRoundId !== lastActiveRoundId) requestAnimationFrame(() => { $('queueTimeline').scrollLeft = 0; });
   lastActiveRoundId = activeRoundId;
   const next = visible.find((round) => scheduledRoundStates.has(round.status));
-  if (playing?.pausedAt) $('nextAction').textContent = `第${playing.number}枠はゲーム一時停止中です。ゲーム運営画面から再開または終了してください。`;
+  if (playing && called) $('nextAction').textContent = `第${playing.number}枠を体験中です。同時に次の第${called.number}枠を呼び出し中で、${called.checkedInPeople}/${called.assignedPeople}名が入場済みです。`;
+  else if (playing?.pausedAt) $('nextAction').textContent = `第${playing.number}枠はゲーム一時停止中です。ゲーム運営画面から再開または終了してください。`;
   else if (playing) $('nextAction').textContent = `現在は第${playing.number}枠を体験中です。ゲーム運営画面で終了すると、この枠が完了して次枠を自動で呼び出します。`;
   else if (called?.checkedInPeople === called?.assignedPeople) $('nextAction').textContent = `第${called.number}枠は全員入場済みです。ゲーム運営画面でゲームを開始してください。`;
   else if (called) $('nextAction').textContent = `第${called.number}枠を呼び出し中です。現在${called.checkedInPeople}/${called.assignedPeople}名が入場済みです。残りのQRを確認してください。`;
@@ -189,6 +191,7 @@ function timelineRound(round, index, {history = false} = {}) {
   const checkingIn = round.status === 'CALLED' && round.checkedInPeople > 0 && !ready;
   const article = document.createElement('article');
   article.className = `timeline-round ${round.status.toLowerCase()}${ready ? ' ready' : ''}`;
+  if (round.status === 'CALLED' && state.rounds.some((item) => item.status === 'PLAYING')) article.classList.add('called-after-playing');
   const marker = document.createElement('span');
   marker.className = 'timeline-marker';
   if (ready) marker.textContent = 'NOW・全員入場済み';
@@ -203,8 +206,7 @@ function timelineRound(round, index, {history = false} = {}) {
   const title = document.createElement('strong');
   title.textContent = `第${round.number}枠`;
   const time = document.createElement('span');
-  const displayTime = history ? (round.startedAt || round.calledAt || round.scheduledAt) : round.scheduledAt;
-  time.textContent = `${formatTime(displayTime)}${['SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status) ? 'ごろ' : ''}`;
+  time.textContent = formatSlot(round);
   heading.append(title, time);
   const seats = document.createElement('div');
   seats.className = 'seat-grid';
@@ -274,7 +276,7 @@ function render() {
   $('emptySeats').textContent = `${4 - (upcoming?.assignedPeople || 0)}席`;
   $('calledRound').textContent = called ? `第${called.number}枠` : 'なし';
   $('playingRound').textContent = playing ? `第${playing.number}枠${playing.pausedAt ? '（一時停止）' : ''}` : 'なし';
-  const waits = state.rounds.filter((round) => scheduledRoundStates.has(round.status) && round.scheduledAt).map((round) => Math.max(0, Math.ceil((round.scheduledAt - Date.now()) / 60_000)));
+  const waits = state.rounds.filter((round) => scheduledRoundStates.has(round.status) && round.callAt).map((round) => Math.max(0, Math.ceil((round.callAt - Date.now()) / 60_000)));
   $('maxWait').textContent = waits.length ? `約${Math.max(...waits)}分` : 'なし';
   $('cycle').textContent = '15分';
   const gameConnected = state.gameLastSeenAt && Date.now() - state.gameLastSeenAt < 60_000;
@@ -303,10 +305,11 @@ function roundCard(round) {
   status.textContent = labels[round.status] || round.status;
   title.append(titleText, status);
   const meta = document.createElement('p');
-  meta.textContent = `${round.assignedPeople}/4名・${formatTime(round.scheduledAt)}ごろ`;
+  meta.textContent = `${round.assignedPeople}/4名・体験 ${formatSlot(round)}・入場 ${formatTime(round.callAt)}ごろ`;
   const input = document.createElement('input');
   input.type = 'datetime-local';
-  input.value = round.scheduledAt ? new Date(round.scheduledAt - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '';
+  input.step = '900';
+  input.value = round.slotStartAt ? new Date(round.slotStartAt - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '';
   const change = document.createElement('button');
   change.textContent = 'この枠の時刻を変更';
   change.onclick = guarded(async () => {
@@ -324,7 +327,7 @@ function ticketRow(ticket) {
   const admission = ticket.status === 'NO_SHOW' ? (round ? `元・第${round.number}枠` : 'スキップ済み')
     : ticket.status === 'ON_HOLD' ? '保留中'
       : ['CALLED', 'CHECKED_IN', 'PLAYING'].includes(ticket.status) && round ? `第${round.number}枠`
-        : round ? `${formatTime(round.scheduledAt)}ごろ` : '未定';
+        : round ? `${formatTime(round.callAt)}ごろ` : '未定';
   const values = [ticket.receptionNumber, ticket.ticketNumber, playerNames(ticket).join(' / '), `${ticket.partySize}名`, labels[ticket.status] || ticket.status, admission];
   for (const value of values) {
     const cell = document.createElement('td');
@@ -383,10 +386,9 @@ function disable() {
   const locked = !socket || socket.readyState !== WebSocket.OPEN || state?.owner !== sessionId;
   document.querySelectorAll('#app button').forEach((button) => { button.disabled = locked; });
   const called = state?.rounds.find((round) => round.status === 'CALLED');
-  const playing = state?.rounds.find((round) => round.status === 'PLAYING');
-  const activeRound = Boolean(called || playing);
-  $('callNext').disabled = locked || activeRound;
-  document.querySelectorAll('.recall-group').forEach((button) => { button.disabled = locked || Boolean(playing); });
+  const upcoming = state?.rounds.some((round) => scheduledRoundStates.has(round.status));
+  $('callNext').disabled = locked || Boolean(called) || !upcoming;
+  document.querySelectorAll('.recall-group').forEach((button) => { button.disabled = locked; });
   $('takeover').disabled = !socket || socket.readyState !== WebSocket.OPEN;
 }
 

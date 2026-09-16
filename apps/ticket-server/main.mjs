@@ -213,7 +213,7 @@ export async function createTicketApp({
       }
       if (url.pathname === '/api/game/current-round' && req.method === 'GET') {
         if (!same(req.headers.authorization, `Bearer ${gameApiKey}`)) return json(res, 401, {error: 'APIキーが無効です'});
-        const round = queue.state.rounds.find((item) => ['CALLED', 'PLAYING'].includes(item.status));
+        const round = queue.state.rounds.find((item) => item.status === 'CALLED') ?? queue.state.rounds.find((item) => item.status === 'PLAYING');
         const playerNicknames = round?.ticketIds.flatMap((id) => queue.ticket(id)?.playerNicknames ?? []);
         const summary = round && queue.roundSummary(round.id);
         return json(res, round ? 200 : 404, round ? {roundId: round.id, number: round.number, status: round.status, playerNicknames, assignedPeople: summary.assignedPeople, checkedInPeople: summary.checkedInPeople, ready: summary.assignedPeople > 0 && summary.checkedInPeople === summary.assignedPeople} : {error: '対象回がありません'});
