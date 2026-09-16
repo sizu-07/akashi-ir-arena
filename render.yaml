@@ -3,6 +3,8 @@ services:
     name: akashi-ticket-server
     runtime: docker
     plan: free
+    region: singapore
+    branch: codex/ticket-system-v0.2
     dockerfilePath: ./Dockerfile.ticket
     healthCheckPath: /health
     envVars:
@@ -14,5 +16,5 @@ services:
         sync: false
       - key: SUPABASE_URL
         sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
+      - key: SUPABASE_SECRET_KEY
         sync: false

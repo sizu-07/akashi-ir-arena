@@ -464,6 +464,24 @@ test('Supabase保存は状態と監査ログを応答前に確定できる', asy
   }
 });
 
+test('Supabase Secret KeyはJWT用Authorizationヘッダーへ設定しない', async () => {
+  let receivedHeaders;
+  const server = (await import('node:http')).createServer((request, response) => {
+    receivedHeaders = request.headers;
+    response.writeHead(200, {'Content-Type': 'application/json'});
+    response.end('[]');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const store = supabaseTicketStorage({url: `http://127.0.0.1:${server.address().port}`, secretKey: 'sb_secret_test'});
+    assert.equal(await store.load(), null);
+    assert.equal(receivedHeaders.apikey, 'sb_secret_test');
+    assert.equal(receivedHeaders.authorization, undefined);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test('ゲーム運営と整理券運営を上部タブで相互に移動できる', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'operator-tabs-test-'));
   const config = {

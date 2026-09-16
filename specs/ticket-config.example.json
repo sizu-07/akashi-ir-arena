@@ -5,7 +5,7 @@
     "TICKET_OPERATOR_PASSWORD": "12文字以上のランダムな値",
     "TICKET_GAME_API_KEY": "24文字以上のランダムな値",
     "SUPABASE_URL": "https://プロジェクトID.supabase.co",
-    "SUPABASE_SERVICE_ROLE_KEY": "SupabaseのService Role Key",
+    "SUPABASE_SECRET_KEY": "Supabaseのsb_secret_で始まるSecret Key",
     "TICKET_DATA_DIR": "Supabaseを使わない場合だけ永続ボリュームの絶対パス"
   },
   "localGameServerAdditions": {

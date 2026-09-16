@@ -21,11 +21,12 @@ export async function createTicketApp({
   publicOrigin = '',
   secureCookies = publicOrigin.startsWith('https://'),
   supabaseUrl = '',
+  supabaseSecretKey = '',
   supabaseServiceRoleKey = '',
 } = {}) {
   if (typeof operatorPassword !== 'string' || operatorPassword.length < 12) throw Error('運営パスワードは12文字以上にしてください');
   if (typeof gameApiKey !== 'string' || gameApiKey.length < 24) throw Error('ゲームAPIキーは24文字以上にしてください');
-  const db = supabaseUrl ? supabaseTicketStorage({url: supabaseUrl, serviceRoleKey: supabaseServiceRoleKey}) : ticketStorage(dataDir);
+  const db = supabaseUrl ? supabaseTicketStorage({url: supabaseUrl, secretKey: supabaseSecretKey, serviceRoleKey: supabaseServiceRoleKey}) : ticketStorage(dataDir);
   const queue = new TicketQueue({saved: await db.load(), save: (state) => db.save(state), log: (event) => db.log(event)});
   const sessions = new Map();
   const attempts = new Map();
@@ -282,7 +283,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const publicOrigin = process.env.PUBLIC_ORIGIN || '';
   const dataDir = process.env.TICKET_DATA_DIR || path.join(root, 'data/tickets');
   const supabaseUrl = process.env.SUPABASE_URL || '';
+  const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY || '';
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  const app = await createTicketApp({port, bind: '0.0.0.0', dataDir, operatorPassword, gameApiKey, publicOrigin, supabaseUrl, supabaseServiceRoleKey});
+  const app = await createTicketApp({port, bind: '0.0.0.0', dataDir, operatorPassword, gameApiKey, publicOrigin, supabaseUrl, supabaseSecretKey, supabaseServiceRoleKey});
   console.log(`整理券サーバー: ${publicOrigin || `http://localhost:${app.server.address().port}`} /register`);
 }

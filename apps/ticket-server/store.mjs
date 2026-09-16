@@ -44,10 +44,14 @@ export function ticketStorage(dir) {
   };
 }
 
-export function supabaseTicketStorage({url, serviceRoleKey}) {
-  if (!/^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$)/.test(url ?? '') || !serviceRoleKey) throw Error('SupabaseのURLとService Role Keyを確認してください');
+export function supabaseTicketStorage({url, secretKey, serviceRoleKey}) {
+  const apiKey = secretKey || serviceRoleKey;
+  if (!/^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$)/.test(url ?? '') || !apiKey) throw Error('SupabaseのURLとサーバー用APIキーを確認してください');
   const base = `${url.replace(/\/$/, '')}/rest/v1`;
-  const headers = {'Content-Type': 'application/json', apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}`};
+  const headers = {'Content-Type': 'application/json', apikey: apiKey};
+  // New sb_secret_* keys are API keys, not JWTs. Only the legacy service_role
+  // key belongs in an Authorization Bearer header.
+  if (!secretKey && serviceRoleKey) headers.Authorization = `Bearer ${serviceRoleKey}`;
   let pending = Promise.resolve();
   const query = async (pathname, options = {}) => {
     const response = await fetch(`${base}${pathname}`, {...options, headers: {...headers, ...options.headers}, signal: AbortSignal.timeout(10_000)});
