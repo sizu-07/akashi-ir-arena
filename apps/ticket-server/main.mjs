@@ -75,6 +75,7 @@ export async function createTicketApp({
   const staticFiles = new Map([
     ['/register', 'register.html'], ['/ticket', 'ticket.html'], ['/operator', 'operator.html'], ['/scanner', 'scanner.html'],
     ['/ticket.css', 'ticket.css'], ['/register.js', 'register.js'], ['/ticket.js', 'ticket.js'], ['/operator.js', 'operator.js'], ['/scanner.js', 'scanner.js'],
+    ['/vendor/jsqr.js', path.join(root, 'node_modules/jsqr/dist/jsQR.js')],
   ]);
   const contentTypes = {'.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8'};
 
@@ -221,7 +222,7 @@ export async function createTicketApp({
       if (url.pathname.startsWith('/scan/')) { res.writeHead(302, {Location: `/scanner#${url.pathname.slice(6)}`}); return res.end(); }
       const relative = staticFiles.get(url.pathname);
       if (relative) {
-        const file = path.join(webRoot, relative);
+        const file = path.isAbsolute(relative) ? relative : path.join(webRoot, relative);
         if (!existsSync(file)) return json(res, 404, {});
         const data = readFileSync(file);
         res.writeHead(200, {'Content-Type': contentTypes[path.extname(file)] ?? 'application/octet-stream', 'Content-Length': data.length, 'Cache-Control': 'no-cache'});

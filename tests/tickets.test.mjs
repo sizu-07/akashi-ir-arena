@@ -306,6 +306,12 @@ test('HTTP同時登録、運営認証、操作冪等性、閲覧分離', async (
     assert.doesNotMatch(operatorPage, /name="cycleMinutes"/);
     assert.match(await (await fetch(`${base}/register`)).text(), /nicknameFields/);
     assert.doesNotMatch(await (await fetch(`${base}/ticket`)).text(), /id="round"/);
+    const scannerPage = await (await fetch(`${base}/scanner`)).text();
+    assert.match(scannerPage, /\/vendor\/jsqr\.js/);
+    assert.match(await (await fetch(`${base}/scanner.js`)).text(), /detectWithFallback/);
+    const jsQrResponse = await fetch(`${base}/vendor/jsqr.js`);
+    assert.equal(jsQrResponse.status, 200);
+    assert.match(await jsQrResponse.text(), /jsQR/);
   } finally {
     await app.close();
     rmSync(dir, {recursive: true, force: true});

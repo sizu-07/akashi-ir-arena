@@ -8,12 +8,13 @@
       <section id="scanner" class="card" hidden>
         <video id="video" playsinline muted></video>
         <div class="actions"><button id="start" class="primary">カメラを開始</button><button id="stop">停止</button></div>
-        <p class="hint">背面カメラを整理券のQRコードへ向けてください。HTTPS環境またはlocalhostでのみカメラを利用できます。</p>
+        <p id="scanMode" class="hint">背面カメラを整理券のQRコードへ向けてください。HTTPS環境またはlocalhostでのみカメラを利用できます。</p>
         <form id="manualForm" class="form-grid"><label>手動入力<input name="token" autocomplete="off" placeholder="QRの内容またはトークン"></label><button>確認する</button></form>
       </section>
       <section id="result" class="scan-result" hidden></section>
       <p id="message" class="error" role="alert"></p>
     </main>
+    <script src="/vendor/jsqr.js"></script>
     <script src="/scanner.js" type="module"></script>
   </body>
 </html>
