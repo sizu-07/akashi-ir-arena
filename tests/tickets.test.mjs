@@ -146,7 +146,8 @@ test('呼出中の登録グループだけをスキップし、空席を後続�
   const first = queue.operatorView().rounds[0];
   queue.callNext('operator');
   const firstGroupId = queue.state.tickets.find((ticket) => ticket.ticketNumber === firstGroup.ticketNumber).id;
-  queue.operatorAction({action: 'skip_group', ticketId: firstGroupId, reason: '来場なし', operator: 'operator'});
+  const skipResult = queue.operatorAction({action: 'skip_group', ticketId: firstGroupId, reason: '来場なし', operator: 'operator'});
+  assert.match(skipResult.notice, /スキップ済み/);
   assert.equal(queue.round(first.id).status, 'CALLED');
   assert.equal(queue.ticket(firstGroupId).status, 'NO_SHOW');
   assert.deepEqual(
@@ -155,8 +156,10 @@ test('呼出中の登録グループだけをスキップし、空席を後続�
   );
   assert.deepEqual(queue.operatorView().rounds.find((round) => round.id === first.id).skippedTickets.map((ticket) => ticket.ticketNumber), [firstGroup.ticketNumber]);
   assert.equal(queue.operatorView().rounds.find((round) => round.id === first.id).assignedPeople, 4);
+  assert.equal(queue.operatorView().rounds.find((round) => round.id === first.id).skippedPeople, 2);
 
-  queue.operatorAction({action: 'recall_group', ticketId: firstGroupId, reason: '来場を確認', operator: 'operator'});
+  const recallResult = queue.operatorAction({action: 'recall_group', ticketId: firstGroupId, reason: '来場を確認', operator: 'operator'});
+  assert.match(recallResult.notice, /スキップを取り消し/);
   assert.equal(queue.ticket(firstGroupId).status, 'CALLED');
   assert.deepEqual(
     queue.round(first.id).ticketIds.map((id) => queue.ticket(id).ticketNumber),
@@ -207,6 +210,7 @@ test('整理券操作は状態に応じて呼出中グループの保留・取�
   queue.operatorAction({action: 'hold', ticketId: firstId, reason: 'あとで案内', operator: 'operator'});
   assert.equal(queue.ticket(firstId).status, 'ON_HOLD');
   assert.deepEqual(queue.round(round.id).ticketIds.map((id) => queue.ticket(id).ticketNumber), [second.ticketNumber, replacement.ticketNumber]);
+  assert.ok(!queue.round(round.id).skippedTicketIds.includes(firstId));
 
   queue.operatorAction({action: 'release', ticketId: firstId, operator: 'operator'});
   assert.equal(queue.ticket(firstId).status, 'ASSIGNED');
@@ -215,6 +219,25 @@ test('整理券操作は状態に応じて呼出中グループの保留・取�
   const checkedId = queue.round(round.id).ticketIds[0];
   queue.checkIn(queue.ticket(checkedId).qrToken, 'operator');
   assert.throws(() => queue.operatorAction({action: 'cancel', ticketId: checkedId, reason: '誤取消', operator: 'operator'}), /入場処理を取り消して/);
+});
+
+test('保存済み状態の呼出中・スキップ表示の食い違いを起動時に修復する', () => {
+  const original = new TicketQueue();
+  register(original, 'スキップ対象', 2);
+  register(original, '保留対象', 2);
+  original.callNext('operator');
+  const round = original.state.rounds[0];
+  const [skippedId, heldId] = round.ticketIds;
+  original.ticket(skippedId).status = 'NO_SHOW';
+  original.ticket(heldId).status = 'ON_HOLD';
+  round.skippedTicketIds = [heldId];
+
+  const repaired = new TicketQueue({saved: structuredClone(original.state)});
+  const repairedRound = repaired.round(round.id);
+  assert.equal(repairedRound.status, 'SKIPPED');
+  assert.deepEqual(repairedRound.ticketIds, []);
+  assert.deepEqual(repairedRound.skippedTicketIds, [skippedId]);
+  assert.equal(repaired.operatorView().rounds[0].skippedPeople, 2);
 });
 
 test('ローカル整理券設定をゲーム設定へ秘密値を表示せず自動接続する', () => {
@@ -288,6 +311,7 @@ test('HTTP同時登録、運営認証、操作冪等性、閲覧分離', async (
     assert.match(operatorPageBeforeLogin, /id="skippedGroups"/);
     assert.match(operatorPageBeforeLogin, /id="ticketDialogClose" type="button"/);
     assert.match(operatorPageBeforeLogin, /id="ticketDialogMessage"/);
+    assert.doesNotMatch(operatorPageBeforeLogin, /id="recallCurrent"/);
 
     const loginResponse = await fetch(`${base}/api/operator/login`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password})});
     assert.equal(loginResponse.status, 200);

@@ -166,9 +166,9 @@ export async function createTicketApp({
         if (typeof input.commandId !== 'string' || input.commandId.length > 100) throw Error('commandIdが必要です');
         const key = `${current.id}:${input.commandId}`;
         if (commands.has(key)) return json(res, 200, commands.get(key));
-        queue.operatorAction({...input, operator: current.id});
+        const operation = queue.operatorAction({...input, operator: current.id});
         await db.flush();
-        const result = {ok: true, commandId: input.commandId};
+        const result = {ok: true, commandId: input.commandId, operation: operation ?? null};
         commands.set(key, result);
         if (commands.size > 3000) commands.delete(commands.keys().next().value);
         broadcast();

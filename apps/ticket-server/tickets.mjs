@@ -65,9 +65,54 @@ export class TicketQueue {
       }
     }
     for (const round of this.state.rounds) round.skippedTicketIds ??= [];
-    const repair = this.normalizeActiveRounds();
+    const membershipRepair = this.normalizeTicketRoundMembership();
+    const activeRepair = this.normalizeActiveRounds();
     this.recalculate(false);
-    if (repair) this.persist('state_repaired', {reason: '同時に進行中だった枠を1つへ正規化', details: repair});
+    if (membershipRepair || activeRepair) this.persist('state_repaired', {
+      reason: '整理券と枠の状態を正規化',
+      details: {membershipRepair, activeRepair},
+    });
+  }
+
+  normalizeTicketRoundMembership() {
+    const repairedRoundIds = new Set();
+    for (const round of this.state.rounds) {
+      const assigned = [];
+      const skipped = new Set((round.skippedTicketIds ?? []).filter((id) => this.ticket(id)?.status === 'NO_SHOW'));
+      for (const id of new Set(round.ticketIds ?? [])) {
+        const ticket = this.ticket(id);
+        if (!ticket) { repairedRoundIds.add(round.id); continue; }
+        if (['NO_SHOW', 'ON_HOLD', 'CANCELED', 'EXPIRED'].includes(ticket.status)) {
+          if (ticket.status === 'NO_SHOW') skipped.add(id);
+          repairedRoundIds.add(round.id);
+        } else {
+          assigned.push(id);
+        }
+      }
+      if (assigned.length !== (round.ticketIds ?? []).length || skipped.size !== (round.skippedTicketIds ?? []).length) repairedRoundIds.add(round.id);
+      round.ticketIds = assigned;
+      round.skippedTicketIds = [...skipped];
+    }
+    for (const ticket of this.state.tickets.filter((item) => item.status === 'NO_SHOW' && item.roundId)) {
+      const round = this.round(ticket.roundId);
+      if (!round) continue;
+      if (round.ticketIds.includes(ticket.id)) {
+        round.ticketIds = round.ticketIds.filter((id) => id !== ticket.id);
+        repairedRoundIds.add(round.id);
+      }
+      if (!round.skippedTicketIds.includes(ticket.id)) {
+        round.skippedTicketIds.push(ticket.id);
+        repairedRoundIds.add(round.id);
+      }
+    }
+    for (const round of this.state.rounds) {
+      if (round.status === 'CALLED' && !round.ticketIds.length) {
+        round.status = 'SKIPPED';
+        round.skippedAt ??= this.now();
+        repairedRoundIds.add(round.id);
+      }
+    }
+    return repairedRoundIds.size ? {repairedRoundIds: [...repairedRoundIds]} : null;
   }
 
   normalizeActiveRounds() {
@@ -277,6 +322,7 @@ export class TicketQueue {
       ...round,
       assignedPeople: round.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.partySize ?? 0), 0),
       checkedInPeople: round.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.status === 'CHECKED_IN' ? this.ticket(id).partySize : 0), 0),
+      skippedPeople: (round.skippedTicketIds ?? []).reduce((sum, id) => sum + (this.ticket(id)?.partySize ?? 0), 0),
       tickets: round.ticketIds.map(ticketSummary).filter(Boolean),
       skippedTickets: (round.skippedTicketIds ?? []).map(ticketSummary).filter(Boolean),
     }));
@@ -311,8 +357,8 @@ export class TicketQueue {
     const round = this.round(ticket.roundId);
     if (!round || round.status !== 'CALLED' || !round.ticketIds.includes(ticket.id)) throw Error('呼出中の枠にいるグループを選んでください');
     round.ticketIds = round.ticketIds.filter((id) => id !== ticket.id);
-    round.skippedTicketIds ??= [];
-    if (!round.skippedTicketIds.includes(ticket.id)) round.skippedTicketIds.push(ticket.id);
+    round.skippedTicketIds = (round.skippedTicketIds ?? []).filter((id) => id !== ticket.id);
+    if (status === 'NO_SHOW') round.skippedTicketIds.push(ticket.id);
     const before = ticket.status;
     ticket.status = status;
     ticket.updatedAt = this.now();
@@ -331,8 +377,9 @@ export class TicketQueue {
       roundId: round.id,
       details: {ticketNumber: ticket.ticketNumber, partySize: ticket.partySize, before, after: status, filledTicketIds: filled.map((item) => item.ticketId)},
     });
-    if (becameEmpty && this.state.rounds.some((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status))) this.callNext(operator);
-    return {round, ticket, filled};
+    let nextCalledRound = null;
+    if (becameEmpty && this.state.rounds.some((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status))) nextCalledRound = this.callNext(operator);
+    return {round, ticket, filled, nextCalledRound};
   }
 
   skipCalledGroup(ticketId, operator, reason) {
@@ -459,8 +506,17 @@ export class TicketQueue {
         const round = this.round(roundId); if (!round || round.status !== 'CALLED') throw Error('呼出中の回を選んでください');
         this.persist('round_recalled', {operator, roundId}); break;
       }
-      case 'skip_group': this.skipCalledGroup(ticketId, operator, reason); break;
-      case 'recall_group': this.recallSkippedGroup(ticketId, operator, reason); break;
+      case 'skip_group': {
+        const result = this.skipCalledGroup(ticketId, operator, reason);
+        const fillText = result.filled.length ? ` 空席に${result.filled.map((item) => this.ticket(item.ticketId)?.ticketNumber).filter(Boolean).join('・')}を自動充当しました。` : '';
+        const nextText = result.nextCalledRound ? ` 第${result.nextCalledRound.number}枠を自動で呼び出しました。` : '';
+        return {notice: `${result.ticket.ticketNumber}をスキップ済みにしました。${fillText}${nextText}`.replace(/\s+/g, ' ').trim()};
+      }
+      case 'recall_group': {
+        const result = this.recallSkippedGroup(ticketId, operator, reason);
+        const displacedText = result.displaced.length ? ` ${result.displaced.map((item) => item.ticketNumber).join('・')}は待機列へ戻しました。` : '';
+        return {notice: `${result.ticket.ticketNumber}のスキップを取り消し、第${result.round.number}枠で呼び戻しました。${displacedText}`.replace(/\s+/g, ' ').trim()};
+      }
       case 'recall_skipped':
       case 'recall_past': this.recallPastRound(roundId, operator, reason); break;
       case 'hold': {

@@ -1,6 +1,6 @@
 const token = location.hash.slice(1);
 const $ = (id) => document.getElementById(id);
-const states = {WAITING:'受付済み',ASSIGNED:'予定回に割当済み',CALLED:'呼び出し中',CHECKED_IN:'入場確認済み',PLAYING:'体験中',COMPLETED:'体験終了',ON_HOLD:'保留中',NO_SHOW:'来場なし',CANCELED:'キャンセル済み',EXPIRED:'期限切れ'};
+const states = {WAITING:'受付済み',ASSIGNED:'予定回に割当済み',CALLED:'呼び出し中',CHECKED_IN:'入場確認済み',PLAYING:'体験中',COMPLETED:'体験終了',ON_HOLD:'保留中',NO_SHOW:'呼出終了（スキップ済み）',CANCELED:'キャンセル済み',EXPIRED:'期限切れ'};
 let socket;
 let pollTimer;
 let heartbeat;
