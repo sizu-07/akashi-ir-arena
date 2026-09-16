@@ -155,6 +155,15 @@ test('呼出中の登録グループだけをスキップし、空席を後続�
   );
   assert.deepEqual(queue.operatorView().rounds.find((round) => round.id === first.id).skippedTickets.map((ticket) => ticket.ticketNumber), [firstGroup.ticketNumber]);
   assert.equal(queue.operatorView().rounds.find((round) => round.id === first.id).assignedPeople, 4);
+
+  queue.operatorAction({action: 'recall_group', ticketId: firstGroupId, reason: '来場を確認', operator: 'operator'});
+  assert.equal(queue.ticket(firstGroupId).status, 'CALLED');
+  assert.deepEqual(
+    queue.round(first.id).ticketIds.map((id) => queue.ticket(id).ticketNumber),
+    [secondGroup.ticketNumber, firstGroup.ticketNumber],
+  );
+  assert.equal(queue.state.tickets.find((ticket) => ticket.ticketNumber === replacementGroup.ticketNumber).status, 'ASSIGNED');
+  assert.ok(queue.state.rounds.every((round) => !(round.skippedTicketIds ?? []).includes(firstGroupId)));
 });
 
 test('誤って終了した過去枠を再呼出ししてゲームを再実施できる', () => {
@@ -276,7 +285,8 @@ test('HTTP同時登録、運営認証、操作冪等性、閲覧分離', async (
     assert.equal((await fetch(`${base}/api/public/ticket/not-a-token`)).status, 404);
     const operatorPageBeforeLogin = await (await fetch(`${base}/operator`)).text();
     assert.match(operatorPageBeforeLogin, /id="calledGroups"/);
-    assert.match(operatorPageBeforeLogin, /id="recallPast"/);
+    assert.match(operatorPageBeforeLogin, /id="skippedGroups"/);
+    assert.match(operatorPageBeforeLogin, /id="ticketDialogClose" type="button"/);
     assert.match(operatorPageBeforeLogin, /id="ticketDialogMessage"/);
 
     const loginResponse = await fetch(`${base}/api/operator/login`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password})});

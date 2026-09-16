@@ -25,9 +25,8 @@
             <div><strong id="calledRoundControlTitle">呼出中のグループを操作</strong><p id="calledRoundControlHint" class="hint"></p><div id="calledGroups" class="called-groups"></div></div>
             <div class="actions"><button id="recallCurrent">全グループをもう一度呼び出す</button></div>
           </div>
-          <div id="pastRoundControls" class="round-controls past-round-controls" hidden>
-            <label>過去枠（スキップ済み・終了済み）<select id="pastRound"></select></label>
-            <div><button id="recallPast" class="warning">選択した過去枠を呼び出す</button><p id="recallPastHint" class="hint">別の枠を呼出中の場合は、その枠をスキップして選択した枠へ切り替えます。</p></div>
+          <div id="skippedGroupControls" class="round-controls past-round-controls" hidden>
+            <div><strong>スキップ済みグループ</strong><p class="hint">枠全体ではなく、戻したい登録グループを選びます。現在の呼出枠が満席の場合は、後から補完された未入場グループを待機列へ戻して復元します。</p><div id="skippedGroups" class="called-groups"></div></div>
           </div>
         </section>
         <section class="card">
@@ -87,7 +86,7 @@
       </div>
       <p id="message" class="error" role="alert"></p>
     </main>
-    <dialog id="ticketDialog"><form method="dialog" class="form-grid"><h2 id="dialogTitle">整理券操作</h2><p id="dialogStatus" class="dialog-status"></p><label>操作<select id="ticketAction"></select></label><label id="ticketRoundField" hidden>変更先の予定回<select id="ticketRound"></select></label><label><span id="ticketReasonLabel">理由</span><textarea id="ticketReason" maxlength="300" rows="3"></textarea></label><p id="ticketDialogMessage" class="error" role="alert"></p><div class="actions"><button value="cancel">閉じる</button><button id="applyTicketAction" value="default" class="primary">実行</button></div></form></dialog>
+    <dialog id="ticketDialog"><form method="dialog" class="form-grid"><h2 id="dialogTitle">整理券操作</h2><p id="dialogStatus" class="dialog-status"></p><label>操作<select id="ticketAction"></select></label><label id="ticketRoundField" hidden>変更先の予定回<select id="ticketRound"></select></label><label><span id="ticketReasonLabel">理由</span><textarea id="ticketReason" maxlength="300" rows="3"></textarea></label><p id="ticketDialogMessage" class="error" role="alert"></p><div class="actions"><button id="ticketDialogClose" type="button">閉じる</button><button id="applyTicketAction" value="default" class="primary">実行</button></div></form></dialog>
     <script src="/operator.js" type="module"></script>
   </body>
 </html>
