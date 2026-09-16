@@ -4,6 +4,7 @@ services:
     runtime: docker
     plan: free
     region: singapore
+    repo: https://github.com/sizu-07/akashi-ir-arena
     branch: codex/ticket-system-v0.2
     dockerfilePath: ./Dockerfile.ticket
     healthCheckPath: /health
