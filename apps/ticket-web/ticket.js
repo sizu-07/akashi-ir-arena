@@ -12,12 +12,11 @@ function render(ticket) {
   $('ticketNumber').textContent = ticket.ticketNumber;
   $('status').textContent = states[ticket.status] || ticket.status;
   $('status').className = `status ${ticket.status}`;
-  $('identity').textContent = `${ticket.nickname} / ${ticket.partySize}名`;
+  $('identity').textContent = `${(ticket.playerNicknames || [ticket.nickname]).join('・')} / ${ticket.partySize}名`;
   $('called').hidden = ticket.status !== 'CALLED';
-  $('round').textContent = ticket.roundNumber ? `第${ticket.roundNumber}回` : '未定';
   $('groups').textContent = `${ticket.groupsAhead}組・${ticket.peopleAhead}人`;
   $('wait').textContent = ticket.waitMinutes === null ? '計算中' : `約${ticket.waitMinutes}分`;
-  $('estimate').textContent = ticket.estimatedCallAt ? `${new Date(ticket.estimatedCallAt).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}ごろ呼び出し予定` : '呼び出し時刻を計算しています';
+  $('estimate').textContent = ticket.estimatedCallAt ? `${new Date(ticket.estimatedCallAt).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}ごろ` : '計算中';
   $('messages').hidden = !ticket.globalMessage && !ticket.personalMessage;
   $('globalMessage').textContent = ticket.globalMessage;
   $('personalMessage').textContent = ticket.personalMessage ? `あなたへの連絡：${ticket.personalMessage}` : '';

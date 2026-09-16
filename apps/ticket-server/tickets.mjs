@@ -9,6 +9,19 @@ const mutableStates = new Set(['WAITING', 'ASSIGNED']);
 const terminalStates = new Set(['COMPLETED', 'NO_SHOW', 'CANCELED', 'EXPIRED']);
 const token = () => randomBytes(24).toString('base64url');
 const clone = (value) => structuredClone(value);
+const SLOT_MINUTES = 15;
+const legacyPlayerNames = (nickname, partySize) => Array.from({length: partySize}, (_, index) => partySize === 1 ? nickname : `${nickname}${index + 1}`);
+const bestFillIndexes = (tickets, capacity) => {
+  const combinations = Array.from({length: capacity + 1}, () => null);
+  combinations[0] = [];
+  for (const [index, ticket] of tickets.entries()) {
+    for (let people = capacity - ticket.partySize; people >= 0; people -= 1) {
+      if (combinations[people] && !combinations[people + ticket.partySize]) combinations[people + ticket.partySize] = [...combinations[people], index];
+    }
+  }
+  for (let people = capacity; people >= 0; people -= 1) if (combinations[people]) return combinations[people];
+  return [];
+};
 
 export class TicketQueue {
   constructor({saved = null, save = () => {}, log = () => {}, now = Date.now} = {}) {
@@ -16,24 +29,31 @@ export class TicketQueue {
     this.log = log;
     this.now = now;
     this.state = saved ?? {
-      version: 1,
+      version: 2,
       nextReceptionNumber: 1,
       nextTicketNumber: 1,
       nextRoundNumber: 1,
       registrationOpen: true,
       globalMessage: '',
       settings: {
-        cycleMinutes: 8,
+        cycleMinutes: SLOT_MINUTES,
         globalDelayMinutes: 0,
         graceMinutes: 3,
         maxWaitingGroups: 100,
-        autoCall: false,
+        autoCall: true,
       },
       tickets: [],
       rounds: [],
       processedGameEvents: [],
       updatedAt: now(),
     };
+    this.state.settings = {...this.state.settings, cycleMinutes: SLOT_MINUTES, autoCall: true};
+    this.state.version = 2;
+    for (const ticket of this.state.tickets) {
+      if (!Array.isArray(ticket.playerNicknames) || ticket.playerNicknames.length !== ticket.partySize) {
+        ticket.playerNicknames = legacyPlayerNames(ticket.nickname, ticket.partySize);
+      }
+    }
     this.recalculate(false);
   }
 
@@ -45,15 +65,19 @@ export class TicketQueue {
     return event;
   }
 
-  register({nickname, partySize, consent, requestId}) {
+  register({nickname, nicknames, partySize, consent, requestId}) {
     if (typeof requestId !== 'string' || requestId.length < 8 || requestId.length > 100) throw Error('登録要求IDが必要です');
     const existing = this.state.tickets.find((item) => item.registrationRequestId === requestId);
     if (existing) { this.save(this.state); return this.publicTicket(existing); }
     if (!this.state.registrationOpen) throw Error('現在、整理券の受付を停止しています');
-    const name = String(nickname ?? '').trim();
     const size = Number(partySize);
-    if (!name || name.length > 30) throw Error('呼び出し名は1〜30文字で入力してください');
     if (!Number.isInteger(size) || size < 1 || size > 4) throw Error('人数は1〜4人で入力してください');
+    const legacyName = String(nickname ?? '').trim();
+    const playerNames = Array.isArray(nicknames)
+      ? nicknames.map((name) => String(name ?? '').trim())
+      : legacyPlayerNames(legacyName, size);
+    if (playerNames.length !== size) throw Error('参加人数とニックネームの数が一致しません');
+    if (playerNames.some((name) => !name || name.length > 20)) throw Error('ニックネームは1人ずつ1〜20文字で入力してください');
     if (consent !== true) throw Error('注意事項への同意が必要です');
     const waiting = this.state.tickets.filter((item) => !terminalStates.has(item.status) && item.status !== 'PLAYING').length;
     if (waiting >= this.state.settings.maxWaitingGroups) throw Error('受付上限に達しました');
@@ -63,7 +87,8 @@ export class TicketQueue {
       registrationRequestId: requestId,
       ticketNumber: `A${String(this.state.nextTicketNumber++).padStart(3, '0')}`,
       receptionNumber: this.state.nextReceptionNumber++,
-      nickname: name,
+      nickname: legacyName || playerNames.join('・'),
+      playerNicknames: playerNames,
       partySize: size,
       status: 'WAITING',
       accessToken: token(),
@@ -98,18 +123,11 @@ export class TicketQueue {
     const remaining = [...candidates];
     let roundIndex = 0;
     while (remaining.length) {
-      const assigned = [];
-      let seats = 4;
-      for (let index = 0; index < remaining.length && seats > 0;) {
-        const ticket = remaining[index];
-        if (ticket.partySize <= seats) {
-          assigned.push(ticket);
-          seats -= ticket.partySize;
-          remaining.splice(index, 1);
-        } else {
-          index += 1;
-        }
-      }
+      const assigned = [remaining.shift()];
+      const seats = 4 - assigned[0].partySize;
+      const fillIndexes = bestFillIndexes(remaining, seats);
+      assigned.push(...fillIndexes.map((index) => remaining[index]));
+      for (const index of [...fillIndexes].reverse()) remaining.splice(index, 1);
       const round = reusableRounds[roundIndex++] ?? {
         id: randomUUID(), number: this.state.nextRoundNumber++, status: 'SCHEDULED',
         ticketIds: [], scheduledAt: null, calledAt: null, startedAt: null, completedAt: null, delayMinutes: 0,
@@ -158,6 +176,7 @@ export class TicketQueue {
     return {
       ticketNumber: ticket.ticketNumber,
       nickname: ticket.nickname,
+      playerNicknames: clone(ticket.playerNicknames),
       partySize: ticket.partySize,
       status: ticket.status,
       roundNumber: round?.number ?? null,
@@ -181,7 +200,7 @@ export class TicketQueue {
       checkedInPeople: round.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.status === 'CHECKED_IN' ? this.ticket(id).partySize : 0), 0),
       tickets: round.ticketIds.map((id) => {
         const ticket = this.ticket(id);
-        return ticket && {id: ticket.id, ticketNumber: ticket.ticketNumber, nickname: ticket.nickname, partySize: ticket.partySize, status: ticket.status};
+        return ticket && {id: ticket.id, ticketNumber: ticket.ticketNumber, nickname: ticket.nickname, playerNicknames: clone(ticket.playerNicknames), partySize: ticket.partySize, status: ticket.status};
       }).filter(Boolean),
     }));
     return {registrationOpen: this.state.registrationOpen, globalMessage: this.state.globalMessage, settings: clone(this.state.settings), tickets, rounds, gameLastSeenAt: this.state.gameLastSeenAt ?? null, updatedAt: this.state.updatedAt};
@@ -217,7 +236,7 @@ export class TicketQueue {
   }
 
   scanTicket(ticket) {
-    return {ticketNumber: ticket.ticketNumber, nickname: ticket.nickname, partySize: ticket.partySize, status: ticket.status};
+    return {ticketNumber: ticket.ticketNumber, nickname: ticket.nickname, playerNicknames: clone(ticket.playerNicknames), partySize: ticket.partySize, status: ticket.status};
   }
 
   roundSummary(roundId) {
@@ -300,11 +319,11 @@ export class TicketQueue {
       if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) throw Error(`${name} の値が範囲外です`);
       return parsed;
     };
-    this.state.settings.cycleMinutes = number('cycleMinutes', 1, 120);
+    this.state.settings.cycleMinutes = SLOT_MINUTES;
     this.state.settings.globalDelayMinutes = number('globalDelayMinutes', 0, 600);
     this.state.settings.graceMinutes = number('graceMinutes', 1, 60);
     this.state.settings.maxWaitingGroups = number('maxWaitingGroups', 1, 1000);
-    this.state.settings.autoCall = Boolean(input.autoCall);
+    this.state.settings.autoCall = true;
     this.scheduleRounds();
     this.persist('settings_changed', {operator, details: clone(this.state.settings)});
   }
@@ -314,6 +333,9 @@ export class TicketQueue {
     if (this.state.processedGameEvents.includes(event.eventId)) return {duplicate: true};
     let round = event.targetRoundId && this.round(event.targetRoundId);
     if (!round) round = this.state.rounds.find((item) => ['CALLED', 'PLAYING'].includes(item.status));
+    if (!round && event.type === 'GAME_STARTED') {
+      round = this.state.rounds.filter((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status)).sort((a, b) => a.number - b.number)[0];
+    }
     if (!round) throw Error('対象回が見つかりません');
     const map = {GAME_STARTED: 'PLAYING', GAME_RESUMED: 'PLAYING', GAME_ENDED: 'COMPLETED'};
     if (event.type === 'GAME_PAUSED') {
@@ -337,7 +359,7 @@ export class TicketQueue {
     if (this.state.processedGameEvents.length > 5000) this.state.processedGameEvents.shift();
     this.scheduleRounds();
     this.persist('game_event', {operator: event.source || 'game-server', roundId: round.id, details: event});
-    if (event.type === 'GAME_ENDED' && this.state.settings.autoCall) this.callNext('automatic');
+    if (event.type === 'GAME_ENDED' && this.state.settings.autoCall && this.state.rounds.some((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status))) this.callNext('automatic');
     return {duplicate: false, roundId: round.id};
   }
 }

@@ -10,7 +10,7 @@
     <header><div><small>AKASHI IR ARENA</small><h1>整理券受付</h1></div><span class="badge">1回 4名</span></header>
     <main class="narrow">
       <section class="card">
-        <h2>人数と呼び出し名を登録</h2>
+        <h2>参加する人を登録</h2>
         <p class="notice">受付は先着順ですが、4人の定員を埋めるため、人数の少ない組が先に案内される場合があります。飛ばされた組は次の回で優先されます。</p>
         <form id="registerForm" class="form-grid">
           <label>人数
@@ -18,9 +18,7 @@
               <option value="1">1人</option><option value="2">2人</option><option value="3">3人</option><option value="4">4人</option>
             </select>
           </label>
-          <label>呼び出し名・ニックネーム
-            <input name="nickname" required maxlength="30" autocomplete="nickname" placeholder="例：あかしチーム">
-          </label>
+          <fieldset class="nickname-fieldset"><legend>参加者のニックネーム</legend><p class="hint">人数分入力してください。ゲーム画面にもこの名前が表示されます。</p><div id="nicknameFields" class="form-grid"></div></fieldset>
           <label class="check"><input name="consent" type="checkbox" required><span>画面に表示される案内を確認し、呼び出し時に入口へ向かうことに同意します。本名や連絡先は入力しません。</span></label>
           <button class="primary">整理券を取得する</button>
         </form>

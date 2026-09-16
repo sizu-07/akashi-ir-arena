@@ -23,6 +23,41 @@ test('4席へ後続組を充当し、飛ばされた組を次回で優先する'
   assert.equal(new Set(queue.state.tickets.map((ticket) => ticket.receptionNumber)).size, 4);
 });
 
+test('単純な先入れでは空席になる場合も4席になる組合せを選ぶ', () => {
+  const queue = new TicketQueue();
+  register(queue, '先頭1名', 1);
+  register(queue, '次の1名', 1);
+  register(queue, '後続3名', 3);
+  const [first, second] = queue.operatorView().rounds;
+  assert.equal(first.assignedPeople, 4);
+  assert.deepEqual(first.tickets.map((ticket) => ticket.nickname), ['先頭1名', '後続3名']);
+  assert.deepEqual(second.tickets.map((ticket) => ticket.nickname), ['次の1名']);
+});
+
+test('1枠15分で参加者ごとのニックネームを保存する', () => {
+  let now = 1_800_000_000_000;
+  const queue = new TicketQueue({now: () => now});
+  const ticket = queue.register({requestId: 'named-party-request', nicknames: ['あかし', 'ひかり', 'せん'], partySize: 3, consent: true});
+  assert.deepEqual(ticket.playerNicknames, ['あかし', 'ひかり', 'せん']);
+  assert.equal(queue.state.settings.cycleMinutes, 15);
+  assert.equal(queue.state.settings.autoCall, true);
+  assert.equal(queue.operatorView().rounds[0].scheduledAt, now + 15 * 60_000);
+  assert.throws(() => queue.register({requestId: 'missing-name-request', nicknames: ['1人だけ'], partySize: 2, consent: true}), /一致/);
+});
+
+test('ゲーム開始で先頭枠が進行し、終了すると次枠を自動呼出する', () => {
+  const queue = new TicketQueue();
+  queue.register({requestId: 'first-four-players', nicknames: ['A1', 'A2', 'A3', 'A4'], partySize: 4, consent: true});
+  queue.register({requestId: 'next-four-players', nicknames: ['B1', 'B2', 'B3', 'B4'], partySize: 4, consent: true});
+  const [first, second] = queue.operatorView().rounds;
+  queue.applyGameEvent({eventId: 'automatic-start', type: 'GAME_STARTED', occurredAt: Date.now(), source: 'game'});
+  assert.equal(queue.round(first.id).status, 'PLAYING');
+  queue.applyGameEvent({eventId: 'automatic-end', type: 'GAME_ENDED', targetRoundId: first.id, occurredAt: Date.now(), source: 'game'});
+  assert.equal(queue.round(first.id).status, 'COMPLETED');
+  assert.equal(queue.round(second.id).status, 'CALLED');
+  assert.ok(queue.round(second.id).ticketIds.every((id) => queue.ticket(id).status === 'CALLED'));
+});
+
 test('呼出済みの回を固定し、QR入場とゲームイベントを1回だけ処理する', () => {
   const queue = new TicketQueue();
   register(queue, 'A', 3); register(queue, 'B', 1); register(queue, 'C', 4);
@@ -84,8 +119,22 @@ test('HTTP同時登録、運営認証、操作冪等性、閲覧分離', async (
     assert.equal((await action()).status, 200);
     assert.equal(app.queue.state.registrationOpen, false);
 
+    const callResponse = await fetch(`${base}/api/operator/action`, {method: 'POST', headers: {'Content-Type': 'application/json', Cookie: cookie, 'X-CSRF-Token': login.csrf}, body: JSON.stringify({action: 'call_next', commandId: 'call-next-for-game'})});
+    assert.equal(callResponse.status, 200);
+    const currentRoundResponse = await fetch(`${base}/api/game/current-round`, {headers: {Authorization: `Bearer ${apiKey}`}});
+    assert.equal(currentRoundResponse.status, 200);
+    assert.equal((await currentRoundResponse.json()).playerNicknames.length, 4);
+
     const gameEvent = {eventId: 'missing-round', type: 'GAME_STARTED', occurredAt: Date.now(), source: 'test'};
     assert.equal((await fetch(`${base}/api/game/events`, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer wrong'}, body: JSON.stringify(gameEvent)})).status, 401);
+
+    const operatorPage = await (await fetch(`${base}/operator`)).text();
+    assert.ok(operatorPage.indexOf('queueTimeline') < operatorPage.indexOf('id="tickets"'));
+    assert.ok(operatorPage.indexOf('id="tickets"') < operatorPage.indexOf('registrationStatus'));
+    assert.ok(operatorPage.indexOf('registrationStatus') < operatorPage.indexOf('settingsForm'));
+    assert.doesNotMatch(operatorPage, /name="cycleMinutes"/);
+    assert.match(await (await fetch(`${base}/register`)).text(), /nicknameFields/);
+    assert.doesNotMatch(await (await fetch(`${base}/ticket`)).text(), /id="round"/);
   } finally {
     await app.close();
     rmSync(dir, {recursive: true, force: true});
@@ -114,6 +163,36 @@ test('ゲームイベントは同じIDのまま外部サーバーへ再送する
     assert.equal(received[0].retryNumber, 1);
     assert.equal(received[1].retryNumber, 2);
   } finally {
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('整理券の参加者名と対象枠をゲーム側へ連携する', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-player-name-test-'));
+  const received = [];
+  const server = (await import('node:http')).createServer(async (request, response) => {
+    if (request.method === 'GET') {
+      response.writeHead(200, {'Content-Type': 'application/json'});
+      response.end(JSON.stringify({roundId: 'round-1', playerNicknames: ['春', '夏', '秋', '冬']}));
+      return;
+    }
+    let text = '';
+    for await (const chunk of request) text += chunk;
+    received.push(JSON.parse(text));
+    response.writeHead(200, {'Content-Type': 'application/json'});
+    response.end('{"ok":true}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const bridge = createTicketBridge({url: `http://127.0.0.1:${server.address().port}`, apiKey: 'test-key', dataDir: dir});
+  try {
+    assert.deepEqual(await bridge.loadPlayerNicknames(), ['春', '夏', '秋', '冬']);
+    bridge.observe({id: 'game-1', phase: 'LOBBY'});
+    bridge.observe({id: 'game-1', phase: 'ACTIVE'});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(received[0].targetRoundId, 'round-1');
+  } finally {
+    await bridge.close();
     await new Promise((resolve) => server.close(resolve));
     rmSync(dir, {recursive: true, force: true});
   }

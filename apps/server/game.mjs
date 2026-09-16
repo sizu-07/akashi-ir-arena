@@ -10,7 +10,7 @@ export function rulesOf(input={}) {
 }
 export class Game {
   constructor(devices,{now=Date.now,log=()=>{},saved=null}={}) {
-    this.now=now; this.log=log; this.pending=[]; this.shots=[]; this.seen=new Map(); this.events=saved?.eventNo??0;
+    this.now=now; this.log=log; this.pending=[]; this.shots=[]; this.seen=new Map(); this.events=saved?.eventNo??0;this.defaultPlayerNames=devices.map(device=>device.name);
     this.s={id:randomUUID(),generation:1,phase:'LOBBY',rules:{...defaults},remainingMs:300000,score:{A:0,B:0},media:'score',winner:null,
       players:devices.map(d=>({id:d.id,name:d.name,team:d.team,shooterId:d.shooterId,hp:100,ammo:30,connected:false,armed:false,lastSeen:0,bootId:null,ack:null,lastShot:-1e15,invUntil:0,reloadUntil:0,rssi:null,battery:null,syncRtt:null}))};
     if(saved?.players?.length===4) {
@@ -23,6 +23,7 @@ export class Game {
   record(type,payload){this.s.eventNo=++this.events;this.log({n:this.events,at:this.now(),gameId:this.s.id,type,...payload});}
   player(id){const p=this.s.players.find(p=>p.id===id);if(!p)throw Error('未登録端末');return p;}
   view(){return structuredClone({...this.s,serverMs:this.now()});}
+  setPlayerNames(names=[]){for(const [index,player] of this.s.players.entries()){const name=String(names[index]??'').trim();player.name=name&&name.length<=20?name:this.defaultPlayerNames[index];}this.record('player_names_updated',{names:this.s.players.map(player=>player.name)});}
   reset(rules){if(!['LOBBY','FINISHED'].includes(this.s.phase))throw Error('終了してから新試合を作成してください');
     const r=rulesOf(rules);this.s.id=randomUUID();this.s.generation++;this.s.phase='LOBBY';this.s.rules=r;this.s.remainingMs=r.durationSec*1000;this.s.score={A:0,B:0};this.s.winner=null;this.s.media='score';
     for(const p of this.s.players)Object.assign(p,{hp:r.hp,ammo:r.magazine,armed:false,ack:null,lastShot:-1e15,reloadUntil:0,reloadRemaining:0,deadAt:0,invUntil:0});

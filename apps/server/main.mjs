@@ -85,7 +85,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
         if(typeof b.commandId!=='string'||b.commandId.length>80)throw Error('commandIdが必要です');const key=s.id+'/'+b.commandId;if(commands.has(key))return reply(res,200,commands.get(key));
         switch(b.action){
           case 'new':game.reset(b.rules);break;
-          case 'start':game.start(displayReady&&Date.now()-displaySeen<3000);break;
+          case 'start':game.setPlayerNames(await ticketBridge.loadPlayerNicknames());game.start(displayReady&&Date.now()-displaySeen<3000);break;
           case 'pause':game.pause();break;
           case 'finish':game.finish();break;
           case 'hp':game.correct(b.id,Number(b.hp),b.reason);break;

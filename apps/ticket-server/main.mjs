@@ -202,7 +202,8 @@ export async function createTicketApp({
       if (url.pathname === '/api/game/current-round' && req.method === 'GET') {
         if (!same(req.headers.authorization, `Bearer ${gameApiKey}`)) return json(res, 401, {error: 'APIキーが無効です'});
         const round = queue.state.rounds.find((item) => ['CALLED', 'PLAYING'].includes(item.status));
-        return json(res, round ? 200 : 404, round ? {roundId: round.id, number: round.number, status: round.status} : {error: '対象回がありません'});
+        const playerNicknames = round?.ticketIds.flatMap((id) => queue.ticket(id)?.playerNicknames ?? []);
+        return json(res, round ? 200 : 404, round ? {roundId: round.id, number: round.number, status: round.status, playerNicknames} : {error: '対象回がありません'});
       }
 
       if (url.pathname.startsWith('/scan/')) { res.writeHead(302, {Location: `/scanner#${url.pathname.slice(6)}`}); return res.end(); }
