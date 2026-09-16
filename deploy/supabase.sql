@@ -18,3 +18,6 @@ alter table public.ticket_events enable row level security;
 
 revoke all on public.ticket_state from anon, authenticated;
 revoke all on public.ticket_events from anon, authenticated;
+
+grant select, insert, update, delete on public.ticket_state to service_role;
+grant select, insert, update, delete on public.ticket_events to service_role;
