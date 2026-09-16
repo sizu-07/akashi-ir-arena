@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, rmSync} from 'node:fs';
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {TicketQueue} from '../apps/ticket-server/tickets.mjs';
@@ -8,6 +8,7 @@ import {createTicketApp} from '../apps/ticket-server/main.mjs';
 import {createTicketBridge} from '../apps/server/ticket-bridge.mjs';
 import {supabaseTicketStorage} from '../apps/ticket-server/store.mjs';
 import {createApp as createGameApp} from '../apps/server/main.mjs';
+import {linkTicketConfig} from '../tools/link-ticket-config.mjs';
 
 let requestNumber = 0;
 const register = (queue, nickname, partySize) => queue.register({requestId: `test-request-${++requestNumber}`, nickname, partySize, consent: true});
@@ -50,12 +51,51 @@ test('ゲーム開始で先頭枠が進行し、終了すると次枠を自動�
   queue.register({requestId: 'first-four-players', nicknames: ['A1', 'A2', 'A3', 'A4'], partySize: 4, consent: true});
   queue.register({requestId: 'next-four-players', nicknames: ['B1', 'B2', 'B3', 'B4'], partySize: 4, consent: true});
   const [first, second] = queue.operatorView().rounds;
+  queue.callNext('operator');
+  assert.throws(() => queue.applyGameEvent({eventId: 'too-early-start', type: 'GAME_STARTED', occurredAt: Date.now(), source: 'game'}), /未入場/);
+  for (const id of queue.round(first.id).ticketIds) queue.checkIn(queue.ticket(id).qrToken, 'operator');
   queue.applyGameEvent({eventId: 'automatic-start', type: 'GAME_STARTED', occurredAt: Date.now(), source: 'game'});
   assert.equal(queue.round(first.id).status, 'PLAYING');
+  queue.applyGameEvent({eventId: 'automatic-pause', type: 'GAME_PAUSED', targetRoundId: first.id, occurredAt: Date.now(), source: 'game'});
+  assert.equal(queue.round(first.id).status, 'PLAYING');
+  assert.ok(queue.round(first.id).ticketIds.every((id) => queue.ticket(id).status === 'PLAYING'));
+  queue.applyGameEvent({eventId: 'automatic-resume', type: 'GAME_RESUMED', targetRoundId: first.id, occurredAt: Date.now(), source: 'game'});
   queue.applyGameEvent({eventId: 'automatic-end', type: 'GAME_ENDED', targetRoundId: first.id, occurredAt: Date.now(), source: 'game'});
   assert.equal(queue.round(first.id).status, 'COMPLETED');
   assert.equal(queue.round(second.id).status, 'CALLED');
   assert.ok(queue.round(second.id).ticketIds.every((id) => queue.ticket(id).status === 'CALLED'));
+});
+
+test('進行中の枠を重ねて呼び出さず、既存の重複状態も安全に修復する', () => {
+  const queue = new TicketQueue();
+  register(queue, '先頭', 4); register(queue, '次', 4);
+  const [first, second] = queue.operatorView().rounds;
+  queue.callNext('operator');
+  assert.throws(() => queue.callNext('operator'), /呼出中/);
+  queue.round(second.id).status = 'CALLED';
+  for (const id of queue.round(second.id).ticketIds) queue.ticket(id).status = 'CHECKED_IN';
+  const logs = [];
+  const recovered = new TicketQueue({saved: structuredClone(queue.state), log: (event) => logs.push(event)});
+  const active = recovered.state.rounds.filter((round) => ['CALLED', 'PLAYING'].includes(round.status));
+  assert.equal(active.length, 1);
+  assert.ok(active[0].ticketIds.some((id) => recovered.ticket(id).status === 'CHECKED_IN'));
+  assert.equal(active[0].number, 1);
+  assert.ok(logs.some((event) => event.type === 'state_repaired'));
+});
+
+test('ローカル整理券設定をゲーム設定へ秘密値を表示せず自動接続する', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-config-link-test-'));
+  const gameFile = path.join(dir, 'game.json');
+  const ticketFile = path.join(dir, 'ticket.json');
+  try {
+    writeFileSync(gameFile, JSON.stringify({httpPort: 8080}));
+    writeFileSync(ticketFile, JSON.stringify({port: 8787, gameApiKey: 'a'.repeat(32)}));
+    const result = linkTicketConfig({gameFile, ticketFile});
+    const linked = JSON.parse(readFileSync(gameFile, 'utf8'));
+    assert.equal(result.linked, true);
+    assert.equal(linked.ticketServerUrl, 'http://127.0.0.1:8787');
+    assert.equal(linked.ticketServerApiKey, 'a'.repeat(32));
+  } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 
 test('呼出済みの回を固定し、QR入場とゲームイベントを1回だけ処理する', () => {
@@ -67,6 +107,7 @@ test('呼出済みの回を固定し、QR入場とゲームイベントを1回�
   const ticket = queue.ticket(called.ticketIds[0]);
   assert.equal(queue.checkIn(ticket.qrToken, 'operator').code, 'OK');
   assert.equal(queue.checkIn(ticket.qrToken, 'operator').code, 'ALREADY_USED');
+  for (const id of called.ticketIds.slice(1)) assert.equal(queue.checkIn(queue.ticket(id).qrToken, 'operator').code, 'OK');
   const event = {eventId: 'event-1', type: 'GAME_STARTED', targetRoundId: called.id, occurredAt: Date.now(), source: 'test'};
   assert.equal(queue.applyGameEvent(event).duplicate, false);
   assert.equal(queue.applyGameEvent(event).duplicate, true);
@@ -145,6 +186,7 @@ test('ゲームイベントは同じIDのまま外部サーバーへ再送する
   const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-bridge-test-'));
   const received = [];
   const server = (await import('node:http')).createServer(async (request, response) => {
+    if (request.url === '/api/game/heartbeat') { response.writeHead(200); response.end(); return; }
     let text = '';
     for await (const chunk of request) text += chunk;
     received.push(JSON.parse(text));
@@ -172,9 +214,10 @@ test('整理券の参加者名と対象枠をゲーム側へ連携する', async
   const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-player-name-test-'));
   const received = [];
   const server = (await import('node:http')).createServer(async (request, response) => {
+    if (request.url === '/api/game/heartbeat') { response.writeHead(200); response.end(); return; }
     if (request.method === 'GET') {
       response.writeHead(200, {'Content-Type': 'application/json'});
-      response.end(JSON.stringify({roundId: 'round-1', playerNicknames: ['春', '夏', '秋', '冬']}));
+      response.end(JSON.stringify({roundId: 'round-1', playerNicknames: ['春', '夏', '秋', '冬'], assignedPeople: 4, checkedInPeople: 4, ready: true}));
       return;
     }
     let text = '';
@@ -194,6 +237,38 @@ test('整理券の参加者名と対象枠をゲーム側へ連携する', async
   } finally {
     await bridge.close();
     await new Promise((resolve) => server.close(resolve));
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('登録から呼出・入場・ゲーム開始終了・次枠呼出までHTTPで完了する', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-e2e-test-'));
+  const password = 'e2e-operator-password';
+  const apiKey = 'e2e-game-api-key-1234567890';
+  const app = await createTicketApp({dataDir: dir, operatorPassword: password, gameApiKey: apiKey});
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  try {
+    const registerGroup = async (requestId, names) => (await (await fetch(`${base}/api/public/register`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({requestId, nicknames: names, partySize: names.length, consent: true})})).json());
+    const first = await registerGroup('e2e-first-group', ['春', '夏', '秋', '冬']);
+    await registerGroup('e2e-next-group', ['東', '西', '南', '北']);
+    const loginResponse = await fetch(`${base}/api/operator/login`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password})});
+    const login = await loginResponse.json();
+    const operatorHeaders = {'Content-Type': 'application/json', Cookie: loginResponse.headers.get('set-cookie').split(';')[0], 'X-CSRF-Token': login.csrf};
+    const operatorAction = (action, commandId) => fetch(`${base}/api/operator/action`, {method: 'POST', headers: operatorHeaders, body: JSON.stringify({action, commandId})});
+    assert.equal((await operatorAction('call_next', 'e2e-call')).status, 200);
+    const checkIn = await fetch(`${base}/api/operator/check-in`, {method: 'POST', headers: operatorHeaders, body: JSON.stringify({value: `AKASHI:${first.qrToken}`})});
+    assert.equal((await checkIn.json()).code, 'OK');
+    assert.equal((await (await fetch(`${base}/api/public/ticket/${first.accessToken}`)).json()).status, 'CHECKED_IN');
+    const current = await (await fetch(`${base}/api/game/current-round`, {headers: {Authorization: `Bearer ${apiKey}`}})).json();
+    assert.deepEqual(current.playerNicknames, ['春', '夏', '秋', '冬']);
+    const event = (eventId, type, targetRoundId) => fetch(`${base}/api/game/events`, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`}, body: JSON.stringify({eventId, type, targetRoundId, occurredAt: Date.now(), source: 'e2e-game'})});
+    assert.equal((await event('e2e-start', 'GAME_STARTED', current.roundId)).status, 200);
+    assert.equal((await (await fetch(`${base}/api/public/ticket/${first.accessToken}`)).json()).status, 'PLAYING');
+    assert.equal((await event('e2e-end', 'GAME_ENDED', current.roundId)).status, 200);
+    assert.equal((await (await fetch(`${base}/api/public/ticket/${first.accessToken}`)).json()).status, 'COMPLETED');
+    assert.equal(app.queue.state.rounds.find((round) => round.status === 'CALLED')?.number, 2);
+  } finally {
+    await app.close();
     rmSync(dir, {recursive: true, force: true});
   }
 });

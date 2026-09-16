@@ -67,6 +67,10 @@ export async function createTicketApp({
       if (payload) ws.send(JSON.stringify(payload)); else ws.close(1008, '整理券が見つかりません');
     }
   };
+  const broadcastOperators = () => {
+    const payload = {...queue.operatorView(), owner};
+    for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN && ws.role === 'operator') ws.send(JSON.stringify(payload));
+  };
   const staticFiles = new Map([
     ['/register', 'register.html'], ['/ticket', 'ticket.html'], ['/operator', 'operator.html'], ['/scanner', 'scanner.html'],
     ['/ticket.css', 'ticket.css'], ['/register.js', 'register.js'], ['/ticket.js', 'ticket.js'], ['/operator.js', 'operator.js'], ['/scanner.js', 'scanner.js'],
@@ -199,11 +203,18 @@ export async function createTicketApp({
         broadcast();
         return json(res, 200, {ok: true, ...result});
       }
+      if (url.pathname === '/api/game/heartbeat' && req.method === 'POST') {
+        if (!same(req.headers.authorization, `Bearer ${gameApiKey}`)) return json(res, 401, {error: 'APIキーが無効です'});
+        queue.state.gameLastSeenAt = Date.now();
+        broadcastOperators();
+        return json(res, 200, {ok: true});
+      }
       if (url.pathname === '/api/game/current-round' && req.method === 'GET') {
         if (!same(req.headers.authorization, `Bearer ${gameApiKey}`)) return json(res, 401, {error: 'APIキーが無効です'});
         const round = queue.state.rounds.find((item) => ['CALLED', 'PLAYING'].includes(item.status));
         const playerNicknames = round?.ticketIds.flatMap((id) => queue.ticket(id)?.playerNicknames ?? []);
-        return json(res, round ? 200 : 404, round ? {roundId: round.id, number: round.number, status: round.status, playerNicknames} : {error: '対象回がありません'});
+        const summary = round && queue.roundSummary(round.id);
+        return json(res, round ? 200 : 404, round ? {roundId: round.id, number: round.number, status: round.status, playerNicknames, assignedPeople: summary.assignedPeople, checkedInPeople: summary.checkedInPeople, ready: summary.assignedPeople > 0 && summary.checkedInPeople === summary.assignedPeople} : {error: '対象回がありません'});
       }
 
       if (url.pathname.startsWith('/scan/')) { res.writeHead(302, {Location: `/scanner#${url.pathname.slice(6)}`}); return res.end(); }

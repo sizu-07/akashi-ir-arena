@@ -124,6 +124,7 @@ label { display: grid; gap: 6px; font-weight: 650; }
 .seat strong { font-size: 14px; }
 .seat small { color: var(--muted); font-size: 10px; }
 .seat.playing { background: #d7efe4; color: #0e5c40; }
+.seat.checked { background: #d9f4e8; color: #075f3d; box-shadow: inset 0 0 0 2px #48a97d; }
 .seat.called { background: #fff0cf; color: #864900; }
 .seat.assigned { background: #e7edf8; color: #224e85; }
 .seat.empty { border: 1px dashed #c4cec8; background: #fafbf9; color: #88938e; }

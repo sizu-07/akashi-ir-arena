@@ -102,7 +102,8 @@ function renderTimeline() {
   const called = visible.find((round) => round.status === 'CALLED');
   const next = visible.find((round) => scheduledRoundStates.has(round.status));
   if (playing) $('nextAction').textContent = `現在は第${playing.number}枠を体験中です。ゲーム運営画面で終了すると、この枠が完了して次枠を自動で呼び出します。`;
-  else if (called) $('nextAction').textContent = `第${called.number}枠を呼び出し中です。入場QRを確認したら、ゲーム運営画面でゲームを開始してください。`;
+  else if (called?.checkedInPeople === called?.assignedPeople) $('nextAction').textContent = `第${called.number}枠は全員入場済みです。ゲーム運営画面でゲームを開始してください。`;
+  else if (called) $('nextAction').textContent = `第${called.number}枠を呼び出し中です。現在${called.checkedInPeople}/${called.assignedPeople}名が入場済みです。残りのQRを確認してください。`;
   else if (next) $('nextAction').textContent = `次は第${next.number}枠です。「① 次の4名を呼び出す」から入口へ案内してください。`;
   else $('nextAction').textContent = '現在、待機中の来場者はいません。';
 }
@@ -122,21 +123,21 @@ function timelineRound(round, index) {
   heading.append(title, time);
   const seats = document.createElement('div');
   seats.className = 'seat-grid';
-  const assignedNames = round.tickets.flatMap((ticket) => playerNames(ticket).map((name) => ({name, ticketNumber: ticket.ticketNumber})));
+  const assignedNames = round.tickets.flatMap((ticket) => playerNames(ticket).map((name) => ({name, ticketNumber: ticket.ticketNumber, status: ticket.status})));
   for (let seatIndex = 0; seatIndex < 4; seatIndex += 1) {
     const seat = document.createElement('div');
     const player = assignedNames[seatIndex];
-    seat.className = `seat ${player ? (round.status === 'PLAYING' ? 'playing' : round.status === 'CALLED' ? 'called' : 'assigned') : 'empty'}`;
+    seat.className = `seat ${player ? (round.status === 'PLAYING' ? 'playing' : player.status === 'CHECKED_IN' ? 'checked' : round.status === 'CALLED' ? 'called' : 'assigned') : 'empty'}`;
     const strong = document.createElement('strong');
     strong.textContent = player?.name ?? '空席';
     const small = document.createElement('small');
-    small.textContent = player?.ticketNumber ?? '自動充当';
+    small.textContent = player ? `${player.status === 'CHECKED_IN' ? '入場済・' : ''}${player.ticketNumber}` : '自動充当';
     seat.append(strong, small);
     seats.append(seat);
   }
   const footer = document.createElement('p');
   footer.className = 'timeline-footer';
-  footer.textContent = `${labels[round.status] || round.status}・${round.assignedPeople}/4名`;
+  footer.textContent = `${labels[round.status] || round.status}・${round.assignedPeople}/4名${round.status === 'CALLED' ? `・${round.checkedInPeople}名入場済` : ''}`;
   article.append(marker, heading, seats, footer);
   return article;
 }
@@ -230,6 +231,8 @@ function ticketRow(ticket) {
 function disable() {
   const locked = !socket || socket.readyState !== WebSocket.OPEN || state?.owner !== sessionId;
   document.querySelectorAll('#app button').forEach((button) => { button.disabled = locked; });
+  const activeRound = state?.rounds.some((round) => ['CALLED', 'PLAYING'].includes(round.status));
+  $('callNext').disabled = locked || activeRound;
   $('takeover').disabled = !socket || socket.readyState !== WebSocket.OPEN;
 }
 

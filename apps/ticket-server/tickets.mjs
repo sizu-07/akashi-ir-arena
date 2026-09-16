@@ -54,7 +54,36 @@ export class TicketQueue {
         ticket.playerNicknames = legacyPlayerNames(ticket.nickname, ticket.partySize);
       }
     }
+    const repair = this.normalizeActiveRounds();
     this.recalculate(false);
+    if (repair) this.persist('state_repaired', {reason: '同時に進行中だった枠を1つへ正規化', details: repair});
+  }
+
+  normalizeActiveRounds() {
+    const active = this.state.rounds.filter((round) => ['CALLED', 'PLAYING'].includes(round.status)).sort((a, b) => a.number - b.number);
+    if (active.length <= 1) return null;
+    const playing = active.find((round) => round.status === 'PLAYING');
+    const checkedIn = active.find((round) => round.ticketIds.some((id) => this.ticket(id)?.status === 'CHECKED_IN'));
+    const keep = playing ?? checkedIn ?? active[0];
+    const first = active[0];
+    if (keep.id !== first.id) [keep.number, first.number] = [first.number, keep.number];
+    const resetRoundIds = [];
+    for (const round of active) {
+      if (round.id === keep.id) continue;
+      resetRoundIds.push(round.id);
+      round.status = 'SCHEDULED';
+      round.calledAt = null;
+      round.scheduledAt = null;
+      for (const id of round.ticketIds) {
+        const ticket = this.ticket(id);
+        if (!ticket || !['CALLED', 'CHECKED_IN'].includes(ticket.status)) continue;
+        ticket.status = 'ASSIGNED';
+        ticket.calledAt = null;
+        ticket.checkedInAt = null;
+        ticket.updatedAt = this.now();
+      }
+    }
+    return {keptRoundId: keep.id, resetRoundIds};
   }
 
   persist(type, {operator = 'system', reason = '', ticketId = null, roundId = null, details = {}} = {}) {
@@ -210,6 +239,8 @@ export class TicketQueue {
   round(id) { return this.state.rounds.find((item) => item.id === id); }
 
   callNext(operator) {
+    const active = this.state.rounds.find((item) => ['CALLED', 'PLAYING'].includes(item.status));
+    if (active) throw Error(`第${active.number}枠が${active.status === 'PLAYING' ? '体験中' : '呼出中'}です。終了してから次枠を呼び出してください`);
     const round = this.state.rounds.filter((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status)).sort((a, b) => a.number - b.number)[0];
     if (!round) throw Error('呼び出せる予定回がありません');
     round.status = 'CALLED';
@@ -333,13 +364,16 @@ export class TicketQueue {
     if (this.state.processedGameEvents.includes(event.eventId)) return {duplicate: true};
     let round = event.targetRoundId && this.round(event.targetRoundId);
     if (!round) round = this.state.rounds.find((item) => ['CALLED', 'PLAYING'].includes(item.status));
-    if (!round && event.type === 'GAME_STARTED') {
-      round = this.state.rounds.filter((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status)).sort((a, b) => a.number - b.number)[0];
-    }
     if (!round) throw Error('対象回が見つかりません');
+    if (event.type === 'GAME_STARTED') {
+      if (round.status !== 'CALLED') throw Error('呼出中の枠だけゲームを開始できます');
+      const summary = this.roundSummary(round.id);
+      if (!summary.assignedPeople || summary.checkedInPeople !== summary.assignedPeople) throw Error(`未入場者がいます（${summary.checkedInPeople}/${summary.assignedPeople}名入場済み）`);
+    }
     const map = {GAME_STARTED: 'PLAYING', GAME_RESUMED: 'PLAYING', GAME_ENDED: 'COMPLETED'};
     if (event.type === 'GAME_PAUSED') {
-      round.status = 'CALLED';
+      if (round.status !== 'PLAYING') throw Error('体験中の枠だけ一時停止できます');
+      round.pausedAt = Number(event.occurredAt) || this.now();
       this.state.settings.globalDelayMinutes += 1;
     } else if (event.type === 'EQUIPMENT_TROUBLE') {
       const delay = Math.max(0, Math.min(120, Number(event.delayMinutes) || 0));
@@ -347,7 +381,7 @@ export class TicketQueue {
       if (event.message) this.state.globalMessage = String(event.message).slice(0, 500);
     } else if (map[event.type]) {
       round.status = map[event.type];
-      if (round.status === 'PLAYING') round.startedAt = Number(event.occurredAt) || this.now();
+      if (round.status === 'PLAYING') { round.startedAt ??= Number(event.occurredAt) || this.now(); round.pausedAt = null; }
       if (round.status === 'COMPLETED') round.completedAt = Number(event.occurredAt) || this.now();
       for (const id of round.ticketIds) {
         const ticket = this.ticket(id);

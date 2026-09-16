@@ -14,10 +14,11 @@
 
 1. Node.js 20以上をインストールします。
 2. このフォルダで `npm install` を一度実行します。
-3. PCだけで確認する場合は `起動_デモ.cmd` を開きます。
-4. 運営画面は `http://localhost:8080/`、投影画面は `http://localhost:8080/display` です。
+3. ゲームと整理券をまとめてPCだけで確認する場合は `起動_全体デモ.cmd` を開きます。
+4. 実機運営では `起動_全体本番.cmd` を開きます。
+5. ゲーム運営画面は `http://localhost:8080/`、整理券運営画面は `http://localhost:8787/operator`、投影画面は `http://localhost:8080/display` です。
 
-整理券システムは `npm run ticket:setup` の後に `npm run ticket:start` で起動する。詳細は [整理券システム 運用・配置手順](docs/整理券システム.md) を参照。
+個別起動も可能ですが、連携漏れを避けるため通常は一括起動を使用してください。`tools/setup-ticket.mjs` はローカル整理券URLとAPIキーを `config/local.json` へ自動設定します。詳細は [整理券システム 運用・配置手順](docs/整理券システム.md) を参照。
 
 ~~詳しい手順は次の順で読んでください。~~
 

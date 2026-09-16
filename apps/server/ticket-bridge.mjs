@@ -6,12 +6,14 @@ export function createTicketBridge({url, apiKey, dataDir, log = () => {}} = {}) 
   if (!url || !apiKey) return {enabled: false, connected: false, pending: 0, observe() {}, async loadPlayerNicknames() { return []; }, async close() {}};
   const endpoint = `${String(url).replace(/\/$/, '')}/api/game/events`;
   const currentRoundEndpoint = `${String(url).replace(/\/$/, '')}/api/game/current-round`;
+  const heartbeatEndpoint = `${String(url).replace(/\/$/, '')}/api/game/heartbeat`;
   const file = path.join(dataDir, 'ticket-outbox.json');
   let outbox = [];
   let sending = false;
   let connected = false;
   let previousPhase = null;
   let currentRoundId = null;
+  let heartbeatRunning = false;
   try { if (existsSync(file)) outbox = JSON.parse(readFileSync(file, 'utf8')); } catch (error) { log({at: Date.now(), type: 'ticket_outbox_load_failed', reason: error.message}); }
   const persist = () => {
     const temporary = `${file}.tmp`;
@@ -42,8 +44,18 @@ export function createTicketBridge({url, apiKey, dataDir, log = () => {}} = {}) 
       log({at: Date.now(), type: 'ticket_sync_failed', reason: error.message, pending: outbox.length});
     } finally { sending = false; }
   };
-  const timer = setInterval(flush, 5000);
+  const heartbeat = async () => {
+    if (heartbeatRunning) return;
+    heartbeatRunning = true;
+    try {
+      const response = await fetch(heartbeatEndpoint, {method: 'POST', headers: {Authorization: `Bearer ${apiKey}`}, signal: AbortSignal.timeout(5000)});
+      connected = response.ok;
+    } catch { connected = false; }
+    finally { heartbeatRunning = false; }
+  };
+  const timer = setInterval(() => { void flush(); void heartbeat(); }, 5000);
   timer.unref();
+  void heartbeat();
   return {
     enabled: true,
     get connected() { return connected; },
@@ -52,6 +64,7 @@ export function createTicketBridge({url, apiKey, dataDir, log = () => {}} = {}) 
       const response = await fetch(currentRoundEndpoint, {headers: {Authorization: `Bearer ${apiKey}`}, signal: AbortSignal.timeout(5000)});
       const result = await response.json();
       if (!response.ok) throw Error(response.status === 404 ? '整理券運営画面で次の4名を先に呼び出してください' : `整理券サーバー HTTP ${response.status}`);
+      if (result.ready === false) throw Error(`整理券の入場確認が完了していません（${result.checkedInPeople}/${result.assignedPeople}名）`);
       currentRoundId = result.roundId;
       connected = true;
       return Array.isArray(result.playerNicknames) ? result.playerNicknames.slice(0, 4) : [];
