@@ -40,7 +40,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  const broker=aedesFactory({heartbeatInterval:5000,connectTimeout:5000});
  const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
  const local=req=>['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
- const sessions=new Map(),commands=new Map(),attempts=new Map();let owner=null,displaySeen=0,displayReady=false,pairToken=randomBytes(16).toString('hex'),pairExpires=Date.now()+600000;
+ const sessions=new Map(),commands=new Map(),attempts=new Map();let owner=null,displaySeen=0,displayReady=false,preparedTicketGameId=null,pairToken=randomBytes(16).toString('hex'),pairExpires=Date.now()+600000;
  const wss=new WebSocketServer({noServer:true,maxPayload:8192});
  broker.authenticate=(client,username,password,cb)=>{const d=config.devices.find(d=>d.id===username);const ok=!!d&&equal(password?.toString(),d.key)&&client.id===d.id;client.deviceId=ok?d.id:null;cb(null,ok);};
  broker.authorizePublish=(client,packet,cb)=>{const prefix=`irgame/v1/device/${client.deviceId}/`;const allowed=['event','hello','telemetry','reported'].map(s=>prefix+s);
@@ -71,7 +71,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       res.setHeader('Set-Cookie',`arena=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`);return reply(res,200,{csrf:s.csrf,id:s.id});
     }
     if(url.pathname==='/api/session'){const s=session(req);return reply(res,s?200:401,s?{csrf:s.csrf,id:s.id,owner,local:local(req),demo}:{});}
-    if(url.pathname==='/api/state'){if(!session(req)&&!local(req))return reply(res,401,{});return reply(res,200,{...game.view(),displayReady:displayReady&&Date.now()-displaySeen<3000,demo,owner,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending}});}
+    if(url.pathname==='/api/state'){if(!session(req)&&!local(req))return reply(res,401,{});return reply(res,200,{...game.view(),displayReady:displayReady&&Date.now()-displaySeen<3000,demo,owner,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}});}
     if(url.pathname==='/api/pair.svg'){
       if(!local(req))return reply(res,403,{});const addresses=Object.values(os.networkInterfaces()).flat().filter(a=>a.family==='IPv4'&&!a.internal);const host=addresses[0]?.address??'127.0.0.1';
       if(Date.now()>pairExpires){pairToken=randomBytes(16).toString('hex');pairExpires=Date.now()+600000;}
@@ -92,9 +92,18 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       }
       if(url.pathname==='/api/action'){
         if(typeof b.commandId!=='string'||b.commandId.length>80)throw Error('commandIdが必要です');const key=s.id+'/'+b.commandId;if(commands.has(key))return reply(res,200,commands.get(key));
+        let operation={};
         switch(b.action){
           case 'new':game.reset(b.rules);break;
-          case 'start':if(game.s.phase!=='PAUSED')game.setPlayerNames(await ticketBridge.loadPlayerNicknames());game.start(displayReady&&Date.now()-displaySeen<3000);break;
+          case 'sync_ticket_members':{
+            if(game.s.phase!=='LOBBY')throw Error('整理券メンバーは新しい試合の待機中だけ反映できます');
+            if(!ticketBridge.enabled)throw Error('公開整理券サーバーが未設定です');
+            game.setPlayerNames(await ticketBridge.loadPlayerNicknames());
+            preparedTicketGameId=game.s.id;
+            operation={notice:`整理券メンバーを反映しました: ${game.s.players.map(player=>player.name).join(' / ')}`};
+            break;
+          }
+          case 'start':if(game.s.phase==='LOBBY'&&ticketBridge.enabled&&preparedTicketGameId!==game.s.id)throw Error('先に「整理券メンバーを反映」を押してください');game.start(displayReady&&Date.now()-displaySeen<3000);break;
           case 'pause':game.pause();break;
           case 'finish':game.finish();break;
           case 'hp':game.correct(b.id,Number(b.hp),b.reason);break;
@@ -102,7 +111,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
           case 'demo_hit':if(!demo)throw Error('デモ専用操作');simulators?.hit(b.shooter,b.victim,b.receiver??'rx1');break;
           default:throw Error('未知の操作');
         }
-        db.log({at:Date.now(),gameId:game.s.id,type:'operator_action',operator:s.id,action:b.action,reason:b.reason});const result={ok:true,commandId:b.commandId};commands.set(key,result);if(commands.size>2000)commands.delete(commands.keys().next().value);db.save(game.s);sync();return reply(res,200,result);
+        db.log({at:Date.now(),gameId:game.s.id,type:'operator_action',operator:s.id,action:b.action,reason:b.reason});const result={ok:true,commandId:b.commandId,...operation};commands.set(key,result);if(commands.size>2000)commands.delete(commands.keys().next().value);db.save(game.s);sync();return reply(res,200,result);
       }return reply(res,404,{});
     }
     if(['/tickets','/tickets/register','/tickets/scanner'].includes(url.pathname)){
@@ -129,7 +138,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  let simulators=null;if(demo){const {simulate}=await import('./simulator.mjs');simulators=await simulate(config.devices,mqttServer.address().port);}
  let count=0;const timer=setInterval(()=>{game.tick();if(game.s.phase==='COUNTDOWN'&&(!displayReady||Date.now()-displaySeen>3000))game.pause('投影画面切断');
    ticketBridge.observe(game.s);
-   const state={...game.view(),owner,displayReady:displayReady&&Date.now()-displaySeen<3000,demo,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending}};
+   const state={...game.view(),owner,displayReady:displayReady&&Date.now()-displaySeen<3000,demo,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}};
    for(const ws of wss.clients)if(ws.readyState===WebSocket.OPEN){if(ws.bufferedAmount>100000){ws.close();continue;}ws.send(JSON.stringify(state));}
    if(++count%4===0){sync();db.save(game.s);}if(count%240===0){for(const [k,s] of sessions)if(s.expires<Date.now())sessions.delete(k);}
  },250);

@@ -562,6 +562,70 @@ test('Supabase Secret KeyはJWT用Authorizationヘッダーへ設定しない', 
   }
 });
 
+test('整理券メンバー反映とゲーム開始を別操作として扱う', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-member-sync-test-'));
+  let currentRoundReads = 0;
+  const ticketServer = (await import('node:http')).createServer((request, response) => {
+    if (request.url === '/api/game/current-round') {
+      currentRoundReads += 1;
+      response.writeHead(200, {'Content-Type': 'application/json'});
+      response.end(JSON.stringify({roundId: 'called-round', playerNicknames: ['春', '夏', '秋', '冬'], assignedPeople: 4, checkedInPeople: 4, ready: true}));
+      return;
+    }
+    response.writeHead(200, {'Content-Type': 'application/json'});
+    response.end('{"ok":true}');
+  });
+  await new Promise((resolve) => ticketServer.listen(0, '127.0.0.1', resolve));
+  const config = {
+    httpPort: 0,
+    mqttPort: 0,
+    operatorPin: '12345678',
+    ticketServerUrl: `http://127.0.0.1:${ticketServer.address().port}`,
+    ticketServerApiKey: 'member-sync-test-key',
+    devices: [1, 2, 3, 4].map((number) => ({id: `gun-00${number}`, key: `test-${number}`, name: `P${number}`, team: number < 3 ? 'A' : 'B', shooterId: number})),
+  };
+  const app = await createGameApp({config, dataDir: dir, bind: '127.0.0.1'});
+  const base = `http://127.0.0.1:${app.httpServer.address().port}`;
+  try {
+    const page = await (await fetch(base)).text();
+    assert.match(page, /id="syncTicketMembers"[^>]*data-action="sync_ticket_members"/);
+    const loginResponse = await fetch(`${base}/api/login`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({pin: config.operatorPin})});
+    const login = await loginResponse.json();
+    const headers = {'Content-Type': 'application/json', Cookie: loginResponse.headers.get('set-cookie').split(';')[0], 'X-CSRF-Token': login.csrf};
+    const operate = (action, commandId, extra = {}) => fetch(`${base}/api/action`, {method: 'POST', headers, body: JSON.stringify({action, commandId, ...extra})});
+
+    const prematureStart = await operate('start', 'start-before-member-sync');
+    assert.equal(prematureStart.status, 400);
+    assert.match((await prematureStart.json()).error, /整理券メンバーを反映/);
+    assert.equal(currentRoundReads, 0);
+
+    const syncResponse = await operate('sync_ticket_members', 'sync-members-once');
+    const syncResult = await syncResponse.json();
+    assert.equal(syncResponse.status, 200);
+    assert.match(syncResult.notice, /春 \/ 夏 \/ 秋 \/ 冬/);
+    assert.deepEqual(app.game.s.players.map((player) => player.name), ['春', '夏', '秋', '冬']);
+    assert.equal(app.game.s.phase, 'LOBBY');
+    assert.equal(currentRoundReads, 1);
+    assert.equal((await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersLoaded, true);
+
+    assert.equal((await operate('new', 'create-next-game', {rules: app.game.s.rules})).status, 200);
+    assert.equal((await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersLoaded, false);
+    const newGameStart = await operate('start', 'start-new-game-before-sync');
+    assert.match((await newGameStart.json()).error, /整理券メンバーを反映/);
+    assert.equal((await operate('sync_ticket_members', 'sync-next-game')).status, 200);
+    assert.equal(currentRoundReads, 2);
+
+    const startResponse = await operate('start', 'start-without-display');
+    assert.equal(startResponse.status, 400);
+    assert.match((await startResponse.json()).error, /投影画面/);
+    assert.equal(currentRoundReads, 2);
+  } finally {
+    await app.close();
+    await new Promise((resolve) => ticketServer.close(resolve));
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
 test('ゲーム運営と整理券運営を上部タブで相互に移動できる', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'operator-tabs-test-'));
   const config = {

@@ -43,7 +43,7 @@ async function action(actionName, extra = {}) {
     commandId: commandId(),
     ...extra,
   });
-  message(`操作を受理しました: ${result.commandId}`);
+  message(result.notice || `操作を受理しました: ${result.commandId}`);
 }
 
 function guarded(callback) {
@@ -113,6 +113,7 @@ function disable() {
     });
 
   $('takeover').disabled = !connected;
+  $('syncTicketMembers').disabled = locked || !state?.ticketBridge?.enabled || state?.phase !== 'LOBBY';
 }
 
 const names = {
@@ -134,7 +135,9 @@ function render() {
   $('readiness').textContent =
     `投影: ${state.displayReady ? '準備完了' : '準備が必要'} ／ ` +
     `接続: ${connectedPlayers}/4 ／ ` +
-    `整理券: ${!state.ticketBridge?.enabled ? '未設定' : state.ticketBridge.connected ? '同期済み' : `未同期（再送待ち${state.ticketBridge.pending}件）`}`;
+    `整理券: ${!state.ticketBridge?.enabled ? '未設定' : state.ticketBridge.connected ? '同期済み' : `未同期（再送待ち${state.ticketBridge.pending}件）`} ／ ` +
+    `メンバー: ${!state.ticketBridge?.enabled ? '手動名' : state.ticketBridge.membersLoaded ? '反映済み' : '未反映'}`;
+  $('syncTicketMembers').textContent = state.ticketBridge?.membersLoaded ? '① 整理券メンバーを更新' : '① 整理券メンバーを反映';
 
   const playerElements = state.players.map((player) => {
     const element = document.createElement('article');
@@ -202,6 +205,13 @@ function render() {
     }
 
     first = false;
+  }
+
+  for (const id of ['hpPlayer', 'demoShooter', 'demoVictim']) {
+    for (const player of state.players) {
+      const option = [...$(id).options].find((item) => item.value === player.id);
+      if (option) option.textContent = `${player.team} / ${player.name}`;
+    }
   }
 
   disable();
