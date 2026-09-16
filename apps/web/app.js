@@ -83,7 +83,7 @@ async function enter() {
 }
 
 function connect() {
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
 
   ws.onopen = () => {
     connected = true;

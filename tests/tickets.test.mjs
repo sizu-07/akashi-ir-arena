@@ -496,12 +496,40 @@ test('ゲーム運営と整理券運営を上部タブで相互に移動でき�
   try {
     const gamePage = await (await fetch(base)).text();
     assert.match(gamePage, /ゲーム運営/);
-    assert.match(gamePage, /href="\/tickets">整理券運営/);
+    assert.match(gamePage, /href="\/tickets"[^>]*>整理券運営（公開）/);
+    assert.match(gamePage, /href="\/tickets\/register"[^>]*>来場者受付/);
+    assert.match(gamePage, /href="\/tickets\/scanner"[^>]*>入場QR読取/);
     const redirect = await fetch(`${base}/tickets`, {redirect: 'manual'});
     assert.equal(redirect.status, 302);
     const target = new URL(redirect.headers.get('location'));
     assert.equal(`${target.origin}${target.pathname}`, 'https://tickets.example.test/operator');
     assert.equal(target.searchParams.get('game'), `${base}/`);
+    const registerRedirect = await fetch(`${base}/tickets/register`, {redirect: 'manual'});
+    assert.equal(registerRedirect.status, 302);
+    assert.equal(registerRedirect.headers.get('location'), 'https://tickets.example.test/register');
+    const scannerRedirect = await fetch(`${base}/tickets/scanner`, {redirect: 'manual'});
+    assert.equal(scannerRedirect.status, 302);
+    assert.equal(scannerRedirect.headers.get('location'), 'https://tickets.example.test/scanner');
+  } finally {
+    await app.close();
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('公開整理券サーバー未設定時に存在しないローカル画面へ転送しない', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'operator-ticket-link-test-'));
+  const config = {
+    httpPort: 0,
+    mqttPort: 0,
+    operatorPin: '12345678',
+    devices: [1, 2, 3, 4].map((number) => ({id: `gun-00${number}`, key: `test-${number}`, name: `P${number}`, team: number < 3 ? 'A' : 'B', shooterId: number})),
+  };
+  const app = await createGameApp({config, dataDir: dir, bind: '127.0.0.1'});
+  const base = `http://127.0.0.1:${app.httpServer.address().port}`;
+  try {
+    const response = await fetch(`${base}/tickets`, {redirect: 'manual'});
+    assert.equal(response.status, 503);
+    assert.match((await response.json()).error, /公開整理券サーバーが未設定/);
   } finally {
     await app.close();
     rmSync(dir, {recursive: true, force: true});

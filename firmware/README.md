@@ -5,5 +5,4 @@
 - `platformio.ini`：PlatformIOのビルド設定
 - `release/v0.6/`：書込み用BINとハッシュ
 
-ビルドはプロジェクト最上位から `powershell -File tools/build-firmware.ps1` を実行します。実機への書込みとWi-Fi設定は `書込みとWiFi設定.cmd` を使用します。
-
+ビルドはプロジェクト最上位から `powershell -File tools/build-firmware.ps1` を実行します。実機への書込みとWi-Fi設定は `powershell -ExecutionPolicy Bypass -File tools/flash-and-provision.ps1` を実行します。

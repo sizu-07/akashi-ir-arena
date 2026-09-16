@@ -5,6 +5,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {readFileSync,existsSync,mkdirSync,writeFileSync} from 'node:fs';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
+import {spawn} from 'node:child_process';
 import aedesFactory from 'aedes';
 import {WebSocketServer,WebSocket} from 'ws';
 import QRCode from 'qrcode';
@@ -13,6 +14,14 @@ import {hardware} from './hardware.mjs';
 import {storage} from './store.mjs';
 import {createTicketBridge} from './ticket-bridge.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
+const openBrowser=(url)=>{
+ try{
+  const command=process.platform==='win32'
+   ? ['rundll32.exe',['url.dll,FileProtocolHandler',url]]
+   : process.platform==='darwin'?['open',[url]]:['xdg-open',[url]];
+  const child=spawn(command[0],command[1],{detached:true,stdio:'ignore'});child.unref();
+ }catch(error){console.warn(`ブラウザを自動で開けませんでした。手動で開いてください: ${url} (${error.message})`);}
+};
 const listenServer=(server,port,bind)=>new Promise((resolve,reject)=>{
  const cleanup=()=>{server.off('error',failed);server.off('listening',listening);};
  const failed=error=>{cleanup();reject(error);};
@@ -96,12 +105,13 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
         db.log({at:Date.now(),gameId:game.s.id,type:'operator_action',operator:s.id,action:b.action,reason:b.reason});const result={ok:true,commandId:b.commandId};commands.set(key,result);if(commands.size>2000)commands.delete(commands.keys().next().value);db.save(game.s);sync();return reply(res,200,result);
       }return reply(res,404,{});
     }
-    if(url.pathname==='/tickets'){
+    if(['/tickets','/tickets/register','/tickets/scanner'].includes(url.pathname)){
       const gameOrigin=`http://${req.headers.host}`;
-      let ticketBase;
-      if(config.ticketServerUrl)ticketBase=new URL(config.ticketServerUrl);
-      else {ticketBase=new URL(gameOrigin);ticketBase.port=8787;}
-      const target=new URL('/operator',ticketBase);target.searchParams.set('game',`${gameOrigin}/`);
+      if(!config.ticketServerUrl)return reply(res,503,{error:'公開整理券サーバーが未設定です。config/local.json の ticketServerUrl を設定してください'});
+      const ticketBase=new URL(config.ticketServerUrl);
+      const destinations={'/tickets':'/operator','/tickets/register':'/register','/tickets/scanner':'/scanner'};
+      const target=new URL(destinations[url.pathname],ticketBase);
+      if(url.pathname==='/tickets')target.searchParams.set('game',`${gameOrigin}/`);
       res.writeHead(302,{Location:target.href});return res.end();
     }
     const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.mp4':'assets/rules.mp4'};
@@ -126,16 +136,17 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  return {game,broker,httpServer,mqttServer,ticketBridge,async close(){clearInterval(timer);await simulators?.close();await ticketBridge.close();for(const ws of wss.clients)ws.terminate();await new Promise(r=>wss.close(r));await new Promise(r=>httpServer.close(r));await new Promise(r=>broker.close(r));await new Promise(r=>mqttServer.close(r));db.save(game.s);}};
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
- const demo=process.argv.includes('--demo'),configPath=path.join(root,'config/local.json');
+ const demo=process.argv.includes('--demo'),shouldOpen=process.argv.includes('--open'),configPath=path.join(root,'config/local.json');
  if(!existsSync(configPath)){console.error('先に node tools/setup.mjs を実行してください');process.exit(1);}
  const config=JSON.parse(readFileSync(configPath,'utf8')),existing=await detectRunningGameServer(config.httpPort);let app=null;
  if(existing){
   if(existing.demo!==demo){console.error(`${config.httpPort}番ポートでは赤外線対戦サーバーが${existing.demo?'デモ':'本番'}モードで起動済みです。先にその起動画面を閉じてください。`);process.exitCode=1;}
-  else console.log(`赤外線対戦サーバーはすでに起動しています。既存のサーバーを使用します。\n運営: http://localhost:${config.httpPort}/\n投影: http://localhost:${config.httpPort}/display`);
+  else {console.log(`赤外線対戦サーバーはすでに起動しています。既存のサーバーを使用します。\n運営: http://localhost:${config.httpPort}/\n投影: http://localhost:${config.httpPort}/display`);if(shouldOpen)openBrowser(`http://localhost:${config.httpPort}/`);}
  }else try {
   app=await createApp({config,demo,dataDir:path.join(root,demo?'data/demo':'data/live')});
   console.log(`赤外線対戦 ${demo?'[シミュレーター／実機を接続しない]':'[実機モード]'}\n運営: http://localhost:${config.httpPort}/\n投影: http://localhost:${config.httpPort}/display\nPIN: config/local.json を参照`);
   for(const items of Object.values(os.networkInterfaces()))for(const a of items??[])if(a.family==='IPv4'&&!a.internal)console.log(`タブレット接続候補: http://${a.address}:${config.httpPort}/`);
+  if(shouldOpen)openBrowser(`http://localhost:${config.httpPort}/`);
  }catch(error){
   if(error.code==='EADDRINUSE')console.error(`${error.port}番ポートは別のアプリケーションが使用中です。使用中のアプリケーションを終了するか、config/local.json のポート番号を変更してください。`);
   else console.error(`サーバーを起動できません: ${error.message}`);
