@@ -448,7 +448,7 @@ test('Supabase保存は状態と監査ログを応答前に確定できる', asy
     if (request.method === 'GET' && request.url.startsWith('/rest/v1/ticket_events')) {
       response.writeHead(200, {'Content-Type': 'application/json'}); response.end(JSON.stringify([{payload: {at: 1, type: 'test', operator: 'operator', details: {ok: true}}}])); return;
     }
-    response.writeHead(204); response.end();
+    response.writeHead(201); response.end();
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {

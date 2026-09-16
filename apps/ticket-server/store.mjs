@@ -56,7 +56,9 @@ export function supabaseTicketStorage({url, secretKey, serviceRoleKey}) {
   const query = async (pathname, options = {}) => {
     const response = await fetch(`${base}${pathname}`, {...options, headers: {...headers, ...options.headers}, signal: AbortSignal.timeout(10_000)});
     if (!response.ok) throw Error(`Supabase ${response.status}: ${(await response.text()).slice(0, 300)}`);
-    return response.status === 204 ? null : response.json();
+    if (response.status === 204) return null;
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
   };
   const enqueue = (operation) => { pending = pending.catch(() => {}).then(operation); };
   return {
