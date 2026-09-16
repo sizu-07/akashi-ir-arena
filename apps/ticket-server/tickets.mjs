@@ -54,6 +54,7 @@ export class TicketQueue {
         ticket.playerNicknames = legacyPlayerNames(ticket.nickname, ticket.partySize);
       }
     }
+    for (const round of this.state.rounds) round.skippedTicketIds ??= [];
     const repair = this.normalizeActiveRounds();
     this.recalculate(false);
     if (repair) this.persist('state_repaired', {reason: '同時に進行中だった枠を1つへ正規化', details: repair});
@@ -111,6 +112,8 @@ export class TicketQueue {
     const waiting = this.state.tickets.filter((item) => !terminalStates.has(item.status) && item.status !== 'PLAYING').length;
     if (waiting >= this.state.settings.maxWaitingGroups) throw Error('受付上限に達しました');
     const now = this.now();
+    const queueWasDrained = this.state.rounds.some((round) => ['COMPLETED', 'SKIPPED'].includes(round.status))
+      && !this.state.rounds.some((round) => ['CALLED', 'PLAYING', 'SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status));
     const ticket = {
       id: randomUUID(),
       registrationRequestId: requestId,
@@ -131,8 +134,40 @@ export class TicketQueue {
     };
     this.state.tickets.push(ticket);
     this.recalculate(false);
+    const filledCalledRound = this.fillCalledRound();
     this.persist('ticket_registered', {ticketId: ticket.id, details: {ticketNumber: ticket.ticketNumber, partySize: size, receptionNumber: ticket.receptionNumber}});
+    if (queueWasDrained) this.callNext('automatic-registration');
+    else if (filledCalledRound.length) this.persist('called_round_filled', {
+      roundId: filledCalledRound[0].roundId,
+      details: {ticketIds: filledCalledRound.map((item) => item.ticketId), people: filledCalledRound.reduce((sum, item) => sum + item.partySize, 0)},
+    });
     return this.publicTicket(ticket);
+  }
+
+  fillCalledRound() {
+    const called = this.state.rounds.find((round) => round.status === 'CALLED');
+    if (!called) return [];
+    const occupied = called.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.partySize ?? 0), 0);
+    const capacity = 4 - occupied;
+    if (capacity <= 0) return [];
+    const candidates = this.state.tickets
+      .filter((ticket) => ticket.status === 'ASSIGNED' && this.round(ticket.roundId)?.status === 'SCHEDULED')
+      .sort((a, b) => a.receptionNumber - b.receptionNumber);
+    const fillIndexes = bestFillIndexes(candidates, capacity);
+    const selected = fillIndexes.map((index) => candidates[index]);
+    if (!selected.length) return [];
+    const calledAt = called.calledAt ?? this.now();
+    for (const ticket of selected) {
+      const source = this.round(ticket.roundId);
+      source.ticketIds = source.ticketIds.filter((id) => id !== ticket.id);
+      called.ticketIds.push(ticket.id);
+      ticket.roundId = called.id;
+      ticket.status = 'CALLED';
+      ticket.calledAt = calledAt;
+      ticket.updatedAt = this.now();
+    }
+    this.recalculate(false);
+    return selected.map((ticket) => ({ticketId: ticket.id, partySize: ticket.partySize, roundId: called.id}));
   }
 
   recalculate(record = true, operator = 'system', reason = '待機列を再計算') {
@@ -159,8 +194,9 @@ export class TicketQueue {
       for (const index of [...fillIndexes].reverse()) remaining.splice(index, 1);
       const round = reusableRounds[roundIndex++] ?? {
         id: randomUUID(), number: this.state.nextRoundNumber++, status: 'SCHEDULED',
-        ticketIds: [], scheduledAt: null, calledAt: null, startedAt: null, completedAt: null, delayMinutes: 0,
+        ticketIds: [], skippedTicketIds: [], scheduledAt: null, calledAt: null, startedAt: null, completedAt: null, delayMinutes: 0,
       };
+      round.skippedTicketIds ??= [];
       round.ticketIds = assigned.map((ticket) => ticket.id);
       this.state.rounds.push(round);
       for (const ticket of assigned) {
@@ -223,14 +259,16 @@ export class TicketQueue {
 
   operatorView() {
     const tickets = this.state.tickets.map((ticket) => ({...ticket, accessToken: undefined, qrToken: undefined}));
+    const ticketSummary = (id) => {
+      const ticket = this.ticket(id);
+      return ticket && {id: ticket.id, ticketNumber: ticket.ticketNumber, nickname: ticket.nickname, playerNicknames: clone(ticket.playerNicknames), partySize: ticket.partySize, status: ticket.status};
+    };
     const rounds = this.state.rounds.sort((a, b) => a.number - b.number).map((round) => ({
       ...round,
       assignedPeople: round.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.partySize ?? 0), 0),
       checkedInPeople: round.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.status === 'CHECKED_IN' ? this.ticket(id).partySize : 0), 0),
-      tickets: round.ticketIds.map((id) => {
-        const ticket = this.ticket(id);
-        return ticket && {id: ticket.id, ticketNumber: ticket.ticketNumber, nickname: ticket.nickname, playerNicknames: clone(ticket.playerNicknames), partySize: ticket.partySize, status: ticket.status};
-      }).filter(Boolean),
+      tickets: round.ticketIds.map(ticketSummary).filter(Boolean),
+      skippedTickets: (round.skippedTicketIds ?? []).map(ticketSummary).filter(Boolean),
     }));
     return {registrationOpen: this.state.registrationOpen, globalMessage: this.state.globalMessage, settings: clone(this.state.settings), tickets, rounds, gameLastSeenAt: this.state.gameLastSeenAt ?? null, updatedAt: this.state.updatedAt};
   }
@@ -253,6 +291,73 @@ export class TicketQueue {
     this.scheduleRounds();
     this.persist('round_called', {operator, roundId: round.id, details: {number: round.number}});
     return round;
+  }
+
+  removeCalledGroup(ticketId, status, operator, reason, eventType = 'called_group_removed') {
+    const ticket = this.ticket(ticketId);
+    if (!ticket) throw Error('整理券が見つかりません');
+    if (ticket.status !== 'CALLED') throw Error('呼出中で未入場のグループだけをスキップできます');
+    if (!['NO_SHOW', 'ON_HOLD', 'CANCELED'].includes(status)) throw Error('呼出中グループの変更先が不正です');
+    const round = this.round(ticket.roundId);
+    if (!round || round.status !== 'CALLED' || !round.ticketIds.includes(ticket.id)) throw Error('呼出中の枠にいるグループを選んでください');
+    round.ticketIds = round.ticketIds.filter((id) => id !== ticket.id);
+    round.skippedTicketIds ??= [];
+    if (!round.skippedTicketIds.includes(ticket.id)) round.skippedTicketIds.push(ticket.id);
+    const before = ticket.status;
+    ticket.status = status;
+    ticket.updatedAt = this.now();
+    this.recalculate(false);
+    const filled = this.fillCalledRound();
+    const becameEmpty = round.ticketIds.length === 0;
+    if (becameEmpty) {
+      round.status = 'SKIPPED';
+      round.skippedAt = this.now();
+      this.scheduleRounds();
+    }
+    this.persist(eventType, {
+      operator,
+      reason,
+      ticketId: ticket.id,
+      roundId: round.id,
+      details: {ticketNumber: ticket.ticketNumber, partySize: ticket.partySize, before, after: status, filledTicketIds: filled.map((item) => item.ticketId)},
+    });
+    if (becameEmpty && this.state.rounds.some((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status))) this.callNext(operator);
+    return {round, ticket, filled};
+  }
+
+  skipCalledGroup(ticketId, operator, reason) {
+    return this.removeCalledGroup(ticketId, 'NO_SHOW', operator, reason, 'called_group_skipped');
+  }
+
+  recallPastRound(roundId, operator, reason) {
+    const target = this.round(roundId);
+    if (!target || !['SKIPPED', 'COMPLETED'].includes(target.status)) throw Error('スキップ済みまたは終了済みの過去枠を選んでください');
+    const previousStatus = target.status;
+    if (previousStatus === 'SKIPPED' && !target.ticketIds.length && target.skippedTicketIds?.length) throw Error('グループ単位でスキップした整理券は、整理券一覧から待機列へ戻してください');
+    const recallableStatus = previousStatus === 'COMPLETED' ? 'COMPLETED' : 'NO_SHOW';
+    const pastTicketIds = previousStatus === 'SKIPPED' ? [...target.ticketIds, ...(target.skippedTicketIds ?? [])] : target.ticketIds;
+    const recallableTickets = pastTicketIds.map((id) => this.ticket(id)).filter((ticket) => ticket?.status === recallableStatus);
+    if (!recallableTickets.length) throw Error('この枠には再呼出しできる整理券がありません');
+    const active = this.state.rounds.find((item) => ['CALLED', 'PLAYING'].includes(item.status));
+    if (active?.status === 'PLAYING') throw Error(`第${active.number}枠が体験中のため、過去枠へ切り替えられません`);
+    if (active) throw Error(`第${active.number}枠を呼出中です。各グループの対応を終えてから過去枠を呼び出してください`);
+    const recalledAt = this.now();
+    target.status = 'CALLED';
+    target.calledAt = recalledAt;
+    target.scheduledAt = recalledAt;
+    target.startedAt = null;
+    target.completedAt = null;
+    target.pausedAt = null;
+    target.ticketIds = recallableTickets.map((ticket) => ticket.id);
+    target.skippedTicketIds = [];
+    for (const ticket of recallableTickets) {
+      ticket.status = 'CALLED';
+      ticket.calledAt = recalledAt;
+      ticket.updatedAt = recalledAt;
+    }
+    this.scheduleRounds();
+    this.persist('past_round_recalled', {operator, reason, roundId: target.id, details: {number: target.number, previousStatus}});
+    return target;
   }
 
   checkIn(qrToken, operator) {
@@ -285,7 +390,7 @@ export class TicketQueue {
   }
 
   operatorAction({action, ticketId, roundId, value, reason, operator}) {
-    const important = new Set(['cancel', 'no_show', 'move_round', 'round_time', 'undo_checkin']);
+    const important = new Set(['hold', 'cancel', 'no_show', 'skip_group', 'move_round', 'round_time', 'undo_checkin', 'recall_skipped', 'recall_past']);
     if (important.has(action) && !String(reason ?? '').trim()) throw Error('この操作には理由が必要です');
     const ticket = ticketId && this.ticket(ticketId);
     if (ticketId && !ticket) throw Error('整理券が見つかりません');
@@ -296,11 +401,35 @@ export class TicketQueue {
         const round = this.round(roundId); if (!round || round.status !== 'CALLED') throw Error('呼出中の回を選んでください');
         this.persist('round_recalled', {operator, roundId}); break;
       }
-      case 'hold': if (!['WAITING', 'ASSIGNED', 'CALLED'].includes(ticket.status)) throw Error('この状態の整理券は保留にできません'); this.changeTicket(ticket, 'ON_HOLD', operator, reason || '運営保留'); break;
-      case 'release': if (ticket.status !== 'ON_HOLD') throw Error('保留中ではありません'); ticket.status = 'WAITING'; ticket.roundId = null; this.recalculate(false); this.persist('ticket_released', {operator, ticketId, reason}); break;
-      case 'cancel': if (terminalStates.has(ticket.status) || ticket.status === 'PLAYING') throw Error('この状態の整理券は取消できません'); this.changeTicket(ticket, 'CANCELED', operator, reason); break;
-      case 'no_show': if (ticket.status !== 'CALLED') throw Error('呼出中の整理券だけを来場なしにできます'); this.changeTicket(ticket, 'NO_SHOW', operator, reason); break;
-      case 'return_queue': if (!['ON_HOLD', 'NO_SHOW', 'CANCELED'].includes(ticket.status)) throw Error('保留・来場なし・取消の整理券だけを待機列へ戻せます'); ticket.status = 'WAITING'; ticket.roundId = null; this.recalculate(false); this.persist('ticket_returned', {operator, ticketId, reason: reason || '待機列へ戻す'}); break;
+      case 'skip_group': this.skipCalledGroup(ticketId, operator, reason); break;
+      case 'recall_skipped':
+      case 'recall_past': this.recallPastRound(roundId, operator, reason); break;
+      case 'hold': {
+        if (!['WAITING', 'ASSIGNED', 'CALLED'].includes(ticket.status)) throw Error('この状態の整理券は保留にできません');
+        if (ticket.status === 'CALLED') this.removeCalledGroup(ticket.id, 'ON_HOLD', operator, reason, 'called_group_held');
+        else this.changeTicket(ticket, 'ON_HOLD', operator, reason); break;
+      }
+      case 'release': {
+        if (ticket.status !== 'ON_HOLD') throw Error('保留中ではありません');
+        for (const round of this.state.rounds) round.skippedTicketIds = (round.skippedTicketIds ?? []).filter((id) => id !== ticket.id);
+        ticket.status = 'WAITING'; ticket.roundId = null; this.recalculate(false);
+        const filled = this.fillCalledRound();
+        this.persist('ticket_released', {operator, ticketId, reason, details: {filledRoundId: filled[0]?.roundId ?? null}}); break;
+      }
+      case 'cancel': {
+        if (ticket.status === 'CHECKED_IN') throw Error('入場処理を取り消してから整理券を取消してください');
+        if (terminalStates.has(ticket.status) || ticket.status === 'PLAYING') throw Error('この状態の整理券は取消できません');
+        if (ticket.status === 'CALLED') this.removeCalledGroup(ticket.id, 'CANCELED', operator, reason, 'called_group_canceled');
+        else this.changeTicket(ticket, 'CANCELED', operator, reason); break;
+      }
+      case 'no_show': this.skipCalledGroup(ticketId, operator, reason); break;
+      case 'return_queue': {
+        if (!['ON_HOLD', 'NO_SHOW', 'CANCELED'].includes(ticket.status)) throw Error('保留・来場なし・取消の整理券だけを待機列へ戻せます');
+        for (const round of this.state.rounds) round.skippedTicketIds = (round.skippedTicketIds ?? []).filter((id) => id !== ticket.id);
+        ticket.status = 'WAITING'; ticket.roundId = null; this.recalculate(false);
+        const filled = this.fillCalledRound();
+        this.persist('ticket_returned', {operator, ticketId, reason: reason || '待機列へ戻す', details: {filledRoundId: filled[0]?.roundId ?? null}}); break;
+      }
       case 'move_round': {
         if (ticket.status !== 'ASSIGNED') throw Error('割当済みの整理券だけを変更できます');
         const before = this.round(ticket.roundId), target = this.round(roundId);
@@ -362,14 +491,16 @@ export class TicketQueue {
   applyGameEvent(event) {
     if (!event?.eventId || !event?.type) throw Error('イベントIDとイベント種別が必要です');
     if (this.state.processedGameEvents.includes(event.eventId)) return {duplicate: true};
-    let round = event.targetRoundId && this.round(event.targetRoundId);
-    if (!round) round = this.state.rounds.find((item) => ['CALLED', 'PLAYING'].includes(item.status));
+    if (!event.targetRoundId) throw Error('ゲームイベントには対象枠IDが必要です');
+    const round = this.round(event.targetRoundId);
     if (!round) throw Error('対象回が見つかりません');
     if (event.type === 'GAME_STARTED') {
       if (round.status !== 'CALLED') throw Error('呼出中の枠だけゲームを開始できます');
       const summary = this.roundSummary(round.id);
       if (!summary.assignedPeople || summary.checkedInPeople !== summary.assignedPeople) throw Error(`未入場者がいます（${summary.checkedInPeople}/${summary.assignedPeople}名入場済み）`);
     }
+    if (event.type === 'GAME_ENDED' && round.status !== 'PLAYING') throw Error('体験中の枠だけゲームを終了できます');
+    if (event.type === 'GAME_RESUMED' && (round.status !== 'PLAYING' || !round.pausedAt)) throw Error('一時停止中の枠だけゲームを再開できます');
     const map = {GAME_STARTED: 'PLAYING', GAME_RESUMED: 'PLAYING', GAME_ENDED: 'COMPLETED'};
     if (event.type === 'GAME_PAUSED') {
       if (round.status !== 'PLAYING') throw Error('体験中の枠だけ一時停止できます');

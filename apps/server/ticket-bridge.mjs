@@ -20,7 +20,17 @@ export function createTicketBridge({url, apiKey, dataDir, log = () => {}} = {}) 
     writeFileSync(temporary, JSON.stringify(outbox, null, 2));
     renameSync(temporary, file);
   };
+  const invalidLoadedEvents = outbox.filter((event) => !event?.targetRoundId);
+  if (invalidLoadedEvents.length) {
+    outbox = outbox.filter((event) => event?.targetRoundId);
+    persist();
+    log({at: Date.now(), type: 'ticket_outbox_invalid_events_removed', count: invalidLoadedEvents.length, reason: '対象枠IDのないイベントは誤った枠へ適用されるため削除'});
+  }
   const enqueue = (type, game) => {
+    if (!currentRoundId) {
+      log({at: Date.now(), type: 'ticket_event_not_queued', gameId: game.id, eventType: type, reason: '対象枠IDが確定していません'});
+      return;
+    }
     outbox.push({eventId: randomUUID(), gameId: game.id, targetRoundId: currentRoundId, type, occurredAt: Date.now(), source: 'local-game-server', retryNumber: 0});
     persist();
     void flush();
@@ -33,9 +43,19 @@ export function createTicketBridge({url, apiKey, dataDir, log = () => {}} = {}) 
         const event = outbox[0];
         event.retryNumber += 1;
         const response = await fetch(endpoint, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`}, body: JSON.stringify(event), signal: AbortSignal.timeout(5000)});
-        if (!response.ok) throw Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
+        if (!response.ok) {
+          const responseText = (await response.text()).slice(0, 200);
+          if ([400, 404].includes(response.status)) {
+            outbox.shift();
+            persist();
+            log({at: Date.now(), type: 'ticket_event_rejected', eventId: event.eventId, reason: `HTTP ${response.status}: ${responseText}`});
+            continue;
+          }
+          throw Error(`HTTP ${response.status}: ${responseText}`);
+        }
         outbox.shift();
         persist();
+        if (event.type === 'GAME_ENDED' && event.targetRoundId === currentRoundId) currentRoundId = null;
         connected = true;
       }
     } catch (error) {

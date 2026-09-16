@@ -2,10 +2,12 @@ const $ = (id) => document.getElementById(id);
 const labels = {
   WAITING: '待機', ASSIGNED: '割当済', CALLED: '呼出中', CHECKED_IN: '入場済', PLAYING: '体験中',
   COMPLETED: '終了', ON_HOLD: '保留', NO_SHOW: '来場なし', CANCELED: '取消', EXPIRED: '失効',
-  SCHEDULED: '予定', LOCKED_SCHEDULED: '時刻固定',
+  SCHEDULED: '予定', LOCKED_SCHEDULED: '時刻固定', SKIPPED: 'スキップ済み',
 };
-const activeTicketStates = new Set(['WAITING', 'ASSIGNED', 'CALLED', 'CHECKED_IN', 'PLAYING', 'ON_HOLD']);
+const activeTicketStates = new Set(['WAITING', 'ASSIGNED', 'CALLED', 'CHECKED_IN', 'PLAYING', 'ON_HOLD', 'NO_SHOW']);
 const scheduledRoundStates = new Set(['SCHEDULED', 'LOCKED_SCHEDULED']);
+const groupColors = ['#2f6fbb', '#b85c38', '#6d5aad', '#27856a'];
+const groupColor = (ticket) => groupColors[[...ticket.ticketNumber].reduce((sum, character) => sum + character.charCodeAt(0), 0) % groupColors.length];
 const commandId = () => `${Date.now()}-${crypto.randomUUID()}`;
 const formatTime = (value) => value ? new Date(value).toLocaleTimeString('ja-JP', {hour: '2-digit', minute: '2-digit'}) : '時刻計算中';
 let csrf = '';
@@ -14,6 +16,12 @@ let state;
 let socket;
 let heartbeat;
 let selectedTicket;
+let lastActiveRoundId = null;
+const actionLabels = {
+  hold: '保留にする', release: '保留を解除する', cancel: '整理券を取り消す', skip_group: 'この登録グループをスキップする',
+  return_queue: '待機列へ戻す', move_round: '予定枠を変更する', undo_checkin: '入場処理を取り消す', message: '個別メッセージを変更する',
+};
+const reasonRequiredActions = new Set(['hold', 'cancel', 'skip_group', 'move_round', 'undo_checkin']);
 
 const gameFromQuery = new URLSearchParams(location.search).get('game');
 if (gameFromQuery && /^https?:\/\/[^/]+\/?$/.test(gameFromQuery)) localStorage.setItem('akashi-game-operator-url', gameFromQuery);
@@ -88,8 +96,8 @@ function playerNames(ticket) {
 
 function renderTimeline() {
   const visible = state.rounds
-    .filter((round) => !['COMPLETED', 'CANCELED'].includes(round.status) && round.tickets.length)
-    .sort((a, b) => a.number - b.number)
+    .filter((round) => ['CALLED', 'PLAYING', 'SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status) && (round.tickets.length || ['CALLED', 'PLAYING'].includes(round.status)))
+    .sort((a, b) => Number(!['CALLED', 'PLAYING'].includes(a.status)) - Number(!['CALLED', 'PLAYING'].includes(b.status)) || a.number - b.number)
     .slice(0, 5);
   $('queueTimeline').replaceChildren(...visible.map((round, index) => timelineRound(round, index)));
   if (!visible.length) {
@@ -100,6 +108,9 @@ function renderTimeline() {
   }
   const playing = visible.find((round) => round.status === 'PLAYING');
   const called = visible.find((round) => round.status === 'CALLED');
+  const activeRoundId = playing?.id || called?.id || null;
+  if (activeRoundId && activeRoundId !== lastActiveRoundId) requestAnimationFrame(() => { $('queueTimeline').scrollLeft = 0; });
+  lastActiveRoundId = activeRoundId;
   const next = visible.find((round) => scheduledRoundStates.has(round.status));
   if (playing) $('nextAction').textContent = `現在は第${playing.number}枠を体験中です。ゲーム運営画面で終了すると、この枠が完了して次枠を自動で呼び出します。`;
   else if (called?.checkedInPeople === called?.assignedPeople) $('nextAction').textContent = `第${called.number}枠は全員入場済みです。ゲーム運営画面でゲームを開始してください。`;
@@ -108,37 +119,131 @@ function renderTimeline() {
   else $('nextAction').textContent = '現在、待機中の来場者はいません。';
 }
 
-function timelineRound(round, index) {
+function renderAllRounds() {
+  const rounds = [...state.rounds].sort((a, b) => a.number - b.number);
+  $('allRounds').replaceChildren(...rounds.map((round, index) => timelineRound(round, index, {history: true})));
+  $('allRoundCount').textContent = `${rounds.length}枠`;
+  $('emptyRounds').hidden = rounds.length > 0;
+}
+
+function renderRoundControls() {
+  const called = state.rounds.find((round) => round.status === 'CALLED');
+  const playing = state.rounds.find((round) => round.status === 'PLAYING');
+  const past = state.rounds
+    .filter((round) => ['SKIPPED', 'COMPLETED'].includes(round.status) && !(round.status === 'SKIPPED' && !round.tickets.length && round.skippedTickets?.length))
+    .sort((a, b) => b.number - a.number).slice(0, 20);
+  $('calledRoundControls').hidden = !called;
+  if (called) {
+    $('calledRoundControlTitle').textContent = `第${called.number}枠を呼び出し中`;
+    $('recallCurrent').textContent = `第${called.number}枠をもう一度呼び出す`;
+    $('calledRoundControlHint').textContent = '来場しない登録グループだけをスキップします。空席には後続の入れるグループを自動で補完します。';
+    $('calledGroups').replaceChildren(...called.tickets.map((ticket) => {
+      const item = document.createElement('div');
+      item.className = 'called-group';
+      item.style.setProperty('--group-color', groupColor(ticket));
+      const description = document.createElement('span');
+      description.textContent = `${ticket.ticketNumber}・${ticket.partySize}人組：${playerNames(ticket).join('・')}`;
+      item.append(description);
+      if (ticket.status === 'CALLED') {
+        const button = document.createElement('button');
+        button.className = 'danger';
+        button.textContent = 'この組をスキップ';
+        button.onclick = guarded(async () => {
+          const reason = prompt(`${ticket.ticketNumber}（${ticket.partySize}人組）をスキップする理由を入力してください`, '呼出後も来場がないため');
+          if (!reason?.trim()) return;
+          if (confirm(`${ticket.ticketNumber}のグループだけを来場なしにします。よろしいですか？`)) await action('skip_group', {ticketId: ticket.id, reason});
+        });
+        item.append(button);
+      } else {
+        const status = document.createElement('strong');
+        status.textContent = labels[ticket.status] || ticket.status;
+        item.append(status);
+      }
+      return item;
+    }));
+  } else {
+    $('calledGroups').replaceChildren();
+  }
+  $('pastRoundControls').hidden = !past.length;
+  $('pastRound').replaceChildren(...past.map((round) => {
+    const option = document.createElement('option');
+    option.value = round.id;
+    option.textContent = `第${round.number}枠（${labels[round.status]}・${round.assignedPeople}名）`;
+    return option;
+  }));
+  if (playing) $('recallPastHint').textContent = `第${playing.number}枠が体験中のため、終了するまで過去枠は呼び出せません。`;
+  else if (called) $('recallPastHint').textContent = `第${called.number}枠を呼出中です。各グループの対応を終えてから過去枠を呼び出してください。`;
+  else $('recallPastHint').textContent = '終了済みを選んだ場合は、そのゲームを再実施する扱いになります。';
+}
+
+function timelineRound(round, index, {history = false} = {}) {
+  const ready = round.status === 'CALLED' && round.assignedPeople > 0 && round.checkedInPeople === round.assignedPeople;
+  const checkingIn = round.status === 'CALLED' && round.checkedInPeople > 0 && !ready;
   const article = document.createElement('article');
-  article.className = `timeline-round ${round.status.toLowerCase()}`;
+  article.className = `timeline-round ${round.status.toLowerCase()}${ready ? ' ready' : ''}`;
   const marker = document.createElement('span');
   marker.className = 'timeline-marker';
-  marker.textContent = round.status === 'PLAYING' ? 'NOW・体験中' : round.status === 'CALLED' ? 'NOW・呼出中' : index === 0 ? 'NEXT' : `${index * 15}分後`;
+  if (ready) marker.textContent = 'NOW・全員入場済み';
+  else if (checkingIn) marker.textContent = `NOW・入場中 ${round.checkedInPeople}/${round.assignedPeople}`;
+  else if (round.status === 'PLAYING') marker.textContent = 'NOW・体験中';
+  else if (round.status === 'CALLED') marker.textContent = 'NOW・呼出中';
+  else if (history) marker.textContent = labels[round.status] || round.status;
+  else marker.textContent = index === 0 ? 'NEXT' : `${index * 15}分後`;
   const heading = document.createElement('div');
   heading.className = 'timeline-heading';
   const title = document.createElement('strong');
   title.textContent = `第${round.number}枠`;
   const time = document.createElement('span');
-  time.textContent = `${formatTime(round.scheduledAt)}ごろ`;
+  const displayTime = history ? (round.startedAt || round.calledAt || round.scheduledAt) : round.scheduledAt;
+  time.textContent = `${formatTime(displayTime)}${['SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status) ? 'ごろ' : ''}`;
   heading.append(title, time);
   const seats = document.createElement('div');
   seats.className = 'seat-grid';
-  const assignedNames = round.tickets.flatMap((ticket) => playerNames(ticket).map((name) => ({name, ticketNumber: ticket.ticketNumber, status: ticket.status})));
+  const groups = document.createElement('div');
+  groups.className = 'round-groups';
+  for (const ticket of round.tickets) {
+    const chip = document.createElement('span');
+    chip.className = 'group-chip';
+    chip.style.setProperty('--group-color', groupColor(ticket));
+    chip.textContent = `${ticket.ticketNumber}・${ticket.partySize}人組`;
+    groups.append(chip);
+  }
+  for (const ticket of round.skippedTickets ?? []) {
+    const chip = document.createElement('span');
+    chip.className = 'group-chip skipped-group';
+    chip.textContent = `${ticket.ticketNumber}・スキップ`;
+    groups.append(chip);
+  }
+  const assignedNames = round.tickets.flatMap((ticket) => playerNames(ticket).map((name) => ({name, ticketNumber: ticket.ticketNumber, status: ticket.status, groupColor: groupColor(ticket)})));
   for (let seatIndex = 0; seatIndex < 4; seatIndex += 1) {
     const seat = document.createElement('div');
     const player = assignedNames[seatIndex];
-    seat.className = `seat ${player ? (round.status === 'PLAYING' ? 'playing' : player.status === 'CHECKED_IN' ? 'checked' : round.status === 'CALLED' ? 'called' : 'assigned') : 'empty'}`;
+    const seatStatus = !player ? 'empty'
+      : round.status === 'COMPLETED' || player.status === 'COMPLETED' ? 'completed'
+        : round.status === 'SKIPPED' || player.status === 'NO_SHOW' ? 'skipped'
+          : round.status === 'PLAYING' ? 'playing'
+            : player.status === 'CHECKED_IN' ? 'checked'
+              : round.status === 'CALLED' ? 'called' : 'assigned';
+    seat.className = `seat ${seatStatus}`;
     const strong = document.createElement('strong');
     strong.textContent = player?.name ?? '空席';
     const small = document.createElement('small');
-    small.textContent = player ? `${player.status === 'CHECKED_IN' ? '入場済・' : ''}${player.ticketNumber}` : '自動充当';
+    const ticketStateText = player?.status === 'CHECKED_IN' ? '入場済・'
+      : player?.status === 'COMPLETED' ? '終了・'
+        : player?.status === 'NO_SHOW' ? '来場なし・' : '';
+    small.textContent = player ? `${ticketStateText}${player.ticketNumber}` : '自動充当';
+    if (player) {
+      seat.classList.add('group-seat');
+      seat.style.setProperty('--group-color', player.groupColor);
+    }
     seat.append(strong, small);
     seats.append(seat);
   }
   const footer = document.createElement('p');
   footer.className = 'timeline-footer';
-  footer.textContent = `${labels[round.status] || round.status}・${round.assignedPeople}/4名${round.status === 'CALLED' ? `・${round.checkedInPeople}名入場済` : ''}`;
-  article.append(marker, heading, seats, footer);
+  const displayedStatus = ready ? '全員入場済み' : checkingIn ? '入場受付中' : labels[round.status] || round.status;
+  footer.textContent = `${displayedStatus}・${round.assignedPeople}/4名${round.status === 'CALLED' ? `・${round.checkedInPeople}名入場済` : ''}`;
+  article.append(marker, heading, groups, seats, footer);
   return article;
 }
 
@@ -149,6 +254,8 @@ function render() {
   const playing = state.rounds.find((round) => round.status === 'PLAYING');
   const activeTickets = state.tickets.filter((ticket) => activeTicketStates.has(ticket.status)).sort((a, b) => a.receptionNumber - b.receptionNumber);
   renderTimeline();
+  renderRoundControls();
+  renderAllRounds();
   $('registrationStatus').textContent = state.registrationOpen ? '受付中' : '停止中';
   $('waitingGroups').textContent = `${waiting.length}組`;
   $('waitingPeople').textContent = `${waiting.reduce((sum, ticket) => sum + ticket.partySize, 0)}人`;
@@ -214,13 +321,32 @@ function ticketRow(ticket) {
   button.onclick = () => {
     selectedTicket = ticket;
     $('dialogTitle').textContent = `${ticket.ticketNumber} ${playerNames(ticket).join('・')}`;
+    $('dialogStatus').textContent = `現在の状態：${labels[ticket.status] || ticket.status}・${ticket.partySize}名`;
+    $('ticketDialogMessage').textContent = '';
     $('ticketReason').value = '';
-    $('ticketRound').replaceChildren(...state.rounds.filter((item) => scheduledRoundStates.has(item.status) && item.id !== ticket.roundId && item.assignedPeople + ticket.partySize <= 4).map((item) => {
+    const targetRounds = state.rounds.filter((item) => scheduledRoundStates.has(item.status) && item.id !== ticket.roundId && item.assignedPeople + ticket.partySize <= 4);
+    $('ticketRound').replaceChildren(...targetRounds.map((item) => {
       const option = document.createElement('option');
       option.value = item.id;
       option.textContent = `第${item.number}枠（空席${4 - item.assignedPeople}）`;
       return option;
     }));
+    const actionsByStatus = {
+      WAITING: ['hold', 'cancel', 'message'],
+      ASSIGNED: ['hold', ...(targetRounds.length ? ['move_round'] : []), 'cancel', 'message'],
+      CALLED: ['skip_group', 'hold', 'cancel', 'message'],
+      CHECKED_IN: ['undo_checkin', 'message'],
+      PLAYING: ['message'],
+      ON_HOLD: ['release', 'cancel', 'message'],
+      NO_SHOW: ['return_queue', 'message'],
+    };
+    $('ticketAction').replaceChildren(...(actionsByStatus[ticket.status] ?? ['message']).map((name) => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = actionLabels[name];
+      return option;
+    }));
+    updateTicketActionForm();
     $('ticketDialog').showModal();
   };
   cell.append(button);
@@ -228,11 +354,24 @@ function ticketRow(ticket) {
   return row;
 }
 
+function updateTicketActionForm() {
+  const actionName = $('ticketAction').value;
+  $('ticketRoundField').hidden = actionName !== 'move_round';
+  $('ticketReasonLabel').textContent = actionName === 'message' ? '個別メッセージ' : reasonRequiredActions.has(actionName) ? '理由（必須）' : '理由（任意）';
+  $('ticketReason').required = reasonRequiredActions.has(actionName);
+  $('ticketReason').placeholder = actionName === 'message' ? '来場者画面へ表示する内容' : 'この操作を行う理由';
+  $('ticketDialogMessage').textContent = '';
+}
+
 function disable() {
   const locked = !socket || socket.readyState !== WebSocket.OPEN || state?.owner !== sessionId;
   document.querySelectorAll('#app button').forEach((button) => { button.disabled = locked; });
-  const activeRound = state?.rounds.some((round) => ['CALLED', 'PLAYING'].includes(round.status));
+  const called = state?.rounds.find((round) => round.status === 'CALLED');
+  const playing = state?.rounds.find((round) => round.status === 'PLAYING');
+  const activeRound = Boolean(called || playing);
   $('callNext').disabled = locked || activeRound;
+  $('recallCurrent').disabled = locked || !called;
+  $('recallPast').disabled = locked || !$('pastRound').value || Boolean(playing) || Boolean(called);
   $('takeover').disabled = !socket || socket.readyState !== WebSocket.OPEN;
 }
 
@@ -245,16 +384,39 @@ $('takeover').onclick = guarded(async () => { if (confirm('この端末に操作
 $('openRegistration').onclick = guarded(() => action('registration', {value: true}));
 $('closeRegistration').onclick = guarded(() => action('registration', {value: false}));
 $('callNext').onclick = guarded(async () => { if (confirm('待機列の先頭にある次枠を呼び出しますか？')) await action('call_next'); });
+$('recallCurrent').onclick = guarded(async () => {
+  const called = state.rounds.find((round) => round.status === 'CALLED');
+  if (called && confirm(`第${called.number}枠をもう一度呼び出しますか？`)) await action('recall', {roundId: called.id});
+});
+$('recallPast').onclick = guarded(async () => {
+  const round = state.rounds.find((item) => item.id === $('pastRound').value);
+  if (!round) return;
+  const reason = prompt(`第${round.number}枠を呼び戻す理由を入力してください`, '来場を確認したため');
+  if (!reason?.trim()) return;
+  const replayText = round.status === 'COMPLETED' ? 'この枠は終了済みのため、ゲームを再実施する扱いになります。' : '';
+  if (confirm(`${replayText}第${round.number}枠を再度呼び出します。よろしいですか？`)) await action('recall_past', {roundId: round.id, reason});
+});
 $('messageForm').onsubmit = guarded(() => action('global_message', {value: $('messageForm').elements.message.value}));
 $('settingsForm').onsubmit = guarded(() => action('settings', {value: currentSettings()}));
 $('delayMinus5').onclick = guarded(() => action('settings', {value: currentSettings(Math.max(0, state.settings.globalDelayMinutes - 5))}));
 $('delayPlus5').onclick = guarded(() => action('settings', {value: currentSettings(Math.min(600, state.settings.globalDelayMinutes + 5))}));
-$('applyTicketAction').onclick = guarded(async (event) => {
+$('ticketAction').onchange = updateTicketActionForm;
+$('applyTicketAction').onclick = async (event) => {
   event.preventDefault();
+  $('ticketDialogMessage').textContent = '';
   const actionName = $('ticketAction').value;
   const text = $('ticketReason').value;
-  await action(actionName, {ticketId: selectedTicket.id, roundId: actionName === 'move_round' ? $('ticketRound').value : undefined, reason: actionName === 'message' ? '' : text, value: actionName === 'message' ? text : undefined});
-  $('ticketDialog').close();
-});
+  if (reasonRequiredActions.has(actionName) && !text.trim()) {
+    $('ticketDialogMessage').textContent = '理由を入力してください。';
+    $('ticketReason').focus();
+    return;
+  }
+  try {
+    await action(actionName, {ticketId: selectedTicket.id, roundId: actionName === 'move_round' ? $('ticketRound').value : undefined, reason: actionName === 'message' ? '' : text, value: actionName === 'message' ? text : undefined});
+    $('ticketDialog').close();
+  } catch (error) {
+    $('ticketDialogMessage').textContent = error.message;
+  }
+};
 
 enter().catch(() => {});

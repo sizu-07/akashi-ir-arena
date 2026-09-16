@@ -19,6 +19,14 @@
           <p id="nextAction" class="next-action">待機列を確認しています。</p>
           <div id="queueTimeline" class="queue-timeline" aria-label="現在から先の待機列"></div>
           <div class="queue-legend"><span><i class="seat playing"></i>体験中</span><span><i class="seat checked"></i>入場済み</span><span><i class="seat called"></i>呼出中</span><span><i class="seat assigned"></i>待機中</span><span><i class="seat empty"></i>空席</span></div>
+          <div id="calledRoundControls" class="round-controls" hidden>
+            <div><strong id="calledRoundControlTitle">呼出中のグループを操作</strong><p id="calledRoundControlHint" class="hint"></p><div id="calledGroups" class="called-groups"></div></div>
+            <div class="actions"><button id="recallCurrent">全グループをもう一度呼び出す</button></div>
+          </div>
+          <div id="pastRoundControls" class="round-controls past-round-controls" hidden>
+            <label>過去枠（スキップ済み・終了済み）<select id="pastRound"></select></label>
+            <div><button id="recallPast" class="warning">選択した過去枠を呼び出す</button><p id="recallPastHint" class="hint">別の枠を呼出中の場合は、その枠をスキップして選択した枠へ切り替えます。</p></div>
+          </div>
         </section>
         <section class="card">
           <div class="section-heading"><div><span class="eyebrow">対応が必要な整理券だけを表示</span><h2>整理券一覧</h2></div><strong id="activeTicketCount">0組</strong></div>
@@ -68,10 +76,16 @@
         <section class="card schedule-details">
           <details><summary>枠ごとの時刻を個別に調整</summary><div id="rounds" class="round-grid"></div></details>
         </section>
+        <section class="card all-rounds-card">
+          <div class="section-heading"><div><span class="eyebrow">受付順と実施結果をすべて表示</span><h2>全枠の順番・履歴</h2></div><strong id="allRoundCount">0枠</strong></div>
+          <p class="hint">過去の終了枠、呼出中・体験中、これからの予約枠を、枠番号の順に表示します。</p>
+          <div id="allRounds" class="queue-timeline history-timeline" aria-label="全枠の順番と履歴"></div>
+          <p id="emptyRounds" class="empty-state" hidden>まだ枠はありません。</p>
+        </section>
       </div>
       <p id="message" class="error" role="alert"></p>
     </main>
-    <dialog id="ticketDialog"><form method="dialog" class="form-grid"><h2 id="dialogTitle">整理券操作</h2><label>操作<select id="ticketAction"><option value="hold">保留</option><option value="release">保留解除</option><option value="cancel">キャンセル</option><option value="no_show">来場なし</option><option value="return_queue">待機列へ戻す</option><option value="move_round">予定回を変更</option><option value="undo_checkin">入場処理を取り消す</option><option value="message">個別メッセージ</option></select></label><label>変更先の予定回<select id="ticketRound"></select></label><label>理由・メッセージ<textarea id="ticketReason" maxlength="300" rows="3"></textarea></label><div class="actions"><button value="cancel">閉じる</button><button id="applyTicketAction" value="default" class="primary">実行</button></div></form></dialog>
+    <dialog id="ticketDialog"><form method="dialog" class="form-grid"><h2 id="dialogTitle">整理券操作</h2><p id="dialogStatus" class="dialog-status"></p><label>操作<select id="ticketAction"></select></label><label id="ticketRoundField" hidden>変更先の予定回<select id="ticketRound"></select></label><label><span id="ticketReasonLabel">理由</span><textarea id="ticketReason" maxlength="300" rows="3"></textarea></label><p id="ticketDialogMessage" class="error" role="alert"></p><div class="actions"><button value="cancel">閉じる</button><button id="applyTicketAction" value="default" class="primary">実行</button></div></form></dialog>
     <script src="/operator.js" type="module"></script>
   </body>
 </html>
