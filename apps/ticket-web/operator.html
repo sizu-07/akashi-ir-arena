@@ -15,8 +15,7 @@
         <form id="loginForm" class="form-grid"><label>運営パスワード<input name="password" type="password" minlength="12" required autocomplete="current-password"></label><button class="primary">ログイン</button></form>
       </section>
       <div id="app" hidden>
-        <div class="toolbar"><div class="actions"><span id="role" class="badge"></span><button id="takeover">操作権を取得</button></div><div class="actions"><a href="/scanner" target="_blank">入場QR読取</a><a href="/api/operator/export.csv">履歴CSV</a></div></div>
-        <section id="registrationBanner" class="registration-banner"><div><small>整理券受付</small><strong id="registrationBannerTitle">確認中</strong><span id="registrationBannerHint"></span></div><div class="actions"><button id="openRegistration">受付を開始</button><button id="closeRegistration" class="warning">受付を停止</button></div></section>
+        <div class="toolbar"><div class="actions"><span id="role" class="badge"></span><button id="takeover">操作権を取得</button><span id="compactRegistrationStatus" class="badge registration-compact">受付確認中</span></div><div class="actions"><a href="/scanner" target="_blank">入場QR読取</a><a href="/api/operator/export.csv">履歴CSV</a></div></div>
         <section class="card queue-card">
           <div class="section-heading"><div><span class="eyebrow">1枠15分・各枠4名</span><h2>現在の待機列</h2></div><span class="live-dot">自動更新</span></div>
           <p id="nextAction" class="next-action">待機列を確認しています。</p>
@@ -51,8 +50,8 @@
           <div class="section-heading"><div><span class="eyebrow">迷ったら番号順に操作</span><h2>当日の操作</h2></div></div>
           <ol class="operation-flow"><li><strong>呼び出す</strong><span>次枠の4名を入口へ案内</span></li><li><strong>入場確認</strong><span>QRを読み取る</span></li><li><strong>ゲーム開始・終了</strong><span>ゲーム運営タブで操作</span></li></ol>
           <div class="actions primary-actions"><button id="callNext" class="primary">① 次の4名を呼び出す</button><a class="button-link" href="/scanner" target="_blank">② 入場QRを読み取る</a><a id="gameActionLink" class="button-link dark" href="http://localhost:8080/">③ ゲーム運営を開く</a></div>
-          <hr>
         </section>
+        <section id="registrationBanner" class="registration-banner"><div><small>整理券受付</small><strong id="registrationBannerTitle">確認中</strong><span id="registrationBannerHint"></span></div><div class="actions"><button id="openRegistration">受付を開始</button><button id="closeRegistration" class="warning">受付を停止</button></div></section>
         <section class="card">
           <div class="section-heading"><div><span class="eyebrow">予定時刻を一括調整</span><h2>遅延・受付の設定</h2></div><strong id="delaySummary">遅延なし</strong></div>
           <div class="delay-buttons"><button id="delayMinusSlot">遅延を1枠減らす</button><button id="delayPlusSlot" class="warning">遅延を1枠追加</button><button id="delayReset">遅延を解除</button></div>

@@ -286,7 +286,8 @@ export class TicketQueue {
     };
     if (playing) {
       if (!isSlotBoundary(playing.slotStartAt)) playing.slotStartAt = floorSlotBoundary(playing.scheduledAt ?? playing.startedAt ?? now);
-      applyEstimate(playing);
+      playing.activeSlotStartAt ??= playing.scheduledAt ?? playing.slotStartAt;
+      playing.scheduledAt = playing.activeSlotStartAt;
       nextSlot = playing.slotStartAt + SLOT_MS;
     }
     if (called) {
@@ -673,7 +674,7 @@ export class TicketQueue {
       if (event.message) this.state.globalMessage = String(event.message).slice(0, 500);
     } else if (map[event.type]) {
       round.status = map[event.type];
-      if (round.status === 'PLAYING') { round.startedAt ??= Number(event.occurredAt) || this.now(); round.pausedAt = null; }
+      if (round.status === 'PLAYING') { round.activeSlotStartAt ??= round.scheduledAt ?? round.slotStartAt ?? floorSlotBoundary(this.now()); round.startedAt ??= Number(event.occurredAt) || this.now(); round.pausedAt = null; }
       if (round.status === 'COMPLETED') round.completedAt = Number(event.occurredAt) || this.now();
       for (const id of round.ticketIds) {
         const ticket = this.ticket(id);

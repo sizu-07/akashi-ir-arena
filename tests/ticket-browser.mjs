@@ -33,6 +33,7 @@ try {
   await page.getByRole('button', {name: 'ログイン'}).click();
   await page.locator('#app').waitFor({state: 'visible'});
   await page.locator('#registrationBanner').getByText('受付中', {exact: true}).waitFor();
+  await page.locator('#compactRegistrationStatus').getByText('受付中', {exact: true}).waitFor();
   const messageInput = page.locator('#messageForm textarea[name="message"]');
   await messageInput.fill('入力途中の全体連絡');
   await fetch(`${base}/api/public/register`, {
@@ -42,10 +43,27 @@ try {
   });
   await page.waitForTimeout(300);
   assert.equal(await messageInput.inputValue(), '入力途中の全体連絡');
+  await page.getByRole('button', {name: /次の.*呼び出/}).click();
   await page.getByRole('button', {name: '遅延を1枠追加'}).click();
   await page.locator('#delaySummary').getByText('1枠（15分）遅延', {exact: true}).waitFor();
   await page.locator('#queueTimeline').getByText('遅延・使用なし', {exact: true}).waitFor();
-  await page.getByRole('button', {name: /次の.*呼び出/}).click();
+  await page.locator('#queueTimeline .timeline-round.called').waitFor();
+  const timelineStates = await page.locator('#queueTimeline .timeline-round').evaluateAll((nodes) => nodes.map((node) => node.className));
+  assert.match(timelineStates[0], /delayed_empty/);
+  assert.ok(timelineStates.findIndex((className) => className.includes('called')) > 0);
+  assert.match(await messageInput.inputValue(), /1枠（15分）遅延/);
+  assert.match(await messageInput.inputValue(), /変更を余儀なくされる場合があります/);
+  await page.locator('#nextAction').getByText(/先頭に1枠の遅延調整/).waitFor();
+
+  const timeline = page.locator('#queueTimeline');
+  await timeline.evaluate((node) => { node.scrollLeft = 120; });
+  await fetch(`${base}/api/public/register`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({requestId: 'ticket-browser-scroll-registration', nicknames: ['スクロール確認'], partySize: 1, consent: true}),
+  });
+  await page.waitForTimeout(300);
+  assert.ok(Math.abs((await timeline.evaluate((node) => node.scrollLeft)) - 120) <= 1);
 
   await page.goto(`${base}/scanner#AKASHI:${ticket.qrToken}`);
   await page.locator('#scanSuccess').waitFor({state: 'visible'});

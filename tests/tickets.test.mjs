@@ -81,6 +81,28 @@ test('遅延を15分枠単位で設定し、実施枠と来場者予定を後ろ
   assert.equal(queue.publicTicket(ticket.accessToken).estimatedCallAt, round.effectiveSlotStartAt - 15 * 60_000);
 });
 
+test('呼出中の前へ遅延枠を挿入し、体験中の枠は動かさず次枠だけを後ろへ移動する', () => {
+  const now = new Date('2026-09-17T17:07:00+09:00').getTime();
+  const queue = new TicketQueue({now: () => now});
+  queue.register({requestId: 'delay-called-first', nicknames: ['A1', 'A2', 'A3', 'A4'], partySize: 4, consent: true});
+  queue.register({requestId: 'delay-called-second', nicknames: ['B1', 'B2', 'B3', 'B4'], partySize: 4, consent: true});
+  const [first, second] = queue.operatorView().rounds;
+  const nominalFirstStart = first.slotStartAt;
+  queue.callNext('operator');
+  queue.operatorAction({action: 'settings', value: {globalDelaySlots: 1, graceMinutes: 3, maxWaitingGroups: 100}, operator: 'operator'});
+  assert.equal(queue.operatorView().rounds.find((round) => round.id === first.id).effectiveSlotStartAt, nominalFirstStart + 15 * 60_000);
+
+  for (const id of queue.round(first.id).ticketIds) queue.checkIn(queue.ticket(id).qrToken, 'operator');
+  queue.applyGameEvent({eventId: 'delayed-round-start', type: 'GAME_STARTED', targetRoundId: first.id, occurredAt: now, source: 'game'});
+  const playingStart = queue.operatorView().rounds.find((round) => round.id === first.id).effectiveSlotStartAt;
+  assert.equal(queue.round(second.id).status, 'CALLED');
+
+  queue.operatorAction({action: 'settings', value: {globalDelaySlots: 2, graceMinutes: 3, maxWaitingGroups: 100}, operator: 'operator'});
+  const rounds = queue.operatorView().rounds;
+  assert.equal(rounds.find((round) => round.id === first.id).effectiveSlotStartAt, playingStart);
+  assert.equal(rounds.find((round) => round.id === second.id).effectiveSlotStartAt, playingStart + 30 * 60_000);
+});
+
 test('ゲーム開始で先頭枠が進行し、体験中に次枠を自動呼出する', () => {
   const queue = new TicketQueue();
   queue.register({requestId: 'first-four-players', nicknames: ['A1', 'A2', 'A3', 'A4'], partySize: 4, consent: true});
@@ -388,6 +410,8 @@ test('HTTP同時登録、運営認証、操作冪等性、閲覧分離', async (
     assert.equal((await fetch(`${base}/api/game/events`, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer wrong'}, body: JSON.stringify(gameEvent)})).status, 401);
 
     const operatorPage = await (await fetch(`${base}/operator`)).text();
+    assert.ok(operatorPage.indexOf('operation-card') < operatorPage.indexOf('id="registrationBanner"'));
+    assert.match(operatorPage, /id="takeover"[^>]*>操作権を取得<\/button><span id="compactRegistrationStatus"/);
     assert.ok(operatorPage.indexOf('queueTimeline') < operatorPage.indexOf('id="tickets"'));
     assert.ok(operatorPage.indexOf('id="tickets"') < operatorPage.indexOf('registrationStatus'));
     assert.ok(operatorPage.indexOf('registrationStatus') < operatorPage.indexOf('settingsForm'));

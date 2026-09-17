@@ -107,6 +107,8 @@ label { display: grid; gap: 6px; font-weight: 650; }
 .registration-banner.open strong { color: var(--green); }
 .registration-banner.closed { border-color: #e1aa62; background: #fff3df; }
 .registration-banner.closed strong { color: #8a4c00; }
+.registration-compact.open { background: #dff3e8; color: #126342; }
+.registration-compact.closed { background: #fff0d7; color: #8a4c00; }
 .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .section-heading h2 { margin-bottom: 0; }
 .eyebrow { display: block; margin-bottom: 2px; color: var(--green); font-size: 12px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
@@ -116,7 +118,7 @@ label { display: grid; gap: 6px; font-weight: 650; }
 .dashboard .metric { border: 1px solid var(--line); background: white; box-shadow: var(--shadow); }
 .queue-card { overflow: hidden; }
 .next-action { margin: 0 0 20px; padding: 14px 16px; border-left: 5px solid var(--green); border-radius: 8px; background: var(--green-soft); font-weight: 750; }
-.queue-timeline { display: flex; gap: 16px; overflow-x: auto; padding: 8px 4px 18px; scroll-snap-type: x proximity; }
+.queue-timeline { display: flex; gap: 16px; overflow-x: auto; overflow-anchor: none; padding: 8px 4px 18px; scroll-snap-type: x proximity; }
 .timeline-round { position: relative; flex: 0 0 230px; padding: 14px; border: 2px solid var(--line); border-radius: 16px; background: white; scroll-snap-align: start; }
 .timeline-round:not(:last-child)::after { content: ""; position: absolute; top: 50%; right: -18px; width: 18px; border-top: 3px solid #afbbb5; }
 .timeline-round:not(:last-child)::before { content: ""; position: absolute; z-index: 1; top: calc(50% - 5px); right: -18px; border-width: 5px 0 5px 8px; border-style: solid; border-color: transparent transparent transparent #afbbb5; }
