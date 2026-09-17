@@ -2,7 +2,7 @@ const $ = (id) => document.getElementById(id);
 const labels = {
   WAITING: '待機', ASSIGNED: '割当済', CALLED: '呼出中', CHECKED_IN: '入場済', PLAYING: '体験中',
   COMPLETED: '終了', ON_HOLD: '保留', NO_SHOW: 'スキップ済み', CANCELED: '取消', EXPIRED: '失効',
-  SCHEDULED: '予定', LOCKED_SCHEDULED: '時刻固定', SKIPPED: '未実施で終了', EMPTY: '空き枠', DELAYED_EMPTY: '遅延・使用なし',
+  SCHEDULED: '予定', LOCKED_SCHEDULED: '時刻固定', SKIPPED: '未実施で終了', EMPTY: '空き枠', DELAYED_EMPTY: '調整・使用なし',
 };
 const activeTicketStates = new Set(['WAITING', 'ASSIGNED', 'CALLED', 'CHECKED_IN', 'PLAYING', 'ON_HOLD', 'NO_SHOW']);
 const scheduledRoundStates = new Set(['SCHEDULED', 'LOCKED_SCHEDULED']);
@@ -115,7 +115,7 @@ function futureTimelineSlots(minimumCount = 6) {
     ? effectiveStart(playing)
     : called
       ? Math.min(called.slotStartAt ?? effectiveStart(called), effectiveStart(called))
-      : Math.min(nextSlotBoundary(now), ...candidates);
+      : real.length ? Math.min(nextSlotBoundary(now), ...candidates) : state.settings.delayAnchorAt ?? nextSlotBoundary(now);
   const lastReal = real.reduce((latest, round) => Math.max(latest, effectiveStart(round) || 0), 0);
   const end = Math.max(start + (minimumCount - 1) * SLOT_MS, lastReal + 2 * SLOT_MS);
   const byStart = new Map(real.map((round) => [effectiveStart(round), round]));
@@ -147,11 +147,11 @@ function renderTimeline() {
   const calledIndex = called ? visible.indexOf(called) : -1;
   const delayedBeforeCalled = calledIndex > 0 ? visible.slice(0, calledIndex).filter((round) => round.status === 'DELAYED_EMPTY').length : 0;
   const next = state.rounds.filter((round) => scheduledRoundStates.has(round.status)).sort((a, b) => a.number - b.number)[0];
-  if (playing && called && delayedBeforeCalled) $('nextAction').textContent = `第${playing.number}枠を体験中です。第${called.number}枠は呼出中ですが、間に${delayedBeforeCalled}枠の遅延調整が入り、その後に実施します。`;
+  if (playing && called && delayedBeforeCalled) $('nextAction').textContent = `第${playing.number}枠を体験中です。第${called.number}枠は呼出中ですが、間に${delayedBeforeCalled}枠の調整枠が入り、その後に実施します。`;
   else if (playing && called) $('nextAction').textContent = `第${playing.number}枠を体験中です。同時に次の第${called.number}枠を呼び出し中で、${called.checkedInPeople}/${called.assignedPeople}名が入場済みです。`;
   else if (playing?.pausedAt) $('nextAction').textContent = `第${playing.number}枠はゲーム一時停止中です。ゲーム運営画面から再開または終了してください。`;
   else if (playing) $('nextAction').textContent = `現在は第${playing.number}枠を体験中です。ゲーム運営画面で終了すると、この枠が完了して次枠を自動で呼び出します。`;
-  else if (called && delayedBeforeCalled) $('nextAction').textContent = `第${called.number}枠は呼出中ですが、先頭に${delayedBeforeCalled}枠の遅延調整が入りました。来場者へ遅延案内を送信済みです。`;
+  else if (called && delayedBeforeCalled) $('nextAction').textContent = `第${called.number}枠は呼出中ですが、先頭に${delayedBeforeCalled}枠の調整枠が入りました。来場者へ案内を送信済みです。`;
   else if (called && called.checkedInPeople === called.assignedPeople) $('nextAction').textContent = `第${called.number}枠は全員入場済みです。ゲーム運営画面でゲームを開始してください。`;
   else if (called) $('nextAction').textContent = `第${called.number}枠を呼び出し中です。現在${called.checkedInPeople}/${called.assignedPeople}名が入場済みです。残りのQRを確認してください。`;
   else if (next?.callAt > Date.now()) $('nextAction').textContent = `次は第${next.number}枠です。開始15分前の${formatTime(next.callAt)}ごろに自動で呼び出します。`;
@@ -235,7 +235,7 @@ function timelineRound(round, index, {history = false} = {}) {
   else if (checkingIn) marker.textContent = `NOW・入場中 ${round.checkedInPeople}/${round.assignedPeople}`;
   else if (round.status === 'PLAYING' && round.pausedAt) marker.textContent = 'NOW・一時停止中';
   else if (round.status === 'PLAYING') marker.textContent = 'NOW・体験中';
-  else if (round.status === 'CALLED' && effectiveStart(round) > round.slotStartAt) marker.textContent = '呼出中・遅延後';
+  else if (round.status === 'CALLED' && effectiveStart(round) > round.slotStartAt) marker.textContent = '呼出中・調整後';
   else if (round.status === 'CALLED') marker.textContent = 'NOW・呼出中';
   else if (history || ['EMPTY', 'DELAYED_EMPTY'].includes(round.status)) marker.textContent = labels[round.status] || round.status;
   else marker.textContent = index === 0 ? 'NEXT' : `${index * 15}分後`;
@@ -294,7 +294,7 @@ function timelineRound(round, index, {history = false} = {}) {
   footer.className = 'timeline-footer';
   const displayedStatus = ready ? '全員入場済み' : checkingIn ? '入場受付中' : round.status === 'PLAYING' && round.pausedAt ? '一時停止中' : labels[round.status] || round.status;
   const displayedPeople = round.status === 'SKIPPED' ? round.skippedPeople : round.assignedPeople;
-  footer.textContent = round.status === 'DELAYED_EMPTY' ? '遅延調整のため使用しません'
+  footer.textContent = round.status === 'DELAYED_EMPTY' ? '運営調整のため使用しません。終了時刻に自動で進みます'
     : round.status === 'EMPTY' ? '登録が入ると自動配置されます'
       : `${displayedStatus}・${displayedPeople}/4名${round.status === 'CALLED' ? `・${round.checkedInPeople}名入場済` : ''}`;
   article.append(marker, heading, groups, seats, footer);
@@ -335,7 +335,7 @@ function render() {
     $('settingsForm').elements.maxWaitingGroups.value = state.settings.maxWaitingGroups;
   }
   const delaySlots = Math.floor(state.settings.globalDelayMinutes / 15);
-  $('delaySummary').textContent = delaySlots ? `${delaySlots}枠（${delaySlots * 15}分）遅延` : '遅延なし';
+  $('delaySummary').textContent = delaySlots ? `調整中：残り${delaySlots}枠（${delaySlots * 15}分）` : '調整枠なし';
   $('rounds').replaceChildren(...state.rounds.filter((round) => scheduledRoundStates.has(round.status)).slice(0, 12).map(roundCard));
   $('tickets').replaceChildren(...activeTickets.map(ticketRow));
   $('activeTicketCount').textContent = `${activeTickets.length}組`;
@@ -449,8 +449,8 @@ function currentSettings(delaySlots) {
 }
 
 function delayNotice(delaySlots) {
-  if (delaySlots > 0) return `現在、${delaySlots}枠（${delaySlots * 15}分）遅延しています。今後の状況により、入場予定時刻の変更を余儀なくされる場合があります。整理券画面の最新情報をご確認ください。`;
-  return '遅延は解消しました。入場予定時刻が変更されている場合がありますので、整理券画面の最新情報をご確認ください。';
+  if (delaySlots > 0) return `現在、運営調整のため${delaySlots}枠（${delaySlots * 15}分）遅れています。調整枠は時間の経過に合わせて自動で消化されます。今後の状況により、入場予定時刻が変更される場合があります。`;
+  return '運営調整は終了しました。整理券画面の最新の入場予定時刻をご確認ください。';
 }
 
 async function applyDelaySlots(delaySlots) {

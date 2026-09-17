@@ -14,6 +14,9 @@ const SLOT_MS = SLOT_MINUTES * 60_000;
 const nextSlotBoundary = (value) => (Math.floor(value / SLOT_MS) + 1) * SLOT_MS;
 const floorSlotBoundary = (value) => Math.floor(value / SLOT_MS) * SLOT_MS;
 const isSlotBoundary = (value) => Number.isFinite(value) && value % SLOT_MS === 0;
+const adjustmentNotice = (slots) => slots > 0
+  ? `現在、運営調整のため${slots}枠（${slots * SLOT_MINUTES}分）遅れています。調整枠は時間の経過に合わせて自動で消化されます。今後の状況により、入場予定時刻が変更される場合があります。`
+  : '運営調整は終了しました。整理券画面の最新の入場予定時刻をご確認ください。';
 const legacyPlayerNames = (nickname, partySize) => Array.from({length: partySize}, (_, index) => partySize === 1 ? nickname : `${nickname}${index + 1}`);
 const bestFillIndexes = (tickets, capacity) => {
   const combinations = Array.from({length: capacity + 1}, () => null);
@@ -63,6 +66,8 @@ export class TicketQueue {
     };
     this.state.settings = {...this.state.settings, cycleMinutes: SLOT_MINUTES, autoCall: true};
     this.state.settings.globalDelayMinutes = Math.min(600, Math.max(0, Math.ceil((Number(this.state.settings.globalDelayMinutes) || 0) / SLOT_MINUTES) * SLOT_MINUTES));
+    this.state.settings.delayAnchorAt = isSlotBoundary(this.state.settings.delayAnchorAt) ? this.state.settings.delayAnchorAt : null;
+    if (!this.state.settings.globalDelayMinutes) this.state.settings.delayAnchorAt = null;
     this.state.version = 2;
     for (const ticket of this.state.tickets) {
       if (!Array.isArray(ticket.playerNicknames) || ticket.playerNicknames.length !== ticket.partySize) {
@@ -73,7 +78,8 @@ export class TicketQueue {
     const membershipRepair = this.normalizeTicketRoundMembership();
     const activeRepair = this.normalizeActiveRounds();
     this.recalculate(false);
-    this.callDueRound('automatic-recovery', {requireStarted: true});
+    this.ensureAdjustmentAnchor();
+    this.advanceTime('automatic-recovery', {requireStarted: true});
     if (membershipRepair || activeRepair) this.persist('state_repaired', {
       reason: '整理券と枠の状態を正規化',
       details: {membershipRepair, activeRepair},
@@ -300,6 +306,88 @@ export class TicketQueue {
       applyEstimate(round);
       nextSlot = round.slotStartAt + SLOT_MS;
     }
+  }
+
+  adjustmentRounds() {
+    return this.state.rounds
+      .filter((round) => ['CALLED', 'SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status))
+      .sort((a, b) => a.number - b.number);
+  }
+
+  shiftAdjustmentRounds(milliseconds) {
+    if (!milliseconds) return;
+    for (const round of this.adjustmentRounds()) {
+      if (Number.isFinite(round.slotStartAt)) round.slotStartAt += milliseconds;
+      if (Number.isFinite(round.manualSlotStartAt)) round.manualSlotStartAt += milliseconds;
+      if (Number.isFinite(round.manualScheduledAt)) round.manualScheduledAt += milliseconds;
+    }
+  }
+
+  ensureAdjustmentAnchor() {
+    if (!this.state.settings.globalDelayMinutes) {
+      this.state.settings.delayAnchorAt = null;
+      return null;
+    }
+    if (isSlotBoundary(this.state.settings.delayAnchorAt)) return this.state.settings.delayAnchorAt;
+    const affected = this.adjustmentRounds().filter((round) => isSlotBoundary(round.slotStartAt));
+    const earliest = affected.length ? Math.min(...affected.map((round) => round.slotStartAt)) : null;
+    const anchor = Math.max(floorSlotBoundary(this.now()), earliest ?? floorSlotBoundary(this.now()));
+    if (earliest !== null && earliest < anchor) this.shiftAdjustmentRounds(anchor - earliest);
+    this.state.settings.delayAnchorAt = anchor;
+    this.scheduleRounds();
+    return anchor;
+  }
+
+  consumeElapsedAdjustmentSlots(operator = 'automatic-time') {
+    const remainingSlots = Math.floor(this.state.settings.globalDelayMinutes / SLOT_MINUTES);
+    if (!remainingSlots) return 0;
+    const anchor = this.ensureAdjustmentAnchor();
+    const elapsedSlots = Math.min(remainingSlots, Math.max(0, Math.floor((this.now() - anchor) / SLOT_MS)));
+    if (!elapsedSlots) return 0;
+    const elapsedMilliseconds = elapsedSlots * SLOT_MS;
+    this.shiftAdjustmentRounds(elapsedMilliseconds);
+    const nextSlots = remainingSlots - elapsedSlots;
+    this.state.settings.globalDelayMinutes = nextSlots * SLOT_MINUTES;
+    this.state.settings.delayAnchorAt = nextSlots ? anchor + elapsedMilliseconds : null;
+    this.state.globalMessage = adjustmentNotice(nextSlots);
+    this.scheduleRounds();
+    this.persist('adjustment_slots_elapsed', {
+      operator,
+      reason: '調整枠の終了時刻に到達',
+      details: {elapsedSlots, remainingSlots: nextSlots},
+    });
+    return elapsedSlots;
+  }
+
+  completeExpiredPlayingRound(operator = 'automatic-time') {
+    const round = this.state.rounds.find((item) => item.status === 'PLAYING');
+    if (!round || round.pausedAt) return null;
+    const startedSlot = round.activeSlotStartAt ?? round.scheduledAt ?? round.slotStartAt;
+    if (!Number.isFinite(startedSlot) || this.now() < startedSlot + SLOT_MS) return null;
+    round.status = 'COMPLETED';
+    round.completedAt = this.now();
+    for (const id of round.ticketIds) {
+      const ticket = this.ticket(id);
+      if (ticket && !terminalStates.has(ticket.status)) {
+        ticket.status = 'COMPLETED';
+        ticket.updatedAt = this.now();
+      }
+    }
+    this.scheduleRounds();
+    this.persist('round_auto_completed', {
+      operator,
+      reason: '固定枠の終了時刻を過ぎたため自動完了',
+      roundId: round.id,
+      details: {number: round.number, scheduledEndAt: startedSlot + SLOT_MS},
+    });
+    return round;
+  }
+
+  advanceTime(operator = 'automatic-time', {requireStarted = false} = {}) {
+    const elapsedAdjustmentSlots = this.consumeElapsedAdjustmentSlots(operator);
+    const completedRound = this.completeExpiredPlayingRound(operator);
+    const calledRound = this.callDueRound(operator, {requireStarted});
+    return {changed: Boolean(elapsedAdjustmentSlots || completedRound || calledRound), elapsedAdjustmentSlots, completedRound, calledRound};
   }
 
   publicTicket(ticketOrAccessToken) {
@@ -643,14 +731,20 @@ export class TicketQueue {
       if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) throw Error(`${name} の値が範囲外です`);
       return parsed;
     };
+    this.consumeElapsedAdjustmentSlots(operator);
     this.state.settings.cycleMinutes = SLOT_MINUTES;
+    const previousDelayMinutes = this.state.settings.globalDelayMinutes;
     const delaySlots = input.globalDelaySlots === undefined
       ? Math.ceil(number('globalDelayMinutes', 0, 600) / SLOT_MINUTES)
       : number('globalDelaySlots', 0, 40);
     this.state.settings.globalDelayMinutes = delaySlots * SLOT_MINUTES;
+    if (this.state.settings.globalDelayMinutes > previousDelayMinutes && !previousDelayMinutes) this.state.settings.delayAnchorAt = null;
+    if (this.state.settings.globalDelayMinutes) this.ensureAdjustmentAnchor();
+    else this.state.settings.delayAnchorAt = null;
     this.state.settings.graceMinutes = number('graceMinutes', 1, 60);
     this.state.settings.maxWaitingGroups = number('maxWaitingGroups', 1, 1000);
     this.state.settings.autoCall = true;
+    if (this.state.settings.globalDelayMinutes !== previousDelayMinutes) this.state.globalMessage = adjustmentNotice(delaySlots);
     this.scheduleRounds();
     this.persist('settings_changed', {operator, details: clone(this.state.settings)});
   }
@@ -668,6 +762,13 @@ export class TicketQueue {
       const summary = this.roundSummary(round.id);
       if (!summary.assignedPeople || summary.checkedInPeople !== summary.assignedPeople) throw Error(`未入場者がいます（${summary.checkedInPeople}/${summary.assignedPeople}名入場済み）`);
     }
+    if (event.type === 'GAME_ENDED' && round.status === 'COMPLETED') {
+      this.state.processedGameEvents.push(event.eventId);
+      this.state.gameLastSeenAt = this.now();
+      if (this.state.processedGameEvents.length > 5000) this.state.processedGameEvents.shift();
+      this.persist('late_game_end_accepted', {operator: event.source || 'game-server', roundId: round.id, details: event});
+      return {duplicate: false, alreadyCompleted: true, roundId: round.id};
+    }
     if (event.type === 'GAME_ENDED' && round.status !== 'PLAYING') throw Error('体験中の枠だけゲームを終了できます');
     if (event.type === 'GAME_RESUMED' && (round.status !== 'PLAYING' || !round.pausedAt)) throw Error('一時停止中の枠だけゲームを再開できます');
     const map = {GAME_STARTED: 'PLAYING', GAME_RESUMED: 'PLAYING', GAME_ENDED: 'COMPLETED'};
@@ -675,10 +776,13 @@ export class TicketQueue {
       if (round.status !== 'PLAYING') throw Error('体験中の枠だけ一時停止できます');
       round.pausedAt = Number(event.occurredAt) || this.now();
       this.state.settings.globalDelayMinutes = Math.min(600, this.state.settings.globalDelayMinutes + SLOT_MINUTES);
+      this.ensureAdjustmentAnchor();
+      this.state.globalMessage = adjustmentNotice(Math.floor(this.state.settings.globalDelayMinutes / SLOT_MINUTES));
     } else if (event.type === 'EQUIPMENT_TROUBLE') {
       const delay = Math.max(0, Math.min(120, Number(event.delayMinutes) || 0));
       this.state.settings.globalDelayMinutes = Math.min(600, this.state.settings.globalDelayMinutes + Math.ceil(delay / SLOT_MINUTES) * SLOT_MINUTES);
-      if (event.message) this.state.globalMessage = String(event.message).slice(0, 500);
+      this.ensureAdjustmentAnchor();
+      this.state.globalMessage = event.message ? String(event.message).slice(0, 500) : adjustmentNotice(Math.floor(this.state.settings.globalDelayMinutes / SLOT_MINUTES));
     } else if (map[event.type]) {
       round.status = map[event.type];
       if (round.status === 'PLAYING') { round.activeSlotStartAt ??= round.scheduledAt ?? round.slotStartAt ?? floorSlotBoundary(this.now()); round.startedAt ??= Number(event.occurredAt) || this.now(); round.pausedAt = null; }

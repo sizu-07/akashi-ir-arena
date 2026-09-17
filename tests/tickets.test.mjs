@@ -103,7 +103,79 @@ test('呼出中の前へ遅延枠を挿入し、体験中の枠は動かさず�
   queue.operatorAction({action: 'settings', value: {globalDelaySlots: 2, graceMinutes: 3, maxWaitingGroups: 100}, operator: 'operator'});
   const rounds = queue.operatorView().rounds;
   assert.equal(rounds.find((round) => round.id === first.id).effectiveSlotStartAt, playingStart);
-  assert.equal(rounds.find((round) => round.id === second.id).effectiveSlotStartAt, playingStart + 30 * 60_000);
+  assert.equal(rounds.find((round) => round.id === second.id).effectiveSlotStartAt, playingStart + 45 * 60_000);
+});
+
+test('調整枠は終了時刻ごとに自動消化し、案内済みの開始予定を保ったまま次へ進む', () => {
+  let now = new Date('2026-09-17T17:07:00+09:00').getTime();
+  const queue = new TicketQueue({now: () => now});
+  register(queue, '先に実施する組', 4);
+  register(queue, '調整待ちの組', 4);
+  const [first, round] = queue.operatorView().rounds;
+  queue.callNext('operator');
+  for (const id of first.ticketIds) queue.checkIn(queue.ticket(id).qrToken, 'operator');
+  queue.applyGameEvent({eventId: 'adjustment-seed-start', type: 'GAME_STARTED', targetRoundId: first.id, occurredAt: now, source: 'game'});
+  queue.applyGameEvent({eventId: 'adjustment-seed-end', type: 'GAME_ENDED', targetRoundId: first.id, occurredAt: now, source: 'game'});
+  const nominalStart = round.slotStartAt;
+  queue.operatorAction({action: 'settings', value: {globalDelaySlots: 2, graceMinutes: 3, maxWaitingGroups: 100}, operator: 'operator'});
+  const announcedStart = queue.round(round.id).scheduledAt;
+
+  now = nominalStart + 15 * 60_000 - 1;
+  assert.equal(queue.advanceTime().changed, false);
+  assert.equal(queue.state.settings.globalDelayMinutes, 30);
+  now += 1;
+  const firstAdvance = queue.advanceTime('automatic-time', {requireStarted: true});
+  assert.equal(firstAdvance.elapsedAdjustmentSlots, 1);
+  assert.equal(queue.state.settings.globalDelayMinutes, 15);
+  assert.equal(queue.round(round.id).scheduledAt, announcedStart);
+  assert.equal(queue.round(round.id).status, 'CALLED');
+
+  now = nominalStart + 30 * 60_000;
+  const secondAdvance = queue.advanceTime('automatic-time', {requireStarted: true});
+  assert.equal(secondAdvance.elapsedAdjustmentSlots, 1);
+  assert.equal(queue.state.settings.globalDelayMinutes, 0);
+  assert.equal(queue.state.settings.delayAnchorAt, null);
+  assert.equal(queue.round(round.id).slotStartAt, announcedStart);
+  assert.equal(queue.round(round.id).scheduledAt, announcedStart);
+  assert.match(queue.state.globalMessage, /運営調整は終了/);
+});
+
+test('ゲーム終了通知がなくても固定枠の終了時刻で自動完了し、次枠へ進む', () => {
+  let now = new Date('2026-09-17T17:07:00+09:00').getTime();
+  const queue = new TicketQueue({now: () => now});
+  register(queue, '自動終了する組', 4);
+  register(queue, '次に進む組', 4);
+  const [first, second] = queue.operatorView().rounds;
+  queue.callNext('operator');
+  for (const id of first.ticketIds) queue.checkIn(queue.ticket(id).qrToken, 'operator');
+  queue.applyGameEvent({eventId: 'auto-expire-start', type: 'GAME_STARTED', targetRoundId: first.id, occurredAt: now, source: 'game'});
+
+  now = first.effectiveSlotEndAt - 1;
+  assert.equal(queue.advanceTime().completedRound, null);
+  assert.equal(queue.round(first.id).status, 'PLAYING');
+  now += 1;
+  const result = queue.advanceTime();
+  assert.equal(result.completedRound?.id, first.id);
+  assert.equal(queue.round(first.id).status, 'COMPLETED');
+  assert.ok(queue.round(first.id).ticketIds.every((id) => queue.ticket(id).status === 'COMPLETED'));
+  assert.equal(queue.round(second.id).status, 'CALLED');
+
+  const lateEnd = queue.applyGameEvent({eventId: 'auto-expire-late-end', type: 'GAME_ENDED', targetRoundId: first.id, occurredAt: now, source: 'game'});
+  assert.equal(lateEnd.alreadyCompleted, true);
+});
+
+test('一時停止中の体験枠は終了予定時刻を過ぎても自動完了しない', () => {
+  let now = new Date('2026-09-17T17:07:00+09:00').getTime();
+  const queue = new TicketQueue({now: () => now});
+  register(queue, '一時停止する組', 4);
+  const round = queue.operatorView().rounds[0];
+  queue.callNext('operator');
+  for (const id of round.ticketIds) queue.checkIn(queue.ticket(id).qrToken, 'operator');
+  queue.applyGameEvent({eventId: 'paused-expire-start', type: 'GAME_STARTED', targetRoundId: round.id, occurredAt: now, source: 'game'});
+  queue.applyGameEvent({eventId: 'paused-expire-pause', type: 'GAME_PAUSED', targetRoundId: round.id, occurredAt: now, source: 'game'});
+  now = round.effectiveSlotEndAt + 15 * 60_000;
+  assert.equal(queue.advanceTime().completedRound, null);
+  assert.equal(queue.round(round.id).status, 'PLAYING');
 });
 
 test('ゲーム開始後も次枠の開始15分前まで待って自動呼出する', () => {

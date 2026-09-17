@@ -43,10 +43,12 @@ try {
   });
   await page.waitForTimeout(300);
   assert.equal(await messageInput.inputValue(), '入力途中の全体連絡');
-  await page.getByRole('button', {name: /次の.*呼び出/}).click();
-  await page.getByRole('button', {name: '遅延を1枠追加'}).click();
-  await page.locator('#delaySummary').getByText('1枠（15分）遅延', {exact: true}).waitFor();
-  await page.locator('#queueTimeline').getByText('遅延・使用なし', {exact: true}).waitFor();
+  const callNext = page.getByRole('button', {name: /次の.*呼び出/});
+  if (await callNext.isEnabled()) await callNext.click();
+  await page.locator('#queueTimeline .timeline-round.called').waitFor();
+  await page.getByRole('button', {name: '調整枠を1枠追加'}).click();
+  await page.locator('#delaySummary').getByText('調整中：残り1枠（15分）', {exact: true}).waitFor();
+  await page.locator('#queueTimeline').getByText('調整・使用なし', {exact: true}).waitFor();
   await page.locator('#queueTimeline .timeline-round.called').waitFor();
   assert.notEqual(
     await page.locator('#queueTimeline .timeline-round.called').evaluate((node) => getComputedStyle(node).position),
@@ -56,9 +58,9 @@ try {
   const timelineStates = await page.locator('#queueTimeline .timeline-round').evaluateAll((nodes) => nodes.map((node) => node.className));
   assert.match(timelineStates[0], /delayed_empty/);
   assert.ok(timelineStates.findIndex((className) => className.includes('called')) > 0);
-  assert.match(await messageInput.inputValue(), /1枠（15分）遅延/);
-  assert.match(await messageInput.inputValue(), /変更を余儀なくされる場合があります/);
-  await page.locator('#nextAction').getByText(/先頭に1枠の遅延調整/).waitFor();
+  assert.match(await messageInput.inputValue(), /1枠（15分）遅れ/);
+  assert.match(await messageInput.inputValue(), /変更される場合があります/);
+  await page.locator('#nextAction').getByText(/先頭に1枠の調整枠/).waitFor();
 
   const timeline = page.locator('#queueTimeline');
   await timeline.evaluate((node) => { node.scrollLeft = 120; });

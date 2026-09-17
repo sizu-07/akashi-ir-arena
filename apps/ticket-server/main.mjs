@@ -264,10 +264,10 @@ export async function createTicketApp({
     if (checkingDueRound) return;
     checkingDueRound = true;
     try {
-      const called = queue.callDueRound('automatic-time', {requireStarted: true});
-      if (called) { await db.flush(); broadcast(); }
+      const result = queue.advanceTime('automatic-time', {requireStarted: true});
+      if (result.changed) { await db.flush(); broadcast(); }
     } catch (error) {
-      console.error('整理券の自動呼出:', error.message);
+      console.error('整理券の時刻進行:', error.message);
     } finally {
       checkingDueRound = false;
     }
