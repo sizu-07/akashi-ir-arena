@@ -73,12 +73,7 @@ export class TicketQueue {
     const membershipRepair = this.normalizeTicketRoundMembership();
     const activeRepair = this.normalizeActiveRounds();
     this.recalculate(false);
-    if (this.state.settings.autoCall
-      && this.state.rounds.some((round) => round.status === 'PLAYING')
-      && !this.state.rounds.some((round) => round.status === 'CALLED')
-      && this.state.rounds.some((round) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status))) {
-      this.callNext('automatic-recovery');
-    }
+    this.callDueRound('automatic-recovery', {requireStarted: true});
     if (membershipRepair || activeRepair) this.persist('state_repaired', {
       reason: '整理券と枠の状態を正規化',
       details: {membershipRepair, activeRepair},
@@ -200,10 +195,8 @@ export class TicketQueue {
     this.recalculate(false);
     const filledCalledRound = this.fillCalledRound();
     this.persist('ticket_registered', {ticketId: ticket.id, details: {ticketNumber: ticket.ticketNumber, partySize: size, receptionNumber: ticket.receptionNumber}});
-    const shouldCallDuringPlaying = this.state.rounds.some((round) => round.status === 'PLAYING')
-      && !this.state.rounds.some((round) => round.status === 'CALLED')
-      && this.state.rounds.some((round) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status));
-    if (queueWasDrained || shouldCallDuringPlaying) this.callNext('automatic-registration');
+    const shouldCallDuringPlaying = this.state.rounds.some((round) => round.status === 'PLAYING');
+    if (queueWasDrained || shouldCallDuringPlaying) this.callDueRound('automatic-registration');
     else if (filledCalledRound.length) this.persist('called_round_filled', {
       roundId: filledCalledRound[0].roundId,
       details: {ticketIds: filledCalledRound.map((item) => item.ticketId), people: filledCalledRound.reduce((sum, item) => sum + item.partySize, 0)},
@@ -280,7 +273,7 @@ export class TicketQueue {
     const now = this.now();
     const playing = this.state.rounds.find((round) => round.status === 'PLAYING');
     const called = this.state.rounds.find((round) => round.status === 'CALLED');
-    let nextSlot = nextSlotBoundary(now);
+    let nextSlot = null;
     const applyEstimate = (round) => {
       round.scheduledAt = round.slotStartAt + (this.state.settings.globalDelayMinutes + (round.delayMinutes ?? 0)) * 60_000;
     };
@@ -291,16 +284,19 @@ export class TicketQueue {
       nextSlot = playing.slotStartAt + SLOT_MS;
     }
     if (called) {
-      const minimum = playing ? nextSlot : nextSlotBoundary(now);
+      const minimum = playing ? nextSlot : (isSlotBoundary(called.slotStartAt) ? called.slotStartAt : nextSlotBoundary(now));
       if (!isSlotBoundary(called.slotStartAt)) called.slotStartAt = called.manualSlotStartAt ?? minimum;
       else if (playing && called.slotStartAt < minimum) called.slotStartAt = called.manualSlotStartAt && called.manualSlotStartAt >= minimum ? called.manualSlotStartAt : minimum;
       applyEstimate(called);
       nextSlot = called.slotStartAt + SLOT_MS;
     }
     const scheduled = this.state.rounds.filter((round) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status)).sort((a, b) => a.number - b.number);
+    if (nextSlot === null) nextSlot = scheduled.find((round) => isSlotBoundary(round.slotStartAt))?.slotStartAt ?? nextSlotBoundary(now);
     for (const round of scheduled) {
       const manual = round.manualSlotStartAt ?? (isSlotBoundary(round.manualScheduledAt) ? round.manualScheduledAt : null);
-      round.slotStartAt = manual && manual >= nextSlot ? manual : nextSlot;
+      const existing = isSlotBoundary(round.slotStartAt) ? round.slotStartAt : null;
+      const preferred = manual ?? existing;
+      round.slotStartAt = preferred && preferred >= nextSlot ? preferred : nextSlot;
       applyEstimate(round);
       nextSlot = round.slotStartAt + SLOT_MS;
     }
@@ -379,6 +375,8 @@ export class TicketQueue {
     this.scheduleRounds();
     const round = this.state.rounds.filter((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status)).sort((a, b) => a.number - b.number)[0];
     if (!round) throw Error('呼び出せる予定回がありません');
+    const callAt = round.scheduledAt - SLOT_MS;
+    if (this.now() < callAt) throw Error(`第${round.number}枠は${new Date(callAt).toLocaleTimeString('ja-JP', {hour: '2-digit', minute: '2-digit'})}から呼び出します`);
     round.status = 'CALLED';
     round.calledAt = this.now();
     for (const id of round.ticketIds) {
@@ -388,6 +386,15 @@ export class TicketQueue {
     this.scheduleRounds();
     this.persist('round_called', {operator, roundId: round.id, details: {number: round.number}});
     return round;
+  }
+
+  callDueRound(operator = 'automatic-time', {requireStarted = false} = {}) {
+    if (!this.state.settings.autoCall || this.state.rounds.some((round) => round.status === 'CALLED')) return null;
+    if (requireStarted && !this.state.rounds.some((round) => ['PLAYING', 'COMPLETED', 'SKIPPED'].includes(round.status))) return null;
+    this.scheduleRounds();
+    const round = this.state.rounds.filter((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status)).sort((a, b) => a.number - b.number)[0];
+    if (!round || !round.scheduledAt || this.now() < round.scheduledAt - SLOT_MS) return null;
+    return this.callNext(operator);
   }
 
   removeCalledGroup(ticketId, status, operator, reason, eventType = 'called_group_removed') {
@@ -419,7 +426,7 @@ export class TicketQueue {
       details: {ticketNumber: ticket.ticketNumber, partySize: ticket.partySize, before, after: status, filledTicketIds: filled.map((item) => item.ticketId)},
     });
     let nextCalledRound = null;
-    if (becameEmpty && this.state.rounds.some((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status))) nextCalledRound = this.callNext(operator);
+    if (becameEmpty) nextCalledRound = this.callDueRound(operator);
     return {round, ticket, filled, nextCalledRound};
   }
 
@@ -686,11 +693,7 @@ export class TicketQueue {
     if (this.state.processedGameEvents.length > 5000) this.state.processedGameEvents.shift();
     this.scheduleRounds();
     this.persist('game_event', {operator: event.source || 'game-server', roundId: round.id, details: event});
-    const shouldPrepareNext = ['GAME_STARTED', 'GAME_ENDED'].includes(event.type)
-      && this.state.settings.autoCall
-      && !this.state.rounds.some((item) => item.status === 'CALLED')
-      && this.state.rounds.some((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status));
-    if (shouldPrepareNext) this.callNext('automatic');
+    if (['GAME_STARTED', 'GAME_ENDED'].includes(event.type)) this.callDueRound('automatic');
     return {duplicate: false, roundId: round.id};
   }
 }

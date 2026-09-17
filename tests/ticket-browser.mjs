@@ -48,6 +48,11 @@ try {
   await page.locator('#delaySummary').getByText('1枠（15分）遅延', {exact: true}).waitFor();
   await page.locator('#queueTimeline').getByText('遅延・使用なし', {exact: true}).waitFor();
   await page.locator('#queueTimeline .timeline-round.called').waitFor();
+  assert.notEqual(
+    await page.locator('#queueTimeline .timeline-round.called').evaluate((node) => getComputedStyle(node).position),
+    'sticky',
+    '呼出中カードを固定表示にして後続カードへ重ねない',
+  );
   const timelineStates = await page.locator('#queueTimeline .timeline-round').evaluateAll((nodes) => nodes.map((node) => node.className));
   assert.match(timelineStates[0], /delayed_empty/);
   assert.ok(timelineStates.findIndex((className) => className.includes('called')) > 0);
@@ -63,7 +68,7 @@ try {
     body: JSON.stringify({requestId: 'ticket-browser-scroll-registration', nicknames: ['スクロール確認'], partySize: 1, consent: true}),
   });
   await page.waitForTimeout(300);
-  assert.ok(Math.abs((await timeline.evaluate((node) => node.scrollLeft)) - 120) <= 1);
+  assert.ok((await timeline.evaluate((node) => node.scrollLeft)) <= 1);
 
   await page.goto(`${base}/scanner#AKASHI:${ticket.qrToken}`);
   await page.locator('#scanSuccess').waitFor({state: 'visible'});

@@ -135,9 +135,13 @@ function futureTimelineSlots(minimumCount = 6) {
 function renderTimeline() {
   const visible = futureTimelineSlots().slice(0, 6);
   const timeline = $('queueTimeline');
-  const previousScrollLeft = timeline.scrollLeft;
-  timeline.replaceChildren(...visible.map((round, index) => timelineRound(round, index)));
-  requestAnimationFrame(() => { timeline.scrollLeft = previousScrollLeft; });
+  const signature = JSON.stringify(visible.map((round) => [round.id, round.status, effectiveStart(round), round.checkedInPeople, round.tickets.map((ticket) => [ticket.id, ticket.status])]));
+  if (timeline.dataset.signature !== signature) {
+    timeline.dataset.signature = signature;
+    timeline.replaceChildren(...visible.map((round, index) => timelineRound(round, index)));
+    timeline.scrollLeft = 0;
+    requestAnimationFrame(() => { timeline.scrollLeft = 0; });
+  }
   const playing = visible.find((round) => round.status === 'PLAYING');
   const called = visible.find((round) => round.status === 'CALLED');
   const calledIndex = called ? visible.indexOf(called) : -1;
@@ -150,6 +154,7 @@ function renderTimeline() {
   else if (called && delayedBeforeCalled) $('nextAction').textContent = `第${called.number}枠は呼出中ですが、先頭に${delayedBeforeCalled}枠の遅延調整が入りました。来場者へ遅延案内を送信済みです。`;
   else if (called && called.checkedInPeople === called.assignedPeople) $('nextAction').textContent = `第${called.number}枠は全員入場済みです。ゲーム運営画面でゲームを開始してください。`;
   else if (called) $('nextAction').textContent = `第${called.number}枠を呼び出し中です。現在${called.checkedInPeople}/${called.assignedPeople}名が入場済みです。残りのQRを確認してください。`;
+  else if (next?.callAt > Date.now()) $('nextAction').textContent = `次は第${next.number}枠です。開始15分前の${formatTime(next.callAt)}ごろに自動で呼び出します。`;
   else if (next) $('nextAction').textContent = `次は第${next.number}枠です。「① 次の4名を呼び出す」から入口へ案内してください。`;
   else $('nextAction').textContent = '現在、待機中の来場者はいません。';
 }
@@ -429,8 +434,9 @@ function disable() {
   const locked = !socket || socket.readyState !== WebSocket.OPEN || state?.owner !== sessionId;
   document.querySelectorAll('#app button').forEach((button) => { button.disabled = locked; });
   const called = state?.rounds.find((round) => round.status === 'CALLED');
-  const upcoming = state?.rounds.some((round) => scheduledRoundStates.has(round.status));
-  $('callNext').disabled = locked || Boolean(called) || !upcoming;
+  const upcoming = state?.rounds.filter((round) => scheduledRoundStates.has(round.status)).sort((a, b) => a.number - b.number)[0];
+  const callIsDue = upcoming?.callAt && upcoming.callAt <= Date.now();
+  $('callNext').disabled = locked || Boolean(called) || !upcoming || !callIsDue;
   document.querySelectorAll('.recall-group').forEach((button) => { button.disabled = locked; });
   $('openRegistration').disabled = locked || Boolean(state?.registrationOpen);
   $('closeRegistration').disabled = locked || !state?.registrationOpen;

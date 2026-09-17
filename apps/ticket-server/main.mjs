@@ -259,6 +259,20 @@ export async function createTicketApp({
     server.once('listening', listening);
     server.listen(port, bind);
   });
+  let checkingDueRound = false;
+  const dueRoundTimer = setInterval(async () => {
+    if (checkingDueRound) return;
+    checkingDueRound = true;
+    try {
+      const called = queue.callDueRound('automatic-time', {requireStarted: true});
+      if (called) { await db.flush(); broadcast(); }
+    } catch (error) {
+      console.error('整理券の自動呼出:', error.message);
+    } finally {
+      checkingDueRound = false;
+    }
+  }, 1000);
+  dueRoundTimer.unref();
   const cleanup = setInterval(() => {
     for (const [key, item] of sessions) if (item.expiresAt <= Date.now()) sessions.delete(key);
     for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN) ws.ping();
@@ -268,6 +282,7 @@ export async function createTicketApp({
     server,
     queue,
     async close() {
+      clearInterval(dueRoundTimer);
       clearInterval(cleanup);
       const serverClosed = new Promise((resolve) => server.close(resolve));
       for (const ws of wss.clients) ws.terminate();

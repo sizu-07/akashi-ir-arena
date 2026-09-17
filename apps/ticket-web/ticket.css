@@ -118,13 +118,12 @@ label { display: grid; gap: 6px; font-weight: 650; }
 .dashboard .metric { border: 1px solid var(--line); background: white; box-shadow: var(--shadow); }
 .queue-card { overflow: hidden; }
 .next-action { margin: 0 0 20px; padding: 14px 16px; border-left: 5px solid var(--green); border-radius: 8px; background: var(--green-soft); font-weight: 750; }
-.queue-timeline { display: flex; gap: 16px; overflow-x: auto; overflow-anchor: none; padding: 8px 4px 18px; scroll-snap-type: x proximity; }
-.timeline-round { position: relative; flex: 0 0 230px; padding: 14px; border: 2px solid var(--line); border-radius: 16px; background: white; scroll-snap-align: start; }
+.queue-timeline { display: flex; gap: 16px; overflow-x: auto; overflow-anchor: none; padding: 8px 4px 18px; }
+.timeline-round { position: relative; flex: 0 0 230px; padding: 14px; border: 2px solid var(--line); border-radius: 16px; background: white; }
 .timeline-round:not(:last-child)::after { content: ""; position: absolute; top: 50%; right: -18px; width: 18px; border-top: 3px solid #afbbb5; }
 .timeline-round:not(:last-child)::before { content: ""; position: absolute; z-index: 1; top: calc(50% - 5px); right: -18px; border-width: 5px 0 5px 8px; border-style: solid; border-color: transparent transparent transparent #afbbb5; }
-.timeline-round.playing { position: sticky; z-index: 3; left: 4px; border-color: var(--green); box-shadow: 0 10px 30px #146b4c1c; }
-.timeline-round.called { position: sticky; z-index: 3; left: 4px; border-color: #e5a13e; box-shadow: 0 10px 30px #a85f0818; }
-.timeline-round.called-after-playing { position: relative; left: auto; }
+.timeline-round.playing { border-color: var(--green); box-shadow: 0 10px 30px #146b4c1c; }
+.timeline-round.called { border-color: #e5a13e; box-shadow: 0 10px 30px #a85f0818; }
 .timeline-round.ready { border-color: #48a97d; box-shadow: 0 10px 30px #146b4c25; }
 .timeline-round.completed { border-color: #a8cdbd; background: #f4fbf7; }
 .timeline-round.skipped { border-color: #d6c5c5; background: #fcf7f7; }
