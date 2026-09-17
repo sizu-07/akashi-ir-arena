@@ -11,6 +11,16 @@ const message = (text) => {
   $('message').textContent = text;
 };
 
+async function configureTicketLinks() {
+  const response = await fetch('/api/ticket-links');
+  if (!response.ok) return;
+  const links = await response.json();
+  document.querySelectorAll('[data-ticket-destination]').forEach((link) => {
+    const destination = links[link.dataset.ticketDestination];
+    if (destination) link.href = destination;
+  });
+}
+
 async function post(url, body) {
   const response = await fetch(url, {
     method: 'POST',
@@ -279,4 +289,5 @@ $('provisionForm').onsubmit = guarded(async () => {
   message(response.message);
 });
 
+configureTicketLinks().catch(() => {});
 enter().catch((error) => message(error.message));

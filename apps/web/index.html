@@ -17,9 +17,9 @@
 
     <nav class="mode-tabs" aria-label="運営画面の切り替え">
       <a class="active" href="/">ゲーム運営</a>
-      <a href="/tickets" target="_blank" rel="noopener">整理券運営（公開）</a>
-      <a href="/tickets/register" target="_blank" rel="noopener">来場者受付</a>
-      <a href="/tickets/scanner" target="_blank" rel="noopener">入場QR読取</a>
+      <a href="/tickets" data-ticket-destination="operator" target="_blank" rel="noopener">整理券運営（公開）</a>
+      <a href="/tickets/register" data-ticket-destination="register" target="_blank" rel="noopener">来場者受付</a>
+      <a href="/tickets/scanner" data-ticket-destination="scanner" target="_blank" rel="noopener">入場QR読取</a>
     </nav>
 
     <main>
@@ -47,7 +47,7 @@
           <button id="takeover">操作権を取得</button>
           <a href="/api/export.csv">記録CSV</a>
           <a href="/display" target="_blank" rel="noopener">PC投影画面</a>
-          <a href="/tickets" target="_blank" rel="noopener">整理券運営を開く</a>
+          <a href="/tickets" data-ticket-destination="operator" target="_blank" rel="noopener">整理券運営を開く</a>
         </div>
 
         <section class="match">

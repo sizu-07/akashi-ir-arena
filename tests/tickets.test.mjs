@@ -685,9 +685,17 @@ test('ゲーム運営と整理券運営を上部タブで相互に移動でき�
   try {
     const gamePage = await (await fetch(base)).text();
     assert.match(gamePage, /ゲーム運営/);
-    assert.match(gamePage, /href="\/tickets"[^>]*>整理券運営（公開）/);
-    assert.match(gamePage, /href="\/tickets\/register"[^>]*>来場者受付/);
-    assert.match(gamePage, /href="\/tickets\/scanner"[^>]*>入場QR読取/);
+    assert.match(gamePage, /href="\/tickets" data-ticket-destination="operator"[^>]*>整理券運営（公開）/);
+    assert.match(gamePage, /href="\/tickets\/register" data-ticket-destination="register"[^>]*>来場者受付/);
+    assert.match(gamePage, /href="\/tickets\/scanner" data-ticket-destination="scanner"[^>]*>入場QR読取/);
+    const linkResponse = await fetch(`${base}/api/ticket-links`);
+    assert.equal(linkResponse.status, 200);
+    const links = await linkResponse.json();
+    const operatorLink = new URL(links.operator);
+    assert.equal(`${operatorLink.origin}${operatorLink.pathname}`, 'https://tickets.example.test/operator');
+    assert.equal(operatorLink.searchParams.get('game'), `${base}/`);
+    assert.equal(links.register, 'https://tickets.example.test/register');
+    assert.equal(links.scanner, 'https://tickets.example.test/scanner');
     const redirect = await fetch(`${base}/tickets`, {redirect: 'manual'});
     assert.equal(redirect.status, 302);
     const target = new URL(redirect.headers.get('location'));
@@ -719,6 +727,8 @@ test('公開整理券サーバー未設定時に存在しないローカル画�
     const response = await fetch(`${base}/tickets`, {redirect: 'manual'});
     assert.equal(response.status, 503);
     assert.match((await response.json()).error, /公開整理券サーバーが未設定/);
+    const links = await fetch(`${base}/api/ticket-links`);
+    assert.equal(links.status, 503);
   } finally {
     await app.close();
     rmSync(dir, {recursive: true, force: true});

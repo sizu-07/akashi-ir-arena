@@ -63,6 +63,12 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws:; media-src 'self'; object-src 'none'; frame-ancestors 'none'");
    try {const url=new URL(req.url,'http://localhost');
     if(req.method==='POST'&&req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`)return reply(res,403,{error:'別サイトからの操作は禁止'});
+    if(url.pathname==='/api/ticket-links'&&req.method==='GET'){
+      if(!config.ticketServerUrl)return reply(res,503,{error:'公開整理券サーバーが未設定です'});
+      const ticketBase=new URL(config.ticketServerUrl),gameOrigin=`http://${req.headers.host}`;
+      const operator=new URL('/operator',ticketBase);operator.searchParams.set('game',`${gameOrigin}/`);
+      return reply(res,200,{operator:operator.href,register:new URL('/register',ticketBase).href,scanner:new URL('/scanner',ticketBase).href});
+    }
     if(url.pathname==='/api/login'&&req.method==='POST'){
       const ip=req.socket.remoteAddress,old=attempts.get(ip)??{n:0,until:Date.now()+60000};if(Date.now()>old.until){old.n=0;old.until=Date.now()+60000;}old.n++;attempts.set(ip,old);
       if(old.n>10)return reply(res,429,{error:'1分待ってから再試行してください'});
