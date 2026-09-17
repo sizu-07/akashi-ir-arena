@@ -147,6 +147,8 @@ function renderTimeline() {
   const calledIndex = called ? visible.indexOf(called) : -1;
   const delayedBeforeCalled = calledIndex > 0 ? visible.slice(0, calledIndex).filter((round) => round.status === 'DELAYED_EMPTY').length : 0;
   const next = state.rounds.filter((round) => scheduledRoundStates.has(round.status)).sort((a, b) => a.number - b.number)[0];
+  const nextIndex = next ? visible.findIndex((round) => round.id === next.id) : -1;
+  const delayedBeforeNext = nextIndex > 0 ? visible.slice(0, nextIndex).filter((round) => round.status === 'DELAYED_EMPTY').length : 0;
   if (playing && called && delayedBeforeCalled) $('nextAction').textContent = `第${playing.number}枠を体験中です。第${called.number}枠は呼出中ですが、間に${delayedBeforeCalled}枠の調整枠が入り、その後に実施します。`;
   else if (playing && called) $('nextAction').textContent = `第${playing.number}枠を体験中です。同時に次の第${called.number}枠を呼び出し中で、${called.checkedInPeople}/${called.assignedPeople}名が入場済みです。`;
   else if (playing?.pausedAt) $('nextAction').textContent = `第${playing.number}枠はゲーム一時停止中です。ゲーム運営画面から再開または終了してください。`;
@@ -154,6 +156,7 @@ function renderTimeline() {
   else if (called && delayedBeforeCalled) $('nextAction').textContent = `第${called.number}枠は呼出中ですが、先頭に${delayedBeforeCalled}枠の調整枠が入りました。来場者へ案内を送信済みです。`;
   else if (called && called.checkedInPeople === called.assignedPeople) $('nextAction').textContent = `第${called.number}枠は全員入場済みです。ゲーム運営画面でゲームを開始してください。`;
   else if (called) $('nextAction').textContent = `第${called.number}枠を呼び出し中です。現在${called.checkedInPeople}/${called.assignedPeople}名が入場済みです。残りのQRを確認してください。`;
+  else if (next && delayedBeforeNext) $('nextAction').textContent = `先頭に${delayedBeforeNext}枠の調整枠があります。第${next.number}枠は${formatTime(next.callAt)}ごろに改めて呼び出します。`;
   else if (next?.callAt > Date.now()) $('nextAction').textContent = `次は第${next.number}枠です。開始15分前の${formatTime(next.callAt)}ごろに自動で呼び出します。`;
   else if (next) $('nextAction').textContent = `次は第${next.number}枠です。「① 次の4名を呼び出す」から入口へ案内してください。`;
   else $('nextAction').textContent = '現在、待機中の来場者はいません。';
