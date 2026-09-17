@@ -15,6 +15,13 @@
       <span id="connection" class="badge">未接続</span>
     </header>
 
+    <nav class="mode-tabs" aria-label="運営画面の切り替え">
+      <a class="active" href="/">ゲーム運営</a>
+      <a href="/tickets" data-ticket-destination="operator" target="_blank" rel="noopener">整理券運営（公開）</a>
+      <a href="/tickets/register" data-ticket-destination="register" target="_blank" rel="noopener">来場者受付</a>
+      <a href="/tickets/scanner" data-ticket-destination="scanner" target="_blank" rel="noopener">入場QR読取</a>
+    </nav>
+
     <main>
       <section id="login">
         <h2>運営ログイン</h2>
@@ -40,6 +47,7 @@
           <button id="takeover">操作権を取得</button>
           <a href="/api/export.csv">記録CSV</a>
           <a href="/display" target="_blank" rel="noopener">PC投影画面</a>
+          <a href="/tickets" data-ticket-destination="operator" target="_blank" rel="noopener">整理券運営を開く</a>
         </div>
 
         <section class="match">
@@ -53,10 +61,12 @@
         </section>
 
         <div class="actions">
-          <button data-action="start" class="primary">開始 / 再開</button>
+          <button id="syncTicketMembers" data-action="sync_ticket_members">① 整理券メンバーを反映</button>
+          <button data-action="start" class="primary">② 開始 / 再開</button>
           <button data-action="pause" class="warning">一時停止</button>
           <button data-action="finish" class="danger">試合終了</button>
         </div>
+        <p>新しい試合では先に「① 整理券メンバーを反映」を押し、表示名を確認してから「② 開始」を押してください。再開時は「② 開始 / 再開」だけで進みます。</p>
 
         <section>
           <h2>

@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {mkdtempSync,rmSync} from 'node:fs';import os from 'node:os';import path from 'node:path';import mqtt from 'mqtt';import {createApp} from '../apps/server/main.mjs';
+import test from 'node:test';import assert from 'node:assert/strict';import {mkdtempSync,rmSync} from 'node:fs';import os from 'node:os';import path from 'node:path';import http from 'node:http';import net from 'node:net';import mqtt from 'mqtt';import {createApp,detectRunningGameServer} from '../apps/server/main.mjs';
 test('HTTP authentication, operator lease, CSRF, MQTT auth and ACL',async()=>{const dir=mkdtempSync(path.join(os.tmpdir(),'arena-test-'));const config={httpPort:0,mqttPort:0,operatorPin:'12345678',devices:[1,2,3,4].map(n=>({id:`gun-00${n}`,key:`test-key-${n}`,name:`P${n}`,team:n<3?'A':'B',shooterId:n}))};const app=await createApp({config,dataDir:dir,bind:'127.0.0.1'});const base=`http://127.0.0.1:${app.httpServer.address().port}`;let client;
  try {const login=async()=>{const r=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:config.operatorPin})});assert.equal(r.status,200);return {cookie:r.headers.get('set-cookie').split(';')[0],...await r.json()};};const a=await login(),b=await login();
  const act=(s,extra={})=>fetch(base+'/api/action',{method:'POST',headers:{'Content-Type':'application/json',Cookie:s.cookie,'X-CSRF-Token':s.csrf},body:JSON.stringify({commandId:'one',action:'new',...extra})});
@@ -8,4 +8,12 @@ test('HTTP authentication, operator lease, CSRF, MQTT auth and ACL',async()=>{co
  await assert.rejects(client.subscribeAsync('irgame/v1/device/gun-002/desired',{qos:1}),e=>e.code===128);
  const bad=mqtt.connect(`mqtt://127.0.0.1:${app.mqttServer.address().port}`,{clientId:'gun-002',username:'gun-002',password:'wrong',reconnectPeriod:0});await new Promise(resolve=>{bad.once('error',()=>{bad.end(true);resolve();});});
  }finally{if(client)await client.endAsync(true);await app.close();rmSync(dir,{recursive:true,force:true});}
+});
+test('使用中のHTTPポートではEADDRINUSEを呼出元へ返し、途中起動を残さない',async()=>{const occupied=net.createServer();await new Promise(resolve=>occupied.listen(0,'127.0.0.1',resolve));const dir=mkdtempSync(path.join(os.tmpdir(),'arena-port-test-'));const config={httpPort:occupied.address().port,mqttPort:0,operatorPin:'12345678',devices:[]};
+ try {await assert.rejects(createApp({config,dataDir:dir,bind:'127.0.0.1'}),error=>error.code==='EADDRINUSE'&&error.port===config.httpPort);}
+ finally{await new Promise(resolve=>occupied.close(resolve));rmSync(dir,{recursive:true,force:true});}
+});
+test('すでに起動しているゲームサーバーのモードを判定できる',async()=>{const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({demo:true,players:[]}));});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try {const state=await detectRunningGameServer(server.address().port);assert.equal(state.demo,true);}
+ finally{await new Promise(resolve=>server.close(resolve));}
 });

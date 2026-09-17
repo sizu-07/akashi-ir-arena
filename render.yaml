@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: akashi-ticket-server
+    runtime: docker
+    plan: free
+    region: singapore
+    repo: https://github.com/sizu-07/akashi-ir-arena
+    branch: codex/ticket-system-v0.2
+    dockerfilePath: ./Dockerfile.ticket
+    healthCheckPath: /health
+    envVars:
+      - key: PUBLIC_ORIGIN
+        sync: false
+      - key: TICKET_OPERATOR_PASSWORD
+        sync: false
+      - key: TICKET_GAME_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false

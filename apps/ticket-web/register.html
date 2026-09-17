@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>明石光線 | 整理券受付</title>
+    <link rel="stylesheet" href="/ticket.css">
+  </head>
+  <body>
+    <header><div><small>AKASHI IR ARENA</small><h1>整理券受付</h1></div><span class="badge">1回 4名</span></header>
+    <main class="narrow">
+      <section class="card">
+        <h2>参加する人を登録</h2>
+        <p class="notice">受付は先着順ですが、4人の定員を埋めるため、人数の少ない組が先に案内される場合があります。飛ばされた組は次の回で優先されます。</p>
+        <form id="registerForm" class="form-grid">
+          <label>人数
+            <select name="partySize" required>
+              <option value="1">1人</option><option value="2">2人</option><option value="3">3人</option><option value="4">4人</option>
+            </select>
+          </label>
+          <fieldset class="nickname-fieldset"><legend>参加者のニックネーム</legend><p class="hint">人数分入力してください。ゲーム画面にもこの名前が表示されます。</p><div id="nicknameFields" class="form-grid"></div></fieldset>
+          <label class="check"><input name="consent" type="checkbox" required><span>画面に表示される案内を確認し、呼び出し時に入口へ向かうことに同意します。本名や連絡先は入力しません。</span></label>
+          <button class="primary">整理券を取得する</button>
+        </form>
+        <p id="message" class="error" role="alert"></p>
+      </section>
+      <p class="hint">登録完了はサーバーが受付処理を確定した順です。この画面を閉じても、発行後のURLを保存していれば整理券を表示できます。</p>
+    </main>
+    <script src="/register.js" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "externalServer": {
+    "PORT": "8787",
+    "PUBLIC_ORIGIN": "https://tickets.example.com",
+    "TICKET_OPERATOR_PASSWORD": "12文字以上のランダムな値",
+    "TICKET_GAME_API_KEY": "24文字以上のランダムな値",
+    "SUPABASE_URL": "https://プロジェクトID.supabase.co",
+    "SUPABASE_SECRET_KEY": "Supabaseのsb_secret_で始まるSecret Key",
+    "TICKET_DATA_DIR": "Supabaseを使わない場合だけ永続ボリュームの絶対パス"
+  },
+  "localGameServerAdditions": {
+    "ticketServerUrl": "https://tickets.example.com",
+    "ticketServerApiKey": "外部サーバーと同じTICKET_GAME_API_KEY"
+  }
+}

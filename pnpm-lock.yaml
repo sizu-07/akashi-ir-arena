@@ -11,6 +11,9 @@ importers:
       aedes:
         specifier: 0.51.3
         version: 0.51.3
+      jsqr:
+        specifier: 1.4.0
+        version: 1.4.0
       mqtt:
         specifier: 5.10.4
         version: 5.10.4
@@ -169,6 +172,9 @@ packages:
 
   js-sdsl@4.3.0:
     resolution: {integrity: sha512-mifzlm2+5nZ+lEcLJMoBK0/IH/bDg8XnJfd/Wq6IP+xoCjLZsTOnV2QpxlVbX9bMnkl5PdEjNtBJ9Cj1NjifhQ==}
+
+  jsqr@1.4.0:
+    resolution: {integrity: sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==}
 
   locate-path@5.0.0:
     resolution: {integrity: sha512-t7hw9pI+WvuwNJXwk5zVHpyhIqzg2qTlklJOf0mVxGSbe3Fp2VieZcduNYjaLDoy6p9uGpQEGWG87WpMKlNq8g==}
@@ -526,6 +532,8 @@ snapshots:
   is-fullwidth-code-point@3.0.0: {}
 
   js-sdsl@4.3.0: {}
+
+  jsqr@1.4.0: {}
 
   locate-path@5.0.0:
     dependencies:

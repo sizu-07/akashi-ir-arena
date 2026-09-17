@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ja">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>明石光線 | 整理券運営</title><link rel="stylesheet" href="/ticket.css"></head>
+  <body>
+    <header><div><small>AKASHI IR ARENA</small><h1>整理券 運営コントロール</h1></div><span id="connection" class="badge offline">未接続</span></header>
+    <nav class="mode-tabs" aria-label="運営画面の切り替え">
+      <a id="gameOperatorTab" href="http://localhost:8080/">ゲーム運営</a>
+      <a class="active" href="/operator">整理券運営</a>
+      <a href="/register" target="_blank" rel="noopener">来場者受付</a>
+      <a href="/scanner" target="_blank" rel="noopener">入場QR読取</a>
+    </nav>
+    <main>
+      <section id="login" class="card narrow">
+        <h2>運営ログイン</h2>
+        <form id="loginForm" class="form-grid"><label>運営パスワード<input name="password" type="password" minlength="12" required autocomplete="current-password"></label><button class="primary">ログイン</button></form>
+      </section>
+      <div id="app" hidden>
+        <div class="toolbar"><div class="actions"><span id="role" class="badge"></span><button id="takeover">操作権を取得</button><span id="compactRegistrationStatus" class="badge registration-compact">受付確認中</span></div><div class="actions"><a href="/scanner" target="_blank">入場QR読取</a><a href="/api/operator/export.csv">履歴CSV</a></div></div>
+        <section class="card queue-card">
+          <div class="section-heading"><div><span class="eyebrow">1枠15分・各枠4名</span><h2>現在の待機列</h2></div><span class="live-dot">自動更新</span></div>
+          <p id="nextAction" class="next-action">待機列を確認しています。</p>
+          <div id="queueTimeline" class="queue-timeline" aria-label="現在から先の待機列"></div>
+          <div class="queue-legend"><span><i class="seat playing"></i>体験中</span><span><i class="seat checked"></i>入場済み</span><span><i class="seat called"></i>呼出中</span><span><i class="seat assigned"></i>待機中</span><span><i class="seat skipped"></i>スキップ済み</span><span><i class="seat empty"></i>空席</span></div>
+          <div id="calledRoundControls" class="round-controls" hidden>
+            <div><strong id="calledRoundControlTitle">呼出中のグループを操作</strong><p id="calledRoundControlHint" class="hint"></p><div id="calledGroups" class="called-groups"></div></div>
+          </div>
+          <div id="skippedGroupControls" class="round-controls past-round-controls" hidden>
+            <div><strong>スキップ済みグループ</strong><p class="hint">枠全体ではなく、戻したい登録グループを選びます。現在の呼出枠が満席の場合は、後から補完された未入場グループを待機列へ戻して復元します。</p><div id="skippedGroups" class="called-groups"></div></div>
+          </div>
+        </section>
+        <section class="card">
+          <div class="section-heading"><div><span class="eyebrow">対応中とスキップ済みを表示・終了済みは非表示</span><h2>整理券一覧</h2></div><strong id="activeTicketCount">0組</strong></div>
+          <div class="table-wrap"><table><thead><tr><th>受付順</th><th>整理券</th><th>参加者のニックネーム</th><th>人数</th><th>状態</th><th>入場予定</th><th>操作</th></tr></thead><tbody id="tickets"></tbody></table></div>
+          <p id="emptyTickets" class="empty-state" hidden>対応中の整理券はありません。</p>
+        </section>
+        <section class="card">
+          <div class="section-heading"><div><span class="eyebrow">運営状況</span><h2>現在の情報</h2></div><span id="gameConnection" class="badge">未受信</span></div>
+          <section class="dashboard">
+            <div class="metric"><span>受付</span><strong id="registrationStatus">—</strong></div>
+            <div class="metric"><span>待機</span><strong id="waitingGroups">—</strong></div>
+            <div class="metric"><span>待機人数</span><strong id="waitingPeople">—</strong></div>
+            <div class="metric"><span>次枠の空席</span><strong id="emptySeats">—</strong></div>
+            <div class="metric"><span>呼出中</span><strong id="calledRound">—</strong></div>
+            <div class="metric"><span>体験中</span><strong id="playingRound">—</strong></div>
+            <div class="metric"><span>最長待ち</span><strong id="maxWait">—</strong></div>
+            <div class="metric"><span>1枠</span><strong id="cycle">15分</strong></div>
+          </section>
+        </section>
+        <section class="card operation-card">
+          <div class="section-heading"><div><span class="eyebrow">迷ったら番号順に操作</span><h2>当日の操作</h2></div></div>
+          <ol class="operation-flow"><li><strong>呼び出す</strong><span>次枠の4名を入口へ案内</span></li><li><strong>入場確認</strong><span>QRを読み取る</span></li><li><strong>ゲーム開始・終了</strong><span>ゲーム運営タブで操作</span></li></ol>
+          <div class="actions primary-actions"><button id="callNext" class="primary">① 次の4名を呼び出す</button><a class="button-link" href="/scanner" target="_blank">② 入場QRを読み取る</a><a id="gameActionLink" class="button-link dark" href="http://localhost:8080/">③ ゲーム運営を開く</a></div>
+        </section>
+        <section id="registrationBanner" class="registration-banner"><div><small>整理券受付</small><strong id="registrationBannerTitle">確認中</strong><span id="registrationBannerHint"></span></div><div class="actions"><button id="openRegistration">受付を開始</button><button id="closeRegistration" class="warning">受付を停止</button></div></section>
+        <section class="card">
+          <div class="section-heading"><div><span class="eyebrow">予定時刻を一括調整</span><h2>調整枠・受付の設定</h2></div><strong id="delaySummary">調整枠なし</strong></div>
+          <div class="delay-buttons"><button id="delayMinusSlot">調整枠を1枠減らす</button><button id="delayPlusSlot" class="warning">調整枠を1枠追加</button><button id="delayReset">調整枠を解除</button></div>
+          <form id="settingsForm" class="settings settings-spaced">
+            <label>残り調整枠数（1枠15分）<input name="globalDelaySlots" type="number" min="0" max="40" required></label>
+            <label>呼出猶予（分）<input name="graceMinutes" type="number" min="1" max="60" required></label>
+            <label>最大待機組数<input name="maxWaitingGroups" type="number" min="1" max="1000" required></label>
+            <button>設定を保存</button>
+          </form>
+          <p class="hint">枠は毎時00・15・30・45分開始です。調整枠は待機列の先頭に表示され、終了時刻になると自動で消化されて次の枠へ進みます。</p>
+        </section>
+        <section class="card">
+          <h2>来場者への案内</h2>
+          <form id="messageForm" class="form-grid"><label>全体メッセージ<textarea name="message" maxlength="500" rows="2" placeholder="例：機材調整のため5分ほど遅れています"></textarea></label><button>全員の画面へ反映</button></form>
+        </section>
+        <details class="card qr-details">
+          <summary>教室前掲示用QRコードを表示</summary>
+          <p>このQRコードを教室前に掲示してください。来場者は読み取ると整理券を登録できます。</p>
+          <img class="qr" src="/api/operator/register-qr.svg" alt="教室前掲示用の整理券受付QRコード">
+        </details>
+        <section class="card schedule-details">
+          <details><summary>枠ごとの時刻を個別に調整</summary><div id="rounds" class="round-grid"></div></details>
+        </section>
+        <section class="card all-rounds-card">
+          <div class="section-heading"><div><span class="eyebrow">受付順と実施結果をすべて表示</span><h2>全枠の順番・履歴</h2></div><strong id="allRoundCount">0枠</strong></div>
+          <p class="hint">過去の終了枠、呼出中・体験中、これからの予約枠を、枠番号の順に表示します。</p>
+          <div id="allRounds" class="queue-timeline history-timeline" aria-label="全枠の順番と履歴"></div>
+          <p id="emptyRounds" class="empty-state" hidden>まだ枠はありません。</p>
+        </section>
+      </div>
+      <p id="message" class="error" role="alert"></p>
+    </main>
+    <dialog id="ticketDialog"><form method="dialog" class="form-grid"><h2 id="dialogTitle">整理券操作</h2><p id="dialogStatus" class="dialog-status"></p><label>操作<select id="ticketAction"></select></label><label id="ticketRoundField" hidden>変更先の予定回<select id="ticketRound"></select></label><label><span id="ticketReasonLabel">理由</span><textarea id="ticketReason" maxlength="300" rows="3"></textarea></label><p id="ticketDialogMessage" class="error" role="alert"></p><div class="actions"><button id="ticketDialogClose" type="button">閉じる</button><button id="applyTicketAction" value="default" class="primary">実行</button></div></form></dialog>
+    <script src="/operator.js" type="module"></script>
+  </body>
+</html>
