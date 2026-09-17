@@ -40,8 +40,9 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  const broker=aedesFactory({heartbeatInterval:5000,connectTimeout:5000});
  const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
  const local=req=>['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
- const sessions=new Map(),commands=new Map(),attempts=new Map();let owner=null,displaySeen=0,displayReady=false,preparedTicketGameId=null,pairToken=randomBytes(16).toString('hex'),pairExpires=Date.now()+600000;
+ const sessions=new Map(),commands=new Map(),attempts=new Map();let owner=null,preparedTicketGameId=null,pairToken=randomBytes(16).toString('hex'),pairExpires=Date.now()+600000;
  const wss=new WebSocketServer({noServer:true,maxPayload:8192});
+ const displayReady=()=>[...wss.clients].some(ws=>ws.display&&ws.displayReady&&ws.readyState===WebSocket.OPEN);
  broker.authenticate=(client,username,password,cb)=>{const d=config.devices.find(d=>d.id===username);const ok=!!d&&equal(password?.toString(),d.key)&&client.id===d.id;client.deviceId=ok?d.id:null;cb(null,ok);};
  broker.authorizePublish=(client,packet,cb)=>{const prefix=`irgame/v1/device/${client.deviceId}/`;const allowed=['event','hello','telemetry','reported'].map(s=>prefix+s);
    cb(!packet.retain&&packet.payload.length<=4096&&allowed.includes(packet.topic)?null:Error('publish denied'));};
@@ -77,7 +78,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       res.setHeader('Set-Cookie',`arena=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`);return reply(res,200,{csrf:s.csrf,id:s.id});
     }
     if(url.pathname==='/api/session'){const s=session(req);return reply(res,s?200:401,s?{csrf:s.csrf,id:s.id,owner,local:local(req),demo}:{});}
-    if(url.pathname==='/api/state'){if(!session(req)&&!local(req))return reply(res,401,{});return reply(res,200,{...game.view(),displayReady:displayReady&&Date.now()-displaySeen<3000,demo,owner,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}});}
+    if(url.pathname==='/api/state'){if(!session(req)&&!local(req))return reply(res,401,{});return reply(res,200,{...game.view(),displayReady:displayReady(),demo,owner,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}});}
     if(url.pathname==='/api/pair.svg'){
       if(!local(req))return reply(res,403,{});const addresses=Object.values(os.networkInterfaces()).flat().filter(a=>a.family==='IPv4'&&!a.internal);const host=addresses[0]?.address??'127.0.0.1';
       if(Date.now()>pairExpires){pairToken=randomBytes(16).toString('hex');pairExpires=Date.now()+600000;}
@@ -109,7 +110,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
             operation={notice:`整理券メンバーを反映しました: ${game.s.players.map(player=>player.name).join(' / ')}`};
             break;
           }
-          case 'start':if(game.s.phase==='LOBBY'&&ticketBridge.enabled&&preparedTicketGameId!==game.s.id)throw Error('先に「整理券メンバーを反映」を押してください');game.start(displayReady&&Date.now()-displaySeen<3000);break;
+          case 'start':if(game.s.phase==='LOBBY'&&ticketBridge.enabled&&preparedTicketGameId!==game.s.id)throw Error('先に「整理券メンバーを反映」を押してください');game.start(displayReady());break;
           case 'pause':game.pause();break;
           case 'finish':game.finish();break;
           case 'hp':game.correct(b.id,Number(b.hp),b.reason);break;
@@ -140,14 +141,14 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  });
  httpServer.on('upgrade',(req,socket,head)=>{const url=new URL(req.url,'http://localhost');const s=session(req);const display=url.pathname==='/ws/display'&&local(req);
    if(req.headers.origin!==`http://${req.headers.host}`||(!display&&(!s||url.pathname!=='/ws'))){socket.destroy();return;}
-   wss.handleUpgrade(req,socket,head,ws=>{ws.operator=s?.id;ws.display=display;ws.on('message',raw=>{try{const m=JSON.parse(raw);if(display&&m.type==='ready'){displayReady=!!m.ready;displaySeen=Date.now();}if(s)s.seen=Date.now();}catch{}});});
+   wss.handleUpgrade(req,socket,head,ws=>{ws.operator=s?.id;ws.display=display;ws.displayReady=false;ws.on('message',raw=>{try{const m=JSON.parse(raw);if(display&&m.type==='ready')ws.displayReady=!!m.ready;if(s)s.seen=Date.now();}catch{}});});
  });
  try {await listenServer(httpServer,config.httpPort,bind);await listenServer(mqttServer,config.mqttPort,bind);}
  catch(error){await closeServer(httpServer);await closeServer(mqttServer);await new Promise(resolve=>broker.close(resolve));throw error;}
  let simulators=null;if(demo){const {simulate}=await import('./simulator.mjs');simulators=await simulate(config.devices,mqttServer.address().port);}
- let count=0;const timer=setInterval(()=>{game.tick();if(game.s.phase==='COUNTDOWN'&&(!displayReady||Date.now()-displaySeen>3000))game.pause('投影画面切断');
+ let count=0;const timer=setInterval(()=>{game.tick();if(game.s.phase==='COUNTDOWN'&&!displayReady())game.pause('投影画面切断');
    ticketBridge.observe(game.s);
-   const state={...game.view(),owner,displayReady:displayReady&&Date.now()-displaySeen<3000,demo,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}};
+   const state={...game.view(),owner,displayReady:displayReady(),demo,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}};
    for(const ws of wss.clients)if(ws.readyState===WebSocket.OPEN){if(ws.bufferedAmount>100000){ws.close();continue;}ws.send(JSON.stringify(state));}
    if(++count%4===0){sync();db.save(game.s);}if(count%240===0){for(const [k,s] of sessions)if(s.expires<Date.now())sessions.delete(k);}
  },250);
