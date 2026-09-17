@@ -1,39 +1,141 @@
 <!doctype html>
 <html lang="ja">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#ed2335" />
     <title>明石光線 | 投影</title>
-    <link rel="stylesheet" href="/style.css">
+    <link
+      rel="preload"
+      href="/fonts/Anton-Regular.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin
+    />
+    <link rel="icon" href="/display-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/display.css" />
   </head>
-  <body class="display">
-    <button id="prepare">表示を準備 / 全画面・音声を有効化</button>
-
-    <main>
-      <small>AKASHI / IR ARENA — 2 VS 2</small>
-      <div class="match">
-        <h1 id="phase">接続待ち</h1>
-        <strong id="clock">05:00</strong>
-        <div id="score">A 0 : 0 B</div>
+  <body class="display" data-phase="LOBBY">
+    <div class="paper-grid" aria-hidden="true"></div>
+    <main class="arena">
+      <header class="masthead">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">↗</span>
+          <h1>明石<span>光線</span></h1>
+          <span class="brand-caption">AKASHI<br />IR ARENA</span>
+        </div>
+        <div class="edition">
+          赤外線チーム対戦<span>2 ON 2 / LOCAL BATTLE</span>
+        </div>
+        <div class="phase-tag">
+          <span class="live-dot" aria-hidden="true"></span
+          ><span id="phase">接続待ち</span><b aria-hidden="true">↗</b>
+        </div>
+      </header>
+      <section class="battle-stage" aria-label="試合スコア">
+        <div class="stage-kicker">
+          <span>撃ち抜け、その一瞬。</span><span>NO CONTACT. ALL IMPACT.</span>
+        </div>
+        <div class="headline" aria-hidden="true">
+          <span>PLAY</span><span>TO <i>WIN.</i></span>
+        </div>
+        <div class="signal-art" aria-hidden="true">
+          <span>FIELD / AKASHI</span><i></i><b>✳</b
+          ><span>2 VS 2<br />IR BATTLE</span>
+        </div>
+        <div class="target-art" aria-hidden="true">
+          <div class="target-ring"></div>
+          <span>光</span><small>LOCK ON / 02</small><i>✦</i>
+        </div>
+        <div class="scoreboard" id="score" aria-label="撃破数 A 0 対 B 0">
+          <div class="team-score score-a">
+            <span class="team-caption">TEAM / <b>A</b></span
+            ><strong id="scoreA">00</strong
+            ><span class="score-caption">撃破数 / TAKEDOWNS</span>
+          </div>
+          <div class="time-block">
+            <span class="time-caption">TIME LEFT <i>／ 残り時間</i></span
+            ><strong id="clock">05:00</strong>
+            <div class="time-track"><div id="timeProgress"></div></div>
+            <span id="matchNote">STAND BY — 開始の合図を待て</span>
+          </div>
+          <div class="team-score score-b">
+            <span class="team-caption">TEAM / <b>B</b></span
+            ><strong id="scoreB">00</strong
+            ><span class="score-caption">撃破数 / TAKEDOWNS</span>
+          </div>
+        </div>
+        <span class="versus-sticker" aria-hidden="true"
+          >VS<span>2×2</span></span
+        >
+      </section>
+      <div class="roster-heading">
+        <span><b>01—02</b> TEAM A <i>／ Aチーム</i></span
+        ><span>PLAYER STATUS <b>↓</b></span
+        ><span><b>03—04</b> TEAM B <i>／ Bチーム</i></span>
       </div>
-      <div id="players" class="players"></div>
+      <section
+        id="players"
+        class="players"
+        aria-label="プレイヤーのHP"
+      ></section>
+      <footer class="arena-footer">
+        <span class="footer-label">明石光線 <b>／</b> IR ARENA</span
+        ><span>狙うのは、相手の銃の受信部。<b>走らない・接触しない。</b></span
+        ><span class="barcode" aria-hidden="true"></span>
+      </footer>
     </main>
-
     <div id="overlay" hidden>
-      <h2 id="overlayTitle"></h2>
-      <p id="overlayText"></p>
+      <div class="overlay-grid" aria-hidden="true"></div>
+      <div class="orbit orbit-one" aria-hidden="true"></div>
+      <div class="orbit orbit-two" aria-hidden="true"></div>
+      <div class="orbit orbit-three" aria-hidden="true"></div>
+      <div class="sight-line sight-horizontal" aria-hidden="true"></div>
+      <div class="sight-line sight-vertical" aria-hidden="true"></div>
+      <span class="overlay-corner corner-top" aria-hidden="true"
+        >AKASHI IR ARENA <b>↗</b></span
+      >
+      <span class="overlay-corner corner-bottom" aria-hidden="true"
+        >2 ON 2 · MAKE YOUR SHOT.</span
+      >
+      <div class="count-directive" aria-hidden="true">
+        <span id="countDirective">READY</span><small>照準を、合わせろ。</small>
+      </div>
+      <div class="overlay-content">
+        <span id="overlayKicker"></span>
+        <div class="title-wrap">
+          <span id="countEcho" aria-hidden="true"></span>
+          <h2 id="overlayTitle"></h2>
+        </div>
+        <p id="overlayText"></p>
+        <div id="slideProgress" aria-hidden="true"></div>
+      </div>
+      <div class="overlay-tape" aria-hidden="true">
+        <span
+          >READY TO PLAY? ／ READY TO PLAY? ／ READY TO PLAY? ／ READY TO PLAY?
+          ／</span
+        >
+      </div>
     </div>
-
-    <video id="video" src="/rules.mp4" preload="none" hidden playsinline></video>
-
-    <details id="pair">
-      <summary>タブレット接続QR</summary>
-      <img id="qr" src="/api/pair.svg" alt="タブレット接続QR">
-      <p>運営PINが別途必要です</p>
-    </details>
-
-    <div id="status">表示未準備</div>
-
+    <div id="startBurst" hidden aria-hidden="true">
+      <span>撃て。</span><strong>GO!</strong><small>MAKE YOUR SHOT ↗</small>
+    </div>
+    <video
+      id="video"
+      src="/rules.mp4"
+      preload="none"
+      hidden
+      playsinline
+    ></video>
+    <div class="display-tools">
+      <button id="prepare">表示を準備 <span>↗ 全画面・音声</span></button>
+      <details id="pair">
+        <summary>タブレット接続QR</summary>
+        <img id="qr" src="/api/pair.svg" alt="タブレット接続QR" />
+        <p>運営PINが別途必要です</p>
+      </details>
+    </div>
+    <div id="status" role="status">表示未準備</div>
     <script src="/display.js" type="module"></script>
   </body>
 </html>

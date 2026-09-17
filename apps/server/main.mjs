@@ -58,7 +58,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  function session(req){const token=(req.headers.cookie??'').split(';').map(s=>s.trim()).find(s=>s.startsWith('arena='))?.slice(6);const s=sessions.get(token);if(s&&s.expires>Date.now()){s.seen=Date.now();return s;}return null;}
  const reply=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
  async function body(req){let data='';for await(const chunk of req){data+=chunk;if(data.length>16384)throw Error('本文が大きすぎます');}return JSON.parse(data||'{}');}
- const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.mp4':'video/mp4'};
+ const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.mp4':'video/mp4','.ttf':'font/ttf'};
  const httpServer=http.createServer(async(req,res)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');
    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws:; media-src 'self'; object-src 'none'; frame-ancestors 'none'");
    try {const url=new URL(req.url,'http://localhost');
@@ -130,6 +130,9 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       res.writeHead(302,{Location:target.href});return res.end();
     }
     const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.mp4':'assets/rules.mp4'};
+    files['/display.css']='apps/web/display.css';
+    files['/display-icon.svg']='apps/web/display-icon.svg';
+    for(const font of ['Anton-Regular.ttf','BarlowCondensed-Bold.ttf','NotoSansJP.ttf'])files[`/fonts/${font}`]=`apps/web/fonts/${font}`;
     if(url.pathname==='/display'&&!local(req))return reply(res,403,{error:'投影画面はメインPCのlocalhostで開いてください'});
     const rel=files[url.pathname];if(!rel||!existsSync(path.join(root,rel)))return reply(res,404,{});const file=readFileSync(path.join(root,rel));
     res.writeHead(200,{'Content-Type':types[path.extname(rel)]??'application/octet-stream','Content-Length':file.length});res.end(file);
