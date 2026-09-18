@@ -1,30 +1,61 @@
 <!doctype html>
 <html lang="ja">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>明石光線 | 整理券受付</title>
-    <link rel="stylesheet" href="/ticket.css">
+    <link rel="stylesheet" href="/operator-shared.css" />
+    <link rel="stylesheet" href="/guest.css" />
   </head>
-  <body>
-    <header><div><small>AKASHI IR ARENA</small><h1>整理券受付</h1></div><span class="badge">1回 4名</span></header>
-    <main class="narrow">
-      <section class="card">
+  <body class="guest-page">
+    <header>
+      <div>
+        <small>明石光線 / 来場者受付</small>
+        <h1>整理券受付</h1>
+      </div>
+      <span class="badge">1枠 4名</span>
+    </header>
+    <main class="guest-layout">
+      <section class="card registration-card">
         <h2>参加する人を登録</h2>
-        <p class="notice">受付は先着順ですが、4人の定員を埋めるため、人数の少ない組が先に案内される場合があります。飛ばされた組は次の回で優先されます。</p>
+        <p class="intro">
+          人数とニックネームを入力すると、入場予定とQRコードが表示されます。
+        </p>
         <form id="registerForm" class="form-grid">
-          <label>人数
+          <label
+            ><span><span class="section-index">01</span>参加人数</span>
             <select name="partySize" required>
-              <option value="1">1人</option><option value="2">2人</option><option value="3">3人</option><option value="4">4人</option>
+              <option value="1">1人</option>
+              <option value="2">2人</option>
+              <option value="3">3人</option>
+              <option value="4">4人</option>
             </select>
           </label>
-          <fieldset class="nickname-fieldset"><legend>参加者のニックネーム</legend><p class="hint">人数分入力してください。ゲーム画面にもこの名前が表示されます。</p><div id="nicknameFields" class="form-grid"></div></fieldset>
-          <label class="check"><input name="consent" type="checkbox" required><span>画面に表示される案内を確認し、呼び出し時に入口へ向かうことに同意します。本名や連絡先は入力しません。</span></label>
+          <fieldset class="nickname-fieldset">
+            <legend>
+              <span class="section-index">02</span>参加者のニックネーム
+            </legend>
+            <p class="hint">
+              1人ずつ入力してください。ゲーム画面にもこの名前が表示されます。
+            </p>
+            <div id="nicknameFields" class="form-grid"></div>
+          </fieldset>
+          <p class="notice">
+            受付は先着順ですが、4人の定員を埋めるため、人数の少ない組が先に案内される場合があります。飛ばされた組は次の回で優先されます。
+          </p>
+          <label class="check"
+            ><input name="consent" type="checkbox" required /><span
+              >画面に表示される案内を確認し、呼び出し時に入口へ向かうことに同意します。本名や連絡先は入力しません。</span
+            ></label
+          >
           <button class="primary">整理券を取得する</button>
         </form>
         <p id="message" class="error" role="alert"></p>
       </section>
-      <p class="hint">登録完了はサーバーが受付処理を確定した順です。この画面を閉じても、発行後のURLを保存していれば整理券を表示できます。</p>
+      <p class="hint">
+        登録完了はサーバーが受付処理を確定した順です。この画面を閉じても、発行後のURLを保存していれば整理券を表示できます。
+      </p>
+      <footer class="page-footer"><span>明石光線 / 整理券受付</span></footer>
     </main>
     <script src="/register.js" type="module"></script>
   </body>
