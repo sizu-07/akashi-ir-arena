@@ -6,6 +6,7 @@ let state = null;
 let connected = false;
 let ws;
 let first = true;
+let pending = false;
 
 const message = (text) => {
   $('message').textContent = text;
@@ -53,17 +54,24 @@ async function action(actionName, extra = {}) {
     commandId: commandId(),
     ...extra,
   });
-  message(result.notice || `操作を受理しました: ${result.commandId}`);
+  const notices = {start: '開始操作を受け付けました。', pause: '試合を一時停止しました。', finish: '試合を終了しました。', new: '次の試合を準備しました。参加者を確認してください。', sync_ticket_members: '整理券メンバーを反映しました。名前を確認してください。', media: '投影画面を切り替えました。', hp: 'HP補正を記録しました。', demo_hit: '発射・命中を送信しました。'};
+  message(result.notice || notices[actionName] || '操作を反映しました。');
 }
 
 function guarded(callback) {
   return async (event) => {
     event?.preventDefault();
+    if (pending) return;
+    pending = true;
+    disable();
 
     try {
       await callback(event);
     } catch (error) {
       message(error.message);
+    } finally {
+      pending = false;
+      disable();
     }
   };
 }
@@ -108,13 +116,14 @@ function connect() {
   ws.onclose = () => {
     connected = false;
     $('connection').textContent = '通信切断・操作不可';
+    $('connection').className = 'badge offline';
     disable();
     setTimeout(connect, 1500);
   };
 }
 
 function disable() {
-  const locked = !connected || state?.owner !== sessionId;
+  const locked = pending || !connected || state?.owner !== sessionId;
 
   document
     .querySelectorAll('#dashboard button:not(#takeover)')
@@ -122,8 +131,14 @@ function disable() {
       button.disabled = locked;
     });
 
-  $('takeover').disabled = !connected;
+  $('takeover').disabled = pending || !connected;
   $('syncTicketMembers').disabled = locked || !state?.ticketBridge?.enabled || state?.phase !== 'LOBBY';
+  $('newMatch').disabled = locked || !['LOBBY', 'FINISHED'].includes(state?.phase);
+  document.querySelector('[data-action=start]').disabled = locked || !['LOBBY', 'PAUSED'].includes(state?.phase) || (state?.phase === 'LOBBY' && state?.ticketBridge?.enabled && !state.ticketBridge.membersLoaded);
+  document.querySelector('[data-action=pause]').disabled = locked || !['COUNTDOWN', 'ACTIVE'].includes(state?.phase);
+  document.querySelector('[data-action=finish]').disabled = locked || state?.phase === 'FINISHED';
+  $('rulesForm').querySelector('button').disabled = locked || !['LOBBY', 'FINISHED'].includes(state?.phase);
+  $('hpForm').querySelector('button').disabled = locked || !['LOBBY', 'PAUSED'].includes(state?.phase);
 }
 
 const names = {
@@ -136,6 +151,7 @@ const names = {
 
 function render() {
   $('connection').textContent = state.demo ? '接続済 / デモ' : '接続済';
+  $('connection').className = 'badge';
   $('phase').textContent = names[state.phase];
   $('clock').textContent = time(state.remainingMs);
   $('score').textContent = `A ${state.score.A} : ${state.score.B} B`;
@@ -147,8 +163,23 @@ function render() {
     `接続: ${connectedPlayers}/4 ／ ` +
     `整理券: ${!state.ticketBridge?.enabled ? '未設定' : state.ticketBridge.connected ? '同期済み' : `未同期（再送待ち${state.ticketBridge.pending}件）`} ／ ` +
     `メンバー: ${!state.ticketBridge?.enabled ? '手動名' : state.ticketBridge.membersLoaded ? '反映済み' : '未反映'}`;
-  $('syncTicketMembers').textContent = state.ticketBridge?.membersLoaded ? '① 整理券メンバーを更新' : '① 整理券メンバーを反映';
+  $('syncTicketMembers').textContent = state.ticketBridge?.membersLoaded ? '整理券メンバーを更新' : '整理券メンバーを反映';
+  document.querySelector('[data-action=start]').textContent = state.phase === 'PAUSED' ? '試合を再開' : state.phase === 'COUNTDOWN' ? '開始カウントダウン中' : '試合を開始';
+  const hints = {
+    LOBBY: state.ticketBridge?.enabled && !state.ticketBridge.membersLoaded ? '整理券メンバーを反映し、参加者の名前を確認してください。' : '参加者・端末を確認し、準備が整ったら「試合を開始」を押してください。',
+    COUNTDOWN: '開始カウントダウン中です。異常があれば「一時停止」を押してください。',
+    ACTIVE: '試合中です。異常時は「一時停止」、打ち切る場合は「試合終了」を押してください。',
+    PAUSED: '一時停止中です。端末と参加者を確認して「試合を再開」を押してください。',
+    FINISHED: '試合が終了しました。「次の試合を準備」を押すと、同じルールでHP・残り時間を戻します。',
+  };
+  $('nextStep').textContent = hints[state.phase];
+  if (['LOBBY', 'PAUSED'].includes(state.phase)) {
+    if (!state.displayReady) $('nextStep').textContent = '「投影画面を開く」から「表示を準備」を押してください。';
+    else if (connectedPlayers < 4) $('nextStep').textContent = `端末が${connectedPlayers}/4台接続されています。4台の接続を確認してください。`;
+  }
+  document.querySelectorAll('[data-media]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.media === state.media)));
 
+  const deviceElements = [];
   const playerElements = state.players.map((player) => {
     const element = document.createElement('article');
     element.className = `player team${player.team}`;
@@ -185,11 +216,16 @@ function render() {
       `振動出力 ${player.motorActive ? 'ON' : 'OFF'}（自己申告）`;
     meta.style.whiteSpace = 'pre-line';
 
-    element.append(title, hp, bar, meta);
+    deviceElements.push(meta);
+    const summary = document.createElement('div');
+    summary.className = 'player-summary';
+    summary.textContent = `${player.connected ? '接続済み' : '通信切断'} / 残弾 ${player.ammo}${player.reloadUntil ? '・リロード中' : ''}${player.lowBattery ? ' / 電池低下' : ''}`;
+    element.append(title, hp, bar, summary);
     return element;
   });
 
   $('players').replaceChildren(...playerElements);
+  $('deviceDetails').replaceChildren(...deviceElements);
   $('demoPanel').hidden = !state.demo;
 
   if (first) {
@@ -264,6 +300,12 @@ $('rulesForm').onsubmit = guarded(async () => {
   }
 
   await action('new', {rules});
+});
+
+// Normal turnover reuses the actual active rules, not an unsubmitted settings draft.
+$('newMatch').onclick = guarded(async () => {
+  if (state.phase === 'LOBBY' && !confirm('待機中の試合を作り直します。メンバー反映とHP補正も確認し直してください。よろしいですか？')) return;
+  await action('new', {rules: state.rules});
 });
 
 $('hpForm').onsubmit = guarded(() =>

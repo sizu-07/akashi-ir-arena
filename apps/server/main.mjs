@@ -131,6 +131,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       res.writeHead(302,{Location:target.href});return res.end();
     }
     const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.mp4':'assets/rules.mp4'};
+    files['/operator-shared.css']='apps/ticket-web/operator-shared.css';
     files['/display.css']='apps/web/display.css';
     files['/display-icon.svg']='apps/web/display-icon.svg';
     for(const font of ['Anton-Regular.ttf','BarlowCondensed-Bold.ttf','NotoSansJP.ttf'])files[`/fonts/${font}`]=`apps/web/fonts/${font}`;

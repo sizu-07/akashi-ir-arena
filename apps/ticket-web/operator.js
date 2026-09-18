@@ -24,6 +24,7 @@ let heartbeat;
 let selectedTicket;
 let globalMessageDirty = false;
 let settingsDirty = false;
+let pending = false;
 const actionLabels = {
   hold: '保留にする', release: '保留を解除する', cancel: '整理券を取り消す', skip_group: 'この登録グループをスキップする',
   recall_group: 'スキップを取り消して呼び戻す', move_round: '予定枠を変更する', undo_checkin: '入場処理を取り消す', message: '個別メッセージを変更する',
@@ -51,13 +52,17 @@ async function post(url, data) {
 }
 async function action(actionName, extra = {}) {
   const result = await post('/api/operator/action', {action: actionName, commandId: commandId(), ...extra});
-  showMessage(result.operation?.notice || `操作を反映しました（${result.commandId}）`, true);
+  showMessage(result.operation?.notice || '操作を反映しました。', true);
   return result;
 }
 function guarded(callback) {
   return async (event) => {
     event?.preventDefault();
+    if (pending) return;
+    pending = true;
+    disable();
     try { await callback(event); } catch (error) { showMessage(error.message); }
+    finally { pending = false; disable(); }
   };
 }
 
@@ -158,7 +163,7 @@ function renderTimeline() {
   else if (called) $('nextAction').textContent = `第${called.number}枠を呼び出し中です。現在${called.checkedInPeople}/${called.assignedPeople}名が入場済みです。残りのQRを確認してください。`;
   else if (next && delayedBeforeNext) $('nextAction').textContent = `先頭に${delayedBeforeNext}枠の調整枠があります。第${next.number}枠は${formatTime(next.callAt)}ごろに改めて呼び出します。`;
   else if (next?.callAt > Date.now()) $('nextAction').textContent = `次は第${next.number}枠です。開始15分前の${formatTime(next.callAt)}ごろに自動で呼び出します。`;
-  else if (next) $('nextAction').textContent = `次は第${next.number}枠です。「① 次の4名を呼び出す」から入口へ案内してください。`;
+  else if (next) $('nextAction').textContent = `次は第${next.number}枠です。「次の4名を呼び出す」から入口へ案内してください。`;
   else $('nextAction').textContent = '現在、待機中の来場者はいません。';
 }
 
@@ -359,6 +364,7 @@ function roundCard(round) {
   meta.textContent = `${round.assignedPeople}/4名・体験 ${formatSlot(round)}・入場 ${formatTime(round.callAt)}ごろ`;
   const input = document.createElement('input');
   input.type = 'datetime-local';
+  input.setAttribute('aria-label', `第${round.number}枠の開始時刻`);
   input.step = '900';
   input.value = round.slotStartAt ? new Date(round.slotStartAt - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '';
   const change = document.createElement('button');
@@ -434,7 +440,7 @@ function updateTicketActionForm() {
 }
 
 function disable() {
-  const locked = !socket || socket.readyState !== WebSocket.OPEN || state?.owner !== sessionId;
+  const locked = pending || !socket || socket.readyState !== WebSocket.OPEN || state?.owner !== sessionId;
   document.querySelectorAll('#app button').forEach((button) => { button.disabled = locked; });
   const called = state?.rounds.find((round) => round.status === 'CALLED');
   const upcoming = state?.rounds.filter((round) => scheduledRoundStates.has(round.status)).sort((a, b) => a.number - b.number)[0];
@@ -443,7 +449,9 @@ function disable() {
   document.querySelectorAll('.recall-group').forEach((button) => { button.disabled = locked; });
   $('openRegistration').disabled = locked || Boolean(state?.registrationOpen);
   $('closeRegistration').disabled = locked || !state?.registrationOpen;
-  $('takeover').disabled = !socket || socket.readyState !== WebSocket.OPEN;
+  $('takeover').disabled = pending || !socket || socket.readyState !== WebSocket.OPEN;
+  $('delayMinusSlot').disabled = locked || !state?.settings.globalDelayMinutes;
+  $('delayReset').disabled = locked || !state?.settings.globalDelayMinutes;
 }
 
 function currentSettings(delaySlots) {
@@ -463,15 +471,16 @@ async function applyDelaySlots(delaySlots) {
   $('messageForm').elements.message.value = notice;
   settingsDirty = false;
   globalMessageDirty = false;
+  $('noticeState').textContent = '調整枠の案内を反映済み';
 }
 
 $('takeover').onclick = guarded(async () => { if (confirm('この端末に操作権を移しますか？')) await post('/api/operator/takeover', {}); });
 $('openRegistration').onclick = guarded(() => action('registration', {value: true}));
 $('closeRegistration').onclick = guarded(() => action('registration', {value: false}));
 $('callNext').onclick = guarded(async () => { if (confirm('待機列の先頭にある次枠を呼び出しますか？')) await action('call_next'); });
-$('messageForm').elements.message.addEventListener('input', () => { globalMessageDirty = true; });
+$('messageForm').elements.message.addEventListener('input', () => { globalMessageDirty = true; $('noticeState').textContent = '編集中・まだ反映されていません'; });
 $('settingsForm').addEventListener('input', () => { settingsDirty = true; });
-$('messageForm').onsubmit = guarded(async () => { await action('global_message', {value: $('messageForm').elements.message.value}); globalMessageDirty = false; });
+$('messageForm').onsubmit = guarded(async () => { await action('global_message', {value: $('messageForm').elements.message.value}); globalMessageDirty = false; $('noticeState').textContent = '全員の画面へ反映済み'; });
 $('settingsForm').onsubmit = guarded(async () => {
   const delaySlots = Number($('settingsForm').elements.globalDelaySlots.value);
   const currentDelaySlots = Math.floor(state.settings.globalDelayMinutes / 15);

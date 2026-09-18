@@ -564,12 +564,19 @@ test('HTTP同時登録、運営認証、操作冪等性、閲覧分離', async (
     assert.equal((await fetch(`${base}/api/game/events`, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer wrong'}, body: JSON.stringify(gameEvent)})).status, 401);
 
     const operatorPage = await (await fetch(`${base}/operator`)).text();
-    assert.ok(operatorPage.indexOf('operation-card') < operatorPage.indexOf('id="registrationBanner"'));
-    assert.match(operatorPage, /id="takeover"[^>]*>操作権を取得<\/button><span id="compactRegistrationStatus"/);
+    assert.match(operatorPage, /id="compactRegistrationStatus"/);
+    assert.ok(operatorPage.indexOf('id="callNext"') < operatorPage.indexOf('id="registrationBanner"'));
+    assert.ok(operatorPage.indexOf('id="delayPanel"') < operatorPage.indexOf('id="tickets"'));
+    assert.ok(operatorPage.indexOf('id="messageForm"') < operatorPage.indexOf('id="tickets"'));
     assert.ok(operatorPage.indexOf('queueTimeline') < operatorPage.indexOf('id="tickets"'));
     assert.ok(operatorPage.indexOf('id="tickets"') < operatorPage.indexOf('registrationStatus'));
     assert.ok(operatorPage.indexOf('registrationStatus') < operatorPage.indexOf('settingsForm'));
-    assert.ok(operatorPage.indexOf('settingsForm') < operatorPage.indexOf('id="allRounds"'));
+    assert.ok(operatorPage.indexOf('id="tickets"') < operatorPage.indexOf('id="allRounds"'));
+    const sharedStyle = await fetch(`${base}/operator-shared.css`);
+    assert.equal(sharedStyle.status, 200);
+    assert.match(sharedStyle.headers.get('content-type'), /text\/css/);
+    assert.match(await sharedStyle.text(), /#b94047/);
+    assert.equal((await fetch(`${base}/operator.css`)).status, 200);
     assert.doesNotMatch(operatorPage, /name="cycleMinutes"/);
     assert.match(await (await fetch(`${base}/register`)).text(), /nicknameFields/);
     assert.doesNotMatch(await (await fetch(`${base}/ticket`)).text(), /id="round"/);
@@ -841,9 +848,10 @@ test('ゲーム運営と整理券運営を上部タブで相互に移動でき�
   try {
     const gamePage = await (await fetch(base)).text();
     assert.match(gamePage, /ゲーム運営/);
-    assert.match(gamePage, /href="\/tickets" data-ticket-destination="operator"[^>]*>整理券運営（公開）/);
-    assert.match(gamePage, /href="\/tickets\/register" data-ticket-destination="register"[^>]*>来場者受付/);
-    assert.match(gamePage, /href="\/tickets\/scanner" data-ticket-destination="scanner"[^>]*>入場QR読取/);
+    assert.match(gamePage, /href="\/tickets"\s+data-ticket-destination="operator"[^>]*>整理券運営/);
+    assert.match(gamePage, /href="\/tickets\/register"\s+data-ticket-destination="register"[^>]*>来場者受付/);
+    assert.match(gamePage, /href="\/tickets\/scanner"\s+data-ticket-destination="scanner"[^>]*>入場QR読取/);
+    assert.equal((await fetch(`${base}/operator-shared.css`)).status, 200);
     const linkResponse = await fetch(`${base}/api/ticket-links`);
     assert.equal(linkResponse.status, 200);
     const links = await linkResponse.json();

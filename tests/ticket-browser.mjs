@@ -1,5 +1,5 @@
 import {createRequire} from 'node:module';
-import {mkdtempSync, rmSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, rmSync} from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import assert from 'node:assert/strict';
@@ -34,6 +34,13 @@ try {
   await page.locator('#app').waitFor({state: 'visible'});
   await page.locator('#registrationBanner').getByText('受付中', {exact: true}).waitFor();
   await page.locator('#compactRegistrationStatus').getByText('受付中', {exact: true}).waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'スマートフォンでページ全体を横スクロールさせない');
+  assert.equal(await page.locator('#ticketSettings').getAttribute('open'), null);
+  const order = await page.evaluate(() => {
+    const top = (selector) => document.querySelector(selector).getBoundingClientRect().top;
+    return top('#callNext') < top('#delayPanel') && top('#delayPanel') < top('#tickets') && top('#noticePanel') < top('#tickets');
+  });
+  assert.equal(order, true, '呼出・調整・案内を整理券一覧より上に配置する');
   const messageInput = page.locator('#messageForm textarea[name="message"]');
   await messageInput.fill('入力途中の全体連絡');
   await fetch(`${base}/api/public/register`, {
@@ -46,6 +53,11 @@ try {
   const callNext = page.getByRole('button', {name: /次の.*呼び出/});
   if (await callNext.isEnabled()) await callNext.click();
   await page.locator('#queueTimeline .timeline-round.called').waitFor();
+  mkdirSync('artifacts/operator-ui', {recursive: true});
+  await page.screenshot({path: 'artifacts/operator-ui/ticket-mobile.png', fullPage: true});
+  await page.setViewportSize({width: 1440, height: 1000});
+  await page.screenshot({path: 'artifacts/operator-ui/ticket-desktop.png', fullPage: true});
+  await page.setViewportSize({width: 390, height: 844});
   await page.getByRole('button', {name: '調整枠を1枠追加'}).click();
   await page.locator('#delaySummary').getByText('調整中：残り1枠（15分）', {exact: true}).waitFor();
   await page.locator('#queueTimeline').getByText('調整・使用なし', {exact: true}).waitFor();
