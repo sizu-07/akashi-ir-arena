@@ -3,6 +3,7 @@
 ゲーム運営と整理券運営は、`apps/ticket-web/operator-shared.css` を共通で読み込む。
 ゲーム側は `/operator-shared.css` を同じファイルへ対応付け、整理券側も同じURLで配信する。
 公開用Dockerイメージには `apps/ticket-web` とともに含まれる。
+来場者向けの受付・整理券ページも同じ共通スタイルを読み込み、`guest.css` でスマートフォン向けの配置を指定する。
 
 ## 判断基準
 

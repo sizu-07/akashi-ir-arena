@@ -1,28 +1,70 @@
 <!doctype html>
 <html lang="ja">
   <head>
-    <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>明石光線 | 整理券</title><link rel="stylesheet" href="/ticket.css">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>明石光線 | 整理券</title>
+    <link rel="stylesheet" href="/operator-shared.css" />
+    <link rel="stylesheet" href="/guest.css" />
   </head>
-  <body>
-    <header><div><small>AKASHI IR ARENA</small><h1>あなたの整理券</h1></div><span id="connection" class="badge offline">接続確認中</span></header>
-    <main class="narrow">
-      <div id="offline" class="notice" hidden>通信が切れています。表示中の待ち時間は最新ではありません。</div>
+  <body class="guest-page">
+    <header>
+      <div>
+        <small>明石光線 / 来場者受付</small>
+        <h1>あなたの整理券</h1>
+      </div>
+      <span id="connection" class="badge offline">接続確認中</span>
+    </header>
+    <main class="guest-layout">
+      <div id="offline" class="notice" hidden>
+        通信が切れています。表示中の待ち時間は最新ではありません。
+      </div>
       <section id="content" class="card ticket-hero" hidden>
-        <p class="muted">整理券番号</p><h2 id="ticketNumber" class="ticket-number"></h2>
-        <div id="status" class="status"></div>
+        <div class="ticket-heading">
+          <div>
+            <p class="muted">整理券番号</p>
+            <h2 id="ticketNumber" class="ticket-number"></h2>
+          </div>
+          <div id="status" class="status" role="status"></div>
+        </div>
         <p id="identity"></p>
-        <div id="called" class="callout" hidden>入場時間になりました。入場場所へお越しください。</div>
+        <div id="called" class="callout" hidden>
+          入場時間になりました。入場場所へお越しください。
+        </div>
         <div id="guestTiming" class="guest-time-grid">
-          <div class="guest-time"><span>待ち時間</span><strong id="wait">—</strong></div>
-          <div class="guest-time entrance-time"><span>入場予定</span><strong id="estimate">—</strong></div>
+          <div class="guest-time">
+            <span>待ち時間</span><strong id="wait">—</strong>
+          </div>
+          <div class="guest-time entrance-time">
+            <span>入場予定</span><strong id="estimate">—</strong>
+          </div>
         </div>
         <p id="slotWindow" class="slot-window"></p>
-        <p id="queueAhead" class="queue-ahead">あなたの前：<strong id="groups">—</strong></p>
+        <p id="queueAhead" class="queue-ahead">
+          あなたの前：<strong id="groups">—</strong>
+        </p>
       </section>
-      <section id="messages" class="card" hidden><h2>運営からのお知らせ</h2><p id="globalMessage"></p><p id="personalMessage"></p></section>
-      <section id="qrCard" class="card" hidden><h2>入場用QRコード</h2><p>呼び出されたら、入口でこのQRコードを提示してください。</p><img id="qr" class="qr" alt="入場確認用QRコード"><button id="cancel" class="danger">整理券をキャンセル</button></section>
-      <p id="updated" class="hint"></p><p id="error" class="error" role="alert"></p>
+      <section id="messages" class="card" hidden>
+        <h2>運営からのお知らせ</h2>
+        <p id="globalMessage"></p>
+        <p id="personalMessage"></p>
+      </section>
+      <section id="qrCard" class="card" hidden>
+        <h2>入場用QRコード</h2>
+        <p class="hint">
+          呼び出されたら、入口でこのQRコードを提示してください。
+        </p>
+        <img id="qr" class="qr" alt="入場確認用QRコード" />
+        <div class="ticket-cancel">
+          <button id="cancel" class="danger">整理券をキャンセル</button>
+        </div>
+      </section>
+      <p id="updated" class="hint"></p>
+      <p id="error" class="error" role="alert"></p>
+      <footer class="page-footer">
+        <span>明石光線 / 整理券</span
+        ><span>このページのURLを保存してください。</span>
+      </footer>
     </main>
     <script src="/ticket.js" type="module"></script>
   </body>

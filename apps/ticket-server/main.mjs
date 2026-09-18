@@ -76,6 +76,7 @@ export async function createTicketApp({
     ['/register', 'register.html'], ['/ticket', 'ticket.html'], ['/operator', 'operator.html'], ['/scanner', 'scanner.html'],
     ['/ticket.css', 'ticket.css'], ['/register.js', 'register.js'], ['/ticket.js', 'ticket.js'], ['/operator.js', 'operator.js'], ['/scanner.js', 'scanner.js'],
     ['/operator-shared.css', 'operator-shared.css'], ['/operator.css', 'operator.css'],
+    ['/guest.css', 'guest.css'],
     ['/vendor/jsqr.js', path.join(root, 'node_modules/jsqr/dist/jsQR.js')],
   ]);
   const contentTypes = {'.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8'};

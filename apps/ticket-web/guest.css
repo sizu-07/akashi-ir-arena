@@ -1,0 +1,265 @@
+/* Visitor pages reuse the operator palette, typography and controls. */
+.guest-page {
+  font-size: 16px;
+}
+.guest-layout {
+  width: min(680px, calc(100% - 32px));
+  margin: 28px auto 48px;
+}
+.guest-page .badge {
+  border-color: var(--line);
+  color: var(--muted);
+  background: var(--surface);
+}
+.guest-page .card {
+  padding: 28px;
+}
+.registration-card,
+.ticket-hero {
+  border-top: 3px solid var(--accent);
+}
+.intro {
+  margin-bottom: 24px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.guest-page label,
+.nickname-fieldset legend {
+  font-size: 15px;
+}
+.guest-page input:not([type="checkbox"]),
+.guest-page select {
+  min-height: 48px;
+  font-size: 16px;
+}
+.nickname-fieldset {
+  min-width: 0;
+  margin: 8px 0 0;
+  padding: 18px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.nickname-fieldset legend {
+  padding: 0 14px 0 0;
+  font-weight: 600;
+}
+.nickname-fieldset .hint {
+  margin-bottom: 16px;
+}
+.guest-page .check {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: start;
+  gap: 12px;
+  padding: 10px 0;
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.check input {
+  margin: 3px 0 0;
+}
+.notice {
+  margin: 6px 0 0;
+  padding: 14px 16px;
+  border-left: 3px solid var(--line-dark);
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--muted);
+}
+#offline {
+  margin: 0 0 18px;
+  border-color: var(--amber);
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+#registerForm > button {
+  min-height: 52px;
+}
+.saved-ticket {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  margin-bottom: 24px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  color: var(--accent-hover);
+}
+.guest-page #message:not(:empty) {
+  position: static;
+  width: 100%;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  box-shadow: none;
+}
+.ticket-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ticket-heading .muted {
+  margin-bottom: 4px;
+}
+.ticket-number {
+  margin: 0;
+  color: var(--accent);
+  font-size: clamp(48px, 12vw, 68px);
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.guest-page .status {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  white-space: normal;
+  text-align: center;
+  max-width: 45%;
+}
+.guest-page .status.CALLED {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+.guest-page .status.CHECKED_IN,
+.guest-page .status.PLAYING {
+  border-color: #9aafbf;
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+.guest-page .status.CANCELED,
+.guest-page .status.NO_SHOW,
+.guest-page .status.EXPIRED {
+  color: var(--muted);
+}
+#identity {
+  margin: 14px 0 20px;
+  color: var(--muted);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.callout {
+  padding: 16px;
+  margin: 0 0 20px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-weight: 700;
+}
+.guest-time-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.guest-time {
+  min-width: 0;
+}
+.guest-time + .guest-time {
+  padding-left: 22px;
+  border-left: 1px solid var(--line);
+}
+.guest-time span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.guest-time strong {
+  display: block;
+  color: var(--ink);
+  font-size: clamp(22px, 5.8vw, 34px);
+  font-weight: 600;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.entrance-time strong {
+  color: var(--accent);
+}
+.slot-window {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.slot-window:empty {
+  display: none;
+}
+.queue-ahead {
+  margin: 12px 0 0;
+  font-size: 14px;
+}
+#messages {
+  border-left: 3px solid var(--accent);
+}
+#messages p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+#messages p:empty {
+  display: none;
+}
+#messages p:last-child {
+  margin-bottom: 0;
+}
+.qr {
+  display: block;
+  width: min(264px, 100%);
+  height: auto;
+  margin: 20px auto;
+  background: white;
+}
+.ticket-cancel {
+  text-align: right;
+}
+.ticket-cancel:has(button:not([hidden])) {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+#cancel {
+  font-size: 13px;
+}
+#updated {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#error:not(:empty) {
+  padding: 16px;
+  border-left: 3px solid var(--red);
+  background: var(--red-soft);
+}
+.guest-page .page-footer {
+  margin-top: 24px;
+}
+@media (max-width: 600px) {
+  .guest-page > header {
+    align-items: center;
+  }
+  .guest-page h1 {
+    font-size: 20px;
+  }
+  .guest-page header small {
+    font-size: 11px;
+  }
+  .guest-page header .badge {
+    max-width: 110px;
+    font-size: 11px;
+  }
+  .guest-layout {
+    width: calc(100% - 24px);
+    margin-top: 20px;
+  }
+  .guest-page .card {
+    padding: 22px 18px;
+  }
+  .guest-time + .guest-time {
+    padding-left: 14px;
+  }
+  .guest-page .page-footer {
+    flex-direction: column;
+    gap: 6px;
+  }
+}

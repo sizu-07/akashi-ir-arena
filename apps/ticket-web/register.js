@@ -25,6 +25,7 @@ if (saved) {
   const link = document.createElement('a');
   link.href = saved;
   link.textContent = '保存済みの整理券を開く';
+  link.className = 'saved-ticket';
   form.before(link);
 }
 form.addEventListener('submit', async (event) => {
