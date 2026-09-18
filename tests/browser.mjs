@@ -14,5 +14,15 @@ try {browser=await chromium.launch({channel:'msedge',headless:true});const conte
  mkdirSync('artifacts/browser',{recursive:true});await admin.screenshot({path:'artifacts/browser/operator.png',fullPage:true});await display.screenshot({path:'artifacts/browser/projector.png'});
  await admin.locator('[data-action=pause]').click();await admin.waitForFunction(()=>document.getElementById('phase').textContent==='一時停止');assert.equal(app.game.s.phase,'PAUSED');
  await admin.setViewportSize({width:768,height:1024});await admin.screenshot({path:'artifacts/browser/ipad-portrait.png',fullPage:true});assert.equal(await admin.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ await admin.locator('[data-action=start]').click();await admin.waitForFunction(()=>document.getElementById('phase').textContent==='試合中');
+ assert.equal(await admin.locator('#newMatch').isEnabled(),false,'進行中に新試合へ切り替えない');
+ admin.on('dialog',dialog=>dialog.accept());await admin.locator('[data-action=finish]').click();await admin.waitForFunction(()=>document.getElementById('phase').textContent==='試合終了');
+ const previousGameId=app.game.s.id;const previousRules=structuredClone(app.game.s.rules);
+ await admin.getByText('ルールを変更する（通常は操作不要）',{exact:true}).click();await admin.locator('#rulesForm input[name=hp]').fill('999');
+ await admin.locator('#newMatch').click();await admin.waitForFunction(()=>document.getElementById('phase').textContent==='待機');
+ assert.notEqual(app.game.s.id,previousGameId);assert.deepEqual(app.game.s.rules,previousRules,'次の試合は未保存の入力ではなく現在のルールを引き継ぐ');assert.equal(app.game.player('gun-003').hp,previousRules.hp);
+ await admin.getByText('ルールを変更する（通常は操作不要）',{exact:true}).click();
+ await admin.setViewportSize({width:390,height:844});assert.equal(await admin.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await admin.screenshot({path:'artifacts/browser/operator-mobile.png',fullPage:true});
+ await admin.setViewportSize({width:1440,height:1000});await admin.screenshot({path:'artifacts/browser/operator-ready.png',fullPage:true});
  assert.deepEqual(errors,[]);writeFileSync('artifacts/browser/result.json',JSON.stringify({revision:'0.6',checkedAt:new Date().toISOString(),passed:true,browser:'Edge headless; iPad-sized viewport (not physical iPad)',checks:['login','projector readiness','four MQTT simulators','rules slides','35-second H264 MP4 playback at 1280x720','return from video to score','countdown ACK','three receiver MQTT reports: HP100 to75 once','individual rx2/rx3 hits','PC-issued 180ms feedback','receiver counters and last receiver','pause','portrait no horizontal overflow'],errors},null,2));console.log('Browser E2E: PASS');
 }finally{await browser?.close();await app.close();if(path.dirname(dir)===os.tmpdir()&&path.basename(dir).startsWith('arena-browser-'))rmSync(dir,{recursive:true,force:true});}

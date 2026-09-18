@@ -130,6 +130,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       res.writeHead(302,{Location:target.href});return res.end();
     }
     const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.mp4':'assets/rules.mp4'};
+    files['/operator-shared.css']='apps/ticket-web/operator-shared.css';
     if(url.pathname==='/display'&&!local(req))return reply(res,403,{error:'投影画面はメインPCのlocalhostで開いてください'});
     const rel=files[url.pathname];if(!rel||!existsSync(path.join(root,rel)))return reply(res,404,{});const file=readFileSync(path.join(root,rel));
     res.writeHead(200,{'Content-Type':types[path.extname(rel)]??'application/octet-stream','Content-Length':file.length});res.end(file);
