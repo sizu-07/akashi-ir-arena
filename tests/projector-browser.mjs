@@ -84,7 +84,7 @@ try {
     ),
   );
   app.game.start(true);
-  for (const count of ['3', '2', '1']) {
+  for (const count of ['5', '4', '3', '2', '1']) {
     await page.waitForFunction(
       (count) => document.getElementById('overlayTitle').textContent === count,
       count,
@@ -99,7 +99,7 @@ try {
   await page.waitForFunction(() => document.body.dataset.phase === 'ACTIVE');
   await shot('go');
   await page.locator('#startBurst').waitFor({state: 'hidden'});
-  checks.push('Server-synchronized 3/2/1 and GO transition');
+  checks.push('Server-synchronized 5/4/3/2/1 and GO transition');
   app.game.s.players[0].hp = 25;
   app.game.s.players[2].hp = 0;
   app.game.s.score.A = 1;
@@ -118,7 +118,7 @@ try {
   await shot('paused');
   app.game.start(true);
   await page.waitForFunction(
-    () => document.getElementById('overlayTitle').textContent === '3',
+    () => document.getElementById('overlayTitle').textContent === '5',
   );
   assert.ok(
     await page

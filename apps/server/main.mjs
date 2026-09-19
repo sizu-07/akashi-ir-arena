@@ -114,7 +114,8 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
           case 'pause':game.pause();break;
           case 'finish':game.finish();break;
           case 'hp':game.correct(b.id,Number(b.hp),b.reason);break;
-          case 'media':if(!['score','rules','video','black'].includes(b.mode))throw Error('映像モード不正');if(b.mode==='video'&&!existsSync(path.join(root,'assets/rules.mp4')))throw Error('assets/rules.mp4がありません');if(game.s.phase==='ACTIVE'||game.s.phase==='COUNTDOWN')throw Error('試合中は映像切替できません');game.s.media=b.mode;break;
+          case 'media':if(b.mode==='video'&&!existsSync(path.join(root,'assets/rules.mp4')))throw Error('assets/rules.mp4がありません');game.setMedia(b.mode);break;
+          case 'video':if(!existsSync(path.join(root,'assets/rules.mp4')))throw Error('assets/rules.mp4がありません');game.controlVideo(b.operation);break;
           case 'demo_hit':if(!demo)throw Error('デモ専用操作');simulators?.hit(b.shooter,b.victim,b.receiver??'rx1');break;
           default:throw Error('未知の操作');
         }

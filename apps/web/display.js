@@ -10,6 +10,7 @@ let state;
 let offset = 0;
 let lastPhase = '';
 let lastMedia = '';
+let lastVideoCommand = '';
 let slideStart = 0;
 let lastCount = -1;
 let lastSlide = -1;
@@ -36,7 +37,7 @@ $('prepare').onclick = async () => {
     await audio.resume();
     if (!document.fullscreenElement)
       await document.documentElement.requestFullscreen?.();
-    if (state?.media === 'video') await $('video').play();
+    if (state?.media === 'video' && state.videoPlayback?.playing !== false) await $('video').play();
     mediaError = '';
     ready = true;
     $('prepare').hidden = true;
@@ -59,6 +60,7 @@ function connect() {
     `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/display`,
   );
   ws.onopen = () => {
+    lastVideoCommand = '';
     connectionLost = false;
     document.body.classList.remove('connection-lost');
     acknowledgeReady();
@@ -83,6 +85,31 @@ function connect() {
 function setText(id, value) {
   const element = $(id);
   if (element.textContent !== String(value)) element.textContent = value;
+}
+
+function syncVideo(now) {
+  const video = $('video');
+  const playback = state.videoPlayback;
+  const command = playback?.commandId || 'initial';
+  if (lastVideoCommand === command) return;
+  if (video.readyState < 1) return;
+  lastVideoCommand = command;
+  mediaError = '';
+  const position = playback ? (playback.positionMs +
+    (playback.playing ? Math.max(0, now - playback.updatedAt) : 0)) / 1000 : 0;
+  video.currentTime = Math.min(position, Number.isFinite(video.duration) ? video.duration : position);
+  if (playback?.playing === false) {
+    video.pause();
+    return;
+  }
+  video.play().catch(() => {
+    if (state.media !== 'video' || state.videoPlayback?.playing === false ||
+        lastVideoCommand !== command || connectionLost) return;
+    ready = false;
+    mediaError = '動画再生失敗。PCで表示を再準備してください';
+    $('prepare').hidden = false;
+    acknowledgeReady();
+  });
 }
 
 function showOverlay(mode, title, text = '', kicker = '') {
@@ -248,20 +275,11 @@ function render() {
       slideStart = now;
       lastSlide = -1;
     }
-    if (state.media === 'video') {
-      $('video').currentTime = 0;
-      $('video')
-        .play()
-        .catch(() => {
-          if (state.media !== 'video') return;
-          ready = false;
-          mediaError = '動画再生失敗。PCで表示を再準備してください';
-          $('prepare').hidden = false;
-          acknowledgeReady();
-        });
-    } else $('video').pause();
+    lastVideoCommand = '';
+    if (state.media !== 'video') $('video').pause();
     lastMedia = state.media;
   }
+  if (state.media === 'video' && !connectionLost) syncVideo(now);
   $('video').hidden = state.media !== 'video';
   $('overlay').hidden = true;
 

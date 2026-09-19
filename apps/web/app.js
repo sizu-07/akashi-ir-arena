@@ -55,7 +55,8 @@ async function action(actionName, extra = {}) {
     ...extra,
   });
   const notices = {start: '開始操作を受け付けました。', pause: '試合を一時停止しました。', finish: '試合を終了しました。', new: '次の試合を準備しました。参加者を確認してください。', sync_ticket_members: '整理券メンバーを反映しました。名前を確認してください。', media: '投影画面を切り替えました。', hp: 'HP補正を記録しました。', demo_hit: '発射・命中を送信しました。'};
-  message(result.notice || notices[actionName] || '操作を反映しました。');
+  const videoNotices = {play: '動画を開始しました。', pause: '動画を停止しました。', restart: '動画を最初から再生しました。'};
+  message(result.notice || (actionName === 'video' ? videoNotices[extra.operation] : notices[actionName]) || '操作を反映しました。');
 }
 
 function guarded(callback) {
@@ -139,6 +140,10 @@ function disable() {
   document.querySelector('[data-action=finish]').disabled = locked || state?.phase === 'FINISHED';
   $('rulesForm').querySelector('button').disabled = locked || !['LOBBY', 'FINISHED'].includes(state?.phase);
   $('hpForm').querySelector('button').disabled = locked || !['LOBBY', 'PAUSED'].includes(state?.phase);
+  const mediaLocked = locked || ['ACTIVE', 'COUNTDOWN'].includes(state?.phase);
+  document.querySelectorAll('[data-media], [data-video]').forEach((button) => {
+    button.disabled = mediaLocked || (button.dataset.video === 'pause' && state?.media !== 'video');
+  });
 }
 
 const names = {
@@ -282,6 +287,9 @@ document.querySelectorAll('[data-action]').forEach((button) => {
 
 document.querySelectorAll('[data-media]').forEach((button) => {
   button.onclick = guarded(() => action('media', {mode: button.dataset.media}));
+});
+document.querySelectorAll('[data-video]').forEach((button) => {
+  button.onclick = guarded(() => action('video', {operation: button.dataset.video}));
 });
 
 $('takeover').onclick = guarded(async () => {

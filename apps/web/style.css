@@ -41,7 +41,7 @@
 }
 .match-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.2fr;
+  grid-template-columns: 1fr 1fr 1fr 1.2fr;
   gap: 12px;
 }
 .match-actions button {
@@ -67,6 +67,7 @@
 }
 .projection-strip {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -77,6 +78,16 @@
 .projection-strip p {
   margin: 0;
 }
+.video-controls {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.video-controls strong { font-size: 14px; }
 button[aria-pressed="true"] {
   border-color: var(--accent);
   color: var(--accent-hover);
@@ -176,6 +187,7 @@ progress::-moz-progress-bar {
   grid-column: 1/-1;
 }
 @media (max-width: 950px) {
+  .video-controls { width: 100%; flex-basis: auto; }
   .projection-strip {
     align-items: flex-start;
     flex-direction: column;
@@ -188,6 +200,7 @@ progress::-moz-progress-bar {
   }
 }
 @media (max-width: 760px) {
+  .video-controls { align-items: stretch; flex-direction: column; }
   .match {
     grid-template-columns: 1fr auto;
     gap: 12px;

@@ -23,9 +23,28 @@ export class Game {
   record(type,payload){this.s.eventNo=++this.events;this.log({n:this.events,at:this.now(),gameId:this.s.id,type,...payload});}
   player(id){const p=this.s.players.find(p=>p.id===id);if(!p)throw Error('未登録端末');return p;}
   view(){return structuredClone({...this.s,serverMs:this.now()});}
+  setMedia(mode) {
+    if (!['score', 'rules', 'video', 'black'].includes(mode)) throw Error('映像モード不正');
+    if (['ACTIVE', 'COUNTDOWN'].includes(this.s.phase)) throw Error('試合中は映像切替できません');
+    if (mode === 'video') return this.controlVideo('restart');
+    if (this.s.media === 'video') this.controlVideo('pause');
+    this.s.media = mode;
+  }
+  controlVideo(action) {
+    if (!['play', 'pause', 'restart'].includes(action)) throw Error('動画操作不正');
+    if (['ACTIVE', 'COUNTDOWN'].includes(this.s.phase)) throw Error('試合中は動画を操作できません');
+    if (action === 'pause' && this.s.media !== 'video') throw Error('動画を表示してから停止してください');
+    const now = this.now();
+    const previous = this.s.videoPlayback;
+    const positionMs = action === 'restart' ? 0 : (previous?.positionMs ?? 0) +
+      (previous?.playing ? Math.max(0, now - previous.updatedAt) : 0);
+    this.s.media = 'video';
+    this.s.videoPlayback = {positionMs, updatedAt: now, playing: action !== 'pause', commandId: randomUUID()};
+    this.record('video_control', {action, positionMs});
+  }
   setPlayerNames(names=[]){for(const [index,player] of this.s.players.entries()){const name=String(names[index]??'').trim();player.name=name&&name.length<=20?name:this.defaultPlayerNames[index];}this.record('player_names_updated',{names:this.s.players.map(player=>player.name)});}
   reset(rules){if(!['LOBBY','FINISHED'].includes(this.s.phase))throw Error('終了してから新試合を作成してください');
-    const r=rulesOf(rules);this.s.id=randomUUID();this.s.generation++;this.s.phase='LOBBY';this.s.rules=r;this.s.remainingMs=r.durationSec*1000;this.s.score={A:0,B:0};this.s.winner=null;this.s.media='score';
+    const r=rulesOf(rules);this.s.id=randomUUID();this.s.generation++;this.s.phase='LOBBY';this.s.rules=r;this.s.remainingMs=r.durationSec*1000;this.s.score={A:0,B:0};this.s.winner=null;this.s.media='score';this.s.videoPlayback=null;
     for(const p of this.s.players)Object.assign(p,{hp:r.hp,ammo:r.magazine,armed:false,ack:null,lastShot:-1e15,reloadUntil:0,reloadRemaining:0,deadAt:0,invUntil:0});
     for(const p of this.s.players){p.damageFeedback=null;p.lastReceiver=null;}
     this.shots=[];this.pending=[];this.seen.clear();this.record('new_game',{rules:r});}
@@ -33,7 +52,7 @@ export class Game {
     if(!displayReady)throw Error('投影画面で「表示を準備」を押してください');
     if(this.s.players.some(p=>!p.connected||this.now()-p.lastSeen>2500||p.syncRtt===null||p.syncRtt>400))throw Error('4台の接続・時刻同期を確認してください');
     if(this.s.players.some(p=>!deviceReady(p)))throw Error('4台のv0.6対応・通常モード・電池状態を確認してください');
-    this.s.generation++;this.s.phase='COUNTDOWN';this.s.startAt=this.now()+3000;this.s.commandId=randomUUID();this.s.startCommitted=false;this.s.media='score';
+    this.s.generation++;this.s.phase='COUNTDOWN';this.s.startAt=this.now()+5000;this.s.commandId=randomUUID();this.s.startCommitted=false;this.s.media='score';this.s.videoPlayback=null;
     for(const p of this.s.players){p.ack=null;p.armed=false;p.damageFeedback=null;}this.record('countdown',{startAt:this.s.startAt,commandId:this.s.commandId});}
   pause(reason='operator'){if(this.s.phase==='ACTIVE')this.s.remainingMs=Math.max(0,this.s.endAt-this.now());
     if(['ACTIVE','COUNTDOWN'].includes(this.s.phase)){this.s.phase='PAUSED';this.s.generation++;this.s.startCommitted=false;for(const p of this.s.players){p.armed=false;if(p.reloadUntil){p.reloadRemaining=Math.max(0,p.reloadUntil-this.now());p.reloadUntil=0;}}this.pending=[];this.record('pause',{reason});}}

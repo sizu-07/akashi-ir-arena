@@ -90,6 +90,7 @@
             <button id="syncTicketMembers" data-action="sync_ticket_members">
               整理券メンバーを反映
             </button>
+            <button data-media="video">ルール説明動画</button>
             <button data-action="start" class="primary">試合を開始</button>
           </div>
           <div class="match-secondary">
@@ -108,9 +109,16 @@
           </div>
           <div class="actions">
             <button data-media="rules">ルール説明</button
-            ><button data-media="video">説明動画</button
             ><button data-media="score">スコア表示</button
             ><button data-media="black">暗転</button>
+          </div>
+          <div class="video-controls" role="group" aria-label="説明動画の操作">
+            <div><strong>説明動画</strong><p class="hint">停止した位置から再開できます。</p></div>
+            <div class="actions">
+              <button data-video="pause">動画を停止</button>
+              <button data-video="play">動画を開始</button>
+              <button data-video="restart">最初から再生</button>
+            </div>
           </div>
         </section>
 
