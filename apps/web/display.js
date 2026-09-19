@@ -95,12 +95,14 @@ function stopCountdownAudio(reset = false) {
 }
 
 function stopBgm() {
-  if (!bgmSource) return;
-  try { bgmSource.stop(); } catch {}
-  bgmSource.disconnect();
-  bgmGain?.disconnect();
+  if (bgmSource) {
+    try { bgmSource.stop(); } catch {}
+    bgmSource.disconnect();
+    bgmGain?.disconnect();
+  }
   bgmSource = undefined;
   bgmGain = undefined;
+  delete document.body.dataset.bgm;
 }
 
 function countdownPlaybackMs() {
@@ -118,13 +120,19 @@ function startCountdownAudio(now) {
   countdownSource.buffer = countdownBuffer;
   countdownSource.connect(audio.destination);
   countdownSource.start(0, Math.min(countdownAudioOffset, countdownBuffer.duration));
+}
+
+function startBgm(offsetSeconds = 0) {
+  stopBgm();
+  if (!bgmBuffer || !audio) throw Error('BGMが準備されていません');
   bgmSource = audio.createBufferSource();
   bgmGain = audio.createGain();
   bgmSource.buffer = bgmBuffer;
   bgmSource.loop = true;
   bgmGain.gain.value = 0.28;
   bgmSource.connect(bgmGain).connect(audio.destination);
-  bgmSource.start(0, countdownAudioOffset % bgmBuffer.duration);
+  bgmSource.start(0, offsetSeconds % bgmBuffer.duration);
+  document.body.dataset.bgm = 'playing';
 }
 
 function scheduleStartBurst() {
@@ -134,6 +142,7 @@ function scheduleStartBurst() {
   $('startBurst').hidden = true;
   startTimer = setTimeout(() => {
     if (countdownKey !== key || connectionLost || state.media !== 'score' || !['COUNTDOWN', 'ACTIVE'].includes(state.phase)) return;
+    startBgm(Math.max(0, countdownPlaybackMs() - 7010) / 1000);
     $('startBurst').hidden = false;
     burstTimer = setTimeout(() => {
       $('startBurst').hidden = true;

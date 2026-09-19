@@ -90,6 +90,7 @@ try {
   await page.waitForFunction(
     () => document.getElementById('overlayTitle').textContent === 'READY?',
   );
+  assert.equal(await page.locator('body').getAttribute('data-bgm'), null);
   assert.ok(Number(await page.locator('body').getAttribute('data-countdown-ms')) < 1460);
   await shot('countdown-ready');
   for (const count of ['5', '4', '3', '2', '1']) {
@@ -114,6 +115,7 @@ try {
   }
   await page.waitForFunction(() => document.body.dataset.phase === 'ACTIVE');
   await page.locator('#startBurst').waitFor({state: 'visible'});
+  assert.equal(await page.locator('body').getAttribute('data-bgm'), 'playing');
   assert.equal(await page.locator('#startBurst strong').textContent(), 'START');
   assert.ok(await page.locator('body').evaluate((body) => Number(body.dataset.countdownMs) >= 6900 && Number(body.dataset.countdownMs) < 7200));
   await shot('go');
