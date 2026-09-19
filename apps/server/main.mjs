@@ -59,7 +59,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  function session(req){const token=(req.headers.cookie??'').split(';').map(s=>s.trim()).find(s=>s.startsWith('arena='))?.slice(6);const s=sessions.get(token);if(s&&s.expires>Date.now()){s.seen=Date.now();return s;}return null;}
  const reply=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
  async function body(req){let data='';for await(const chunk of req){data+=chunk;if(data.length>16384)throw Error('本文が大きすぎます');}return JSON.parse(data||'{}');}
- const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.mp4':'video/mp4','.wav':'audio/wav','.ttf':'font/ttf'};
+ const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.mp4':'video/mp4','.mp3':'audio/mpeg','.wav':'audio/wav','.ttf':'font/ttf'};
  const httpServer=http.createServer(async(req,res)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');
    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws:; media-src 'self'; object-src 'none'; frame-ancestors 'none'");
    try {const url=new URL(req.url,'http://localhost');
@@ -131,7 +131,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       if(url.pathname==='/tickets')target.searchParams.set('game',`${gameOrigin}/`);
       res.writeHead(302,{Location:target.href});return res.end();
     }
-    const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.mp4':'assets/rules.mp4','/countdown.wav':'assets/audio/countdown/countdown.wav'};
+    const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.mp4':'assets/rules.mp4','/countdown.wav':'assets/audio/countdown/countdown.wav','/bgm.mp3':'assets/audio/bgm/bgm.mp3'};
     files['/operator-shared.css']='apps/ticket-web/operator-shared.css';
     files['/display.css']='apps/web/display.css';
     files['/display-icon.svg']='apps/web/display-icon.svg';

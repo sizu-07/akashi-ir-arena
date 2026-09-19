@@ -78,6 +78,9 @@ try {
   await page.waitForFunction(() =>
     document.getElementById('status').textContent.includes('準備完了'),
   );
+  assert.ok(requests.includes(`${base}/countdown.wav`));
+  assert.ok(requests.includes(`${base}/bgm.mp3`));
+  checks.push('Countdown audio and bgm.mp3 load during projector preparation');
   await page.waitForFunction(async () =>
     (await (await fetch('/api/state')).json()).players.every(
       (p) => p.connected && p.syncRtt !== null,

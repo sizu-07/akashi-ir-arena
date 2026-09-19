@@ -8,6 +8,9 @@ let ready = false;
 let audio;
 let countdownBuffer;
 let countdownSource;
+let bgmBuffer;
+let bgmSource;
+let bgmGain;
 let countdownAudioStartedAt = 0;
 let countdownAudioOffset = 0;
 let state;
@@ -53,6 +56,11 @@ $('prepare').onclick = async () => {
       if (!response.ok) throw Error('カウントダウン音声を読み込めません');
       countdownBuffer = await audio.decodeAudioData(await response.arrayBuffer());
     }
+    if (!bgmBuffer) {
+      const response = await fetch('/bgm.mp3');
+      if (!response.ok) throw Error('BGMを読み込めません');
+      bgmBuffer = await audio.decodeAudioData(await response.arrayBuffer());
+    }
     if (!document.fullscreenElement)
       await document.documentElement.requestFullscreen?.();
     if (state?.media === 'video' && state.videoPlayback?.playing !== false) await $('video').play();
@@ -86,6 +94,15 @@ function stopCountdownAudio(reset = false) {
   }
 }
 
+function stopBgm() {
+  if (!bgmSource) return;
+  try { bgmSource.stop(); } catch {}
+  bgmSource.disconnect();
+  bgmGain?.disconnect();
+  bgmSource = undefined;
+  bgmGain = undefined;
+}
+
 function countdownPlaybackMs() {
   if (!countdownSource || !audio) return 0;
   return (countdownAudioOffset + audio.currentTime - countdownAudioStartedAt) * 1000;
@@ -93,13 +110,21 @@ function countdownPlaybackMs() {
 
 function startCountdownAudio(now) {
   stopCountdownAudio();
-  if (!countdownBuffer || !audio) throw Error('カウントダウン音声が準備されていません');
+  stopBgm();
+  if (!countdownBuffer || !bgmBuffer || !audio) throw Error('音声が準備されていません');
   countdownAudioOffset = Math.max(0, now - state.countdownAudioStartAt) / 1000;
   countdownAudioStartedAt = audio.currentTime;
   countdownSource = audio.createBufferSource();
   countdownSource.buffer = countdownBuffer;
   countdownSource.connect(audio.destination);
   countdownSource.start(0, Math.min(countdownAudioOffset, countdownBuffer.duration));
+  bgmSource = audio.createBufferSource();
+  bgmGain = audio.createGain();
+  bgmSource.buffer = bgmBuffer;
+  bgmSource.loop = true;
+  bgmGain.gain.value = 0.28;
+  bgmSource.connect(bgmGain).connect(audio.destination);
+  bgmSource.start(0, countdownAudioOffset % bgmBuffer.duration);
 }
 
 function scheduleStartBurst() {
@@ -141,6 +166,7 @@ function connect() {
     clearTimeout(startTimer);
     clearTimeout(burstTimer);
     stopCountdownAudio();
+    stopBgm();
     render();
     setTimeout(connect, 1500);
   };
@@ -439,6 +465,7 @@ function render() {
       clearTimeout(burstTimer);
       $('startBurst').hidden = true;
       stopCountdownAudio(true);
+      stopBgm();
     }
     if (state.phase === 'FINISHED') tone(400, 0.7);
     lastPhase = state.phase;
