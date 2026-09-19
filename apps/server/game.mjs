@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {hardware,receiverIds,deviceReady} from './hardware.mjs';
+export const countdownDurationMs = 7010;
 export const defaults = Object.freeze({hp:100, damage:25, durationSec:300, magazine:30, fireMs:200, reloadMs:2000, invulnerableMs:300, friendlyFire:false});
 export function rulesOf(input={}) {
   const r={...defaults,...input};
@@ -52,7 +53,7 @@ export class Game {
     if(!displayReady)throw Error('投影画面で「表示を準備」を押してください');
     if(this.s.players.some(p=>!p.connected||this.now()-p.lastSeen>2500||p.syncRtt===null||p.syncRtt>400))throw Error('4台の接続・時刻同期を確認してください');
     if(this.s.players.some(p=>!deviceReady(p)))throw Error('4台のv0.6対応・通常モード・電池状態を確認してください');
-    this.s.generation++;this.s.phase='COUNTDOWN';this.s.startAt=this.now()+5000;this.s.commandId=randomUUID();this.s.startCommitted=false;this.s.media='score';this.s.videoPlayback=null;
+    this.s.generation++;this.s.phase='COUNTDOWN';this.s.startAt=this.now()+countdownDurationMs;this.s.countdownAudioStartAt=this.s.startAt-countdownDurationMs;this.s.commandId=randomUUID();this.s.startCommitted=false;this.s.media='score';this.s.videoPlayback=null;
     for(const p of this.s.players){p.ack=null;p.armed=false;p.damageFeedback=null;}this.record('countdown',{startAt:this.s.startAt,commandId:this.s.commandId});}
   pause(reason='operator'){if(this.s.phase==='ACTIVE')this.s.remainingMs=Math.max(0,this.s.endAt-this.now());
     if(['ACTIVE','COUNTDOWN'].includes(this.s.phase)){this.s.phase='PAUSED';this.s.generation++;this.s.startCommitted=false;for(const p of this.s.players){p.armed=false;if(p.reloadUntil){p.reloadRemaining=Math.max(0,p.reloadUntil-this.now());p.reloadUntil=0;}}this.pending=[];this.record('pause',{reason});}}

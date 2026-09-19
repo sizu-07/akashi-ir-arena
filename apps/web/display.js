@@ -6,18 +6,31 @@ const playerNodes = new Map();
 let ws;
 let ready = false;
 let audio;
+let countdownBuffer;
+let countdownSource;
+let countdownAudioStartedAt = 0;
+let countdownAudioOffset = 0;
 let state;
 let offset = 0;
 let lastPhase = '';
 let lastMedia = '';
 let lastVideoCommand = '';
 let slideStart = 0;
-let lastCount = -1;
 let lastSlide = -1;
 let countdownKey = '';
+let countdownVisual = '';
 let connectionLost = false;
 let mediaError = '';
 let burstTimer;
+let startTimer;
+const countdownMarks = [
+  {at: 0, label: 'READY?', directive: 'STAND BY'},
+  {at: 1460, label: '5', directive: 'READY'},
+  {at: 3080, label: '4', directive: 'READY'},
+  {at: 4080, label: '3', directive: 'READY'},
+  {at: 5100, label: '2', directive: 'AIM'},
+  {at: 6140, label: '1', directive: 'LOCK ON'},
+];
 
 function tone(frequency = 660, duration = 0.15) {
   if (!audio || audio.state !== 'running') return;
@@ -35,6 +48,11 @@ $('prepare').onclick = async () => {
   try {
     audio ??= new AudioContext();
     await audio.resume();
+    if (!countdownBuffer) {
+      const response = await fetch('/countdown.wav');
+      if (!response.ok) throw Error('カウントダウン音声を読み込めません');
+      countdownBuffer = await audio.decodeAudioData(await response.arrayBuffer());
+    }
     if (!document.fullscreenElement)
       await document.documentElement.requestFullscreen?.();
     if (state?.media === 'video' && state.videoPlayback?.playing !== false) await $('video').play();
@@ -53,6 +71,49 @@ $('prepare').onclick = async () => {
 
 function acknowledgeReady() {
   if (ws?.readyState === 1) ws.send(JSON.stringify({type: 'ready', ready}));
+}
+
+function stopCountdownAudio(reset = false) {
+  if (countdownSource) {
+    try { countdownSource.stop(); } catch {}
+    countdownSource.disconnect();
+    countdownSource = undefined;
+  }
+  if (reset) {
+    countdownAudioStartedAt = 0;
+    countdownAudioOffset = 0;
+    delete document.body.dataset.countdownMs;
+  }
+}
+
+function countdownPlaybackMs() {
+  if (!countdownSource || !audio) return 0;
+  return (countdownAudioOffset + audio.currentTime - countdownAudioStartedAt) * 1000;
+}
+
+function startCountdownAudio(now) {
+  stopCountdownAudio();
+  if (!countdownBuffer || !audio) throw Error('カウントダウン音声が準備されていません');
+  countdownAudioOffset = Math.max(0, now - state.countdownAudioStartAt) / 1000;
+  countdownAudioStartedAt = audio.currentTime;
+  countdownSource = audio.createBufferSource();
+  countdownSource.buffer = countdownBuffer;
+  countdownSource.connect(audio.destination);
+  countdownSource.start(0, Math.min(countdownAudioOffset, countdownBuffer.duration));
+}
+
+function scheduleStartBurst() {
+  const key = `${state.id}/${state.startAt}`;
+  clearTimeout(startTimer);
+  clearTimeout(burstTimer);
+  $('startBurst').hidden = true;
+  startTimer = setTimeout(() => {
+    if (countdownKey !== key || connectionLost || state.media !== 'score' || !['COUNTDOWN', 'ACTIVE'].includes(state.phase)) return;
+    $('startBurst').hidden = false;
+    burstTimer = setTimeout(() => {
+      $('startBurst').hidden = true;
+    }, 900);
+  }, Math.max(0, 7010 - countdownPlaybackMs()));
 }
 
 function connect() {
@@ -77,6 +138,9 @@ function connect() {
     ready = false;
     $('prepare').hidden = false;
     $('startBurst').hidden = true;
+    clearTimeout(startTimer);
+    clearTimeout(burstTimer);
+    stopCountdownAudio();
     render();
     setTimeout(connect, 1500);
   };
@@ -297,30 +361,41 @@ function render() {
   } else if (state.media === 'video') {
     // Video owns the entire projection until the operator changes media.
   } else if (state.phase === 'COUNTDOWN') {
+    let newCountdown = false;
     if (countdownKey !== `${state.id}/${state.startAt}`) {
       countdownKey = `${state.id}/${state.startAt}`;
-      lastCount = -1;
+      countdownVisual = '';
+      newCountdown = true;
     }
-    const count = Math.max(1, Math.ceil((state.startAt - now) / 1000));
+    if (newCountdown) {
+      try {
+        startCountdownAudio(now);
+        scheduleStartBurst();
+      } catch (error) {
+        ready = false;
+        mediaError = `${error.message}。「表示を準備」を押し直してください`;
+        $('prepare').hidden = false;
+        acknowledgeReady();
+      }
+    }
+    const elapsed = countdownPlaybackMs();
+    document.body.dataset.countdownMs = String(Math.round(elapsed));
+    const mark = countdownMarks.findLast((item) => elapsed >= item.at) || countdownMarks[0];
     showOverlay(
       'countdown',
-      String(count),
+      mark.label,
       '受信部を隠さず、開始の合図を待ってください',
       'GET READY / 開戦準備',
     );
-    $('overlay').dataset.count = String(count);
-    setText(
-      'countDirective',
-      count >= 3 ? 'READY' : count === 2 ? 'AIM' : 'LOCK ON',
-    );
-    setText('countEcho', String(count));
-    if (count !== lastCount) {
+    $('overlay').dataset.count = mark.label;
+    setText('countDirective', mark.directive);
+    setText('countEcho', mark.label);
+    if (mark.label !== countdownVisual) {
       for (const animation of document
         .querySelector('.title-wrap')
         .getAnimations())
         animation.currentTime = 0;
-      tone(600, 0.12);
-      lastCount = count;
+      countdownVisual = mark.label;
     }
   } else if (state.media === 'rules') {
     const slideIndex = Math.floor((now - slideStart) / 7000) % slides.length;
@@ -358,20 +433,12 @@ function render() {
   }
 
   if (lastPhase !== state.phase) {
-    clearTimeout(burstTimer);
-    $('startBurst').hidden = true;
-    if (state.phase === 'ACTIVE') {
-      tone(1000, 0.6);
-      if (
-        lastPhase === 'COUNTDOWN' &&
-        !connectionLost &&
-        state.media === 'score'
-      ) {
-        $('startBurst').hidden = false;
-        burstTimer = setTimeout(() => {
-          $('startBurst').hidden = true;
-        }, 900);
-      }
+    if (!['COUNTDOWN', 'ACTIVE'].includes(state.phase)) {
+      clearTimeout(startTimer);
+      startTimer = undefined;
+      clearTimeout(burstTimer);
+      $('startBurst').hidden = true;
+      stopCountdownAudio(true);
     }
     if (state.phase === 'FINISHED') tone(400, 0.7);
     lastPhase = state.phase;

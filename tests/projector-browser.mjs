@@ -84,6 +84,11 @@ try {
     ),
   );
   app.game.start(true);
+  await page.waitForFunction(
+    () => document.getElementById('overlayTitle').textContent === 'READY?',
+  );
+  assert.ok(Number(await page.locator('body').getAttribute('data-countdown-ms')) < 1460);
+  await shot('countdown-ready');
   for (const count of ['5', '4', '3', '2', '1']) {
     await page.waitForFunction(
       (count) => document.getElementById('overlayTitle').textContent === count,
@@ -94,12 +99,23 @@ try {
       await page.locator('#overlay').getAttribute('class'),
       'mode-countdown',
     );
+    const expected = {5: 1.46, 4: 3.08, 3: 4.08, 2: 5.1, 1: 6.14}[count];
+    assert.ok(
+      await page.locator('body').evaluate((body, expected) => {
+        const seconds = Number(body.dataset.countdownMs) / 1000;
+        return seconds >= expected && seconds < expected + 0.9;
+      }, expected),
+      `${count}の表示を音声の発声時刻へ合わせる`,
+    );
     await shot(`countdown-${count}`);
   }
   await page.waitForFunction(() => document.body.dataset.phase === 'ACTIVE');
+  await page.locator('#startBurst').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#startBurst strong').textContent(), 'START');
+  assert.ok(await page.locator('body').evaluate((body) => Number(body.dataset.countdownMs) >= 6900 && Number(body.dataset.countdownMs) < 7200));
   await shot('go');
   await page.locator('#startBurst').waitFor({state: 'hidden'});
-  checks.push('Server-synchronized 5/4/3/2/1 and GO transition');
+  checks.push('Audio-synchronized READY, 5/4/3/2/1 and START transition');
   app.game.s.players[0].hp = 25;
   app.game.s.players[2].hp = 0;
   app.game.s.score.A = 1;
@@ -118,7 +134,7 @@ try {
   await shot('paused');
   app.game.start(true);
   await page.waitForFunction(
-    () => document.getElementById('overlayTitle').textContent === '5',
+    () => document.getElementById('overlayTitle').textContent === 'READY?',
   );
   assert.ok(
     await page

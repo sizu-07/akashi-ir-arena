@@ -9,8 +9,7 @@
 
 例:
 
-- `countdown/5.mp3` ～ `countdown/1.mp3`
-- `countdown/go.mp3`
+- `countdown/countdown.wav`（現在使用中。数字の発声を含む一続きの音源）
 - `bgm/countdown.mp3`
 
-素材を置くだけでは再生されません。使用するファイルが決まった後、投影画面の再生処理とサーバーの配信設定へ接続します。
+`countdown/countdown.wav` は、解析した発声時刻に合わせて投影画面の表示と同期します。音源を差し替えた場合は、表示時刻も再調整してください。

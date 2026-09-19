@@ -16,7 +16,13 @@ try {browser=await chromium.launch({channel:'msedge',headless:true});const conte
  assert.ok(Math.abs(await display.locator('#video').evaluate(v=>v.duration)-35)<.2);
  await admin.locator('[data-media=score]').click();await display.waitForFunction(()=>document.getElementById('video').hidden);
  await admin.locator('[data-video=play]').click();await display.waitForFunction(()=>!document.getElementById('video').hidden);
- await admin.locator('[data-action=start]').click();await display.waitForFunction(()=>document.getElementById('overlayTitle').textContent==='5');assert.equal(await admin.locator('[data-video=play]').isDisabled(),true);await display.waitForFunction(()=>document.getElementById('video').hidden&&document.getElementById('video').paused);await admin.waitForFunction(()=>document.getElementById('phase').textContent==='試合中');await admin.locator('#demoReceiver').selectOption('all');await admin.locator('#demoHit').click();await admin.waitForFunction(()=>document.querySelectorAll('.hp')[2].textContent==='75 HP');assert.equal(app.game.player('gun-003').hp,75);
+ await admin.locator('[data-action=start]').click();
+ await display.waitForFunction(()=>document.getElementById('overlayTitle').textContent==='READY?');
+ await display.waitForFunction(()=>document.getElementById('overlayTitle').textContent==='5');
+ assert.equal(await admin.locator('[data-video=play]').isDisabled(),true);
+ await display.waitForFunction(()=>document.getElementById('video').hidden&&document.getElementById('video').paused);
+ await admin.waitForFunction(()=>document.getElementById('phase').textContent==='試合中');
+ await admin.locator('#demoReceiver').selectOption('all');await admin.locator('#demoHit').click();await admin.waitForFunction(()=>document.querySelectorAll('.hp')[2].textContent==='75 HP');assert.equal(app.game.player('gun-003').hp,75);
  await admin.waitForFunction(()=>{const text=document.querySelectorAll('.meta')[2].textContent;return text.includes('前:1 左:1 右:1');});assert.equal(app.game.player('gun-003').hp,75);assert.equal(app.game.player('gun-003').damageFeedback.duration_ms,180);
  for(const [rx,hp]of [['rx2',50],['rx3',25]]){await admin.locator('#demoReceiver').selectOption(rx);await admin.locator('#demoHit').click();await admin.waitForFunction(hp=>document.querySelectorAll('.hp')[2].textContent===hp+' HP',hp);await admin.waitForFunction(rx=>document.querySelectorAll('.meta')[2].textContent.includes((rx==='rx2'?'左:':'右:')+'2'),rx);assert.equal(app.game.player('gun-003').lastReceiver,rx);}
  mkdirSync('artifacts/browser',{recursive:true});await admin.screenshot({path:'artifacts/browser/operator.png',fullPage:true});await display.screenshot({path:'artifacts/browser/projector.png'});
