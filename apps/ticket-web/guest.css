@@ -46,6 +46,11 @@
 .nickname-fieldset .hint {
   margin-bottom: 16px;
 }
+#teamHint {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
 .participant-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
