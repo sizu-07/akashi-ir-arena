@@ -46,6 +46,15 @@
 .nickname-fieldset .hint {
   margin-bottom: 16px;
 }
+.participant-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.participant-row + .participant-row {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
 .guest-page .check {
   display: grid;
   grid-template-columns: 24px 1fr;
@@ -140,6 +149,12 @@
   font-size: 14px;
   overflow-wrap: anywhere;
 }
+.team-assignment {
+  margin: -10px 0 20px;
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
 .callout {
   padding: 16px;
   margin: 0 0 20px;
@@ -147,6 +162,31 @@
   background: var(--accent-soft);
   color: var(--accent-hover);
   font-weight: 700;
+}
+.checkin-pop {
+  margin-bottom: 20px;
+  padding: 22px;
+  border: 2px solid var(--green);
+  border-radius: 14px;
+  background: var(--green-soft);
+  color: var(--green);
+  text-align: center;
+  box-shadow: 0 10px 28px #28644f25;
+}
+.checkin-pop strong {
+  display: block;
+  font-size: clamp(20px, 5vw, 26px);
+}
+.checkin-pop p {
+  margin: 6px 0 0;
+  color: var(--green);
+}
+.checkin-pop.is-new {
+  animation: checkin-pop 450ms ease-out both;
+}
+@keyframes checkin-pop {
+  from { transform: translateY(14px) scale(.96); }
+  to { transform: translateY(0) scale(1); }
 }
 .guest-time-grid {
   display: grid;

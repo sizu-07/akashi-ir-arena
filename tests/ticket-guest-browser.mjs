@@ -26,8 +26,11 @@ try {
   await page.getByLabel('2人目', {exact: true}).fill('ひかり');
   await page.getByLabel('参加人数').selectOption('4');
   assert.equal(await page.locator('#nicknameFields input').count(), 4);
+  assert.equal(await page.locator('#nicknameFields select').count(), 4);
+  assert.equal(await page.getByLabel('4人目のチーム').inputValue(), 'B');
   assert.equal(await page.getByLabel('1人目', {exact: true}).inputValue(), 'あかし');
   await page.getByLabel('参加人数').selectOption('2');
+  assert.equal(await page.locator('#nicknameFields select').count(), 0);
   for (const width of [320, 390, 768, 1280]) {
     await page.setViewportSize({width, height: 900});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `受付 ${width}pxで横にはみ出さない`);
@@ -71,6 +74,14 @@ try {
   assert.equal((await checkin.json()).code, 'OK');
   await page.locator('#status.CHECKED_IN').waitFor();
   assert.equal(await page.locator('#called').isVisible(), false);
+  await page.locator('#checkinNotice').waitFor({state: 'visible'});
+  assert.match(await page.locator('#checkinNotice').innerText(), /入場受付が完了しました/);
+  assert.equal(await page.locator('#qrCard').isVisible(), false);
+  await page.waitForTimeout(500);
+  await page.screenshot({path: 'artifacts/guest-ui/ticket-checked-in.png', fullPage: true});
+  await page.reload();
+  await page.locator('#checkinNotice').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#qrCard').isVisible(), false);
   // A four-person group cannot fill the remaining two seats, so it stays cancelable.
   const registration = await fetch(`${base}/api/public/register`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({requestId: 'guest-cancel-ticket', nicknames: ['来場者1', '来場者2', '来場者3', '来場者4'], partySize: 4, consent: true})});
   assert.equal(registration.status, 201);
@@ -81,6 +92,19 @@ try {
   await page.locator('#status.CANCELED').waitFor();
   assert.equal(await page.locator('#guestTiming').isVisible(), false);
   assert.equal(await page.locator('#qrCard').isVisible(), false);
+  await page.goto(`${base}/register`);
+  await page.getByLabel('参加人数').selectOption('3');
+  for (const [index, name] of ['チーム甲', 'チーム乙', 'チーム丙'].entries()) await page.getByLabel(`${index + 1}人目`, {exact: true}).fill(name);
+  await page.getByLabel('1人目のチーム').selectOption('B');
+  await page.getByLabel('2人目のチーム').selectOption('A');
+  await page.getByLabel('3人目のチーム').selectOption('B');
+  await page.locator('[name=consent]').check();
+  await page.getByRole('button', {name: '整理券を取得する'}).click();
+  await page.waitForURL('**/ticket#*');
+  await page.getByText('チーム甲：チームB / チーム乙：チームA / チーム丙：チームB').waitFor();
+  await page.screenshot({path: 'artifacts/guest-ui/ticket-with-teams.png', fullPage: true});
+  const teamTicket = app.queue.state.tickets.find(item => item.accessToken === new URL(page.url()).hash.slice(1));
+  assert.deepEqual(teamTicket.playerTeams, ['B', 'A', 'B']);
   assert.deepEqual(errors, []);
   console.log('Guest browser E2E: PASS');
 } finally {

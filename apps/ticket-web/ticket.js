@@ -5,6 +5,7 @@ let socket;
 let pollTimer;
 let heartbeat;
 let hasData = false;
+let previousStatus = null;
 const terminal = new Set(['COMPLETED','NO_SHOW','CANCELED','EXPIRED']);
 function render(ticket) {
   hasData = true;
@@ -13,7 +14,13 @@ function render(ticket) {
   $('status').textContent = states[ticket.status] || ticket.status;
   $('status').className = `status ${ticket.status}`;
   $('identity').textContent = `${(ticket.playerNicknames || [ticket.nickname]).join('・')} / ${ticket.partySize}名`;
+  const teams = ticket.playerTeams;
+  $('teamAssignment').hidden = !teams?.length;
+  $('teamAssignment').textContent = teams?.length ? ticket.playerNicknames.map((name, index) => `${name}：チーム${teams[index]}`).join(' / ') : '';
   $('called').hidden = ticket.status !== 'CALLED';
+  const checkedIn = ['CHECKED_IN', 'PLAYING', 'COMPLETED'].includes(ticket.status);
+  $('checkinNotice').hidden = !checkedIn;
+  $('checkinNotice').classList.toggle('is-new', checkedIn && previousStatus !== null && !['CHECKED_IN', 'PLAYING', 'COMPLETED'].includes(previousStatus));
   const scheduleVisible = !terminal.has(ticket.status);
   $('guestTiming').hidden = !scheduleVisible;
   $('slotWindow').hidden = !scheduleVisible;
@@ -26,10 +33,11 @@ function render(ticket) {
   $('messages').hidden = !ticket.globalMessage && !ticket.personalMessage;
   $('globalMessage').textContent = ticket.globalMessage;
   $('personalMessage').textContent = ticket.personalMessage ? `あなたへの連絡：${ticket.personalMessage}` : '';
-  $('qrCard').hidden = terminal.has(ticket.status);
-  $('qr').src = `/api/public/qr/${encodeURIComponent(token)}`;
+  $('qrCard').hidden = checkedIn || terminal.has(ticket.status);
+  if (!$('qrCard').hidden && !$('qr').src) $('qr').src = `/api/public/qr/${encodeURIComponent(token)}`;
   $('cancel').hidden = !['WAITING','ASSIGNED'].includes(ticket.status);
   $('updated').textContent = `最終更新：${new Date(ticket.updatedAt).toLocaleTimeString('ja-JP')}`;
+  previousStatus = ticket.status;
 }
 async function fetchTicket() {
   try {

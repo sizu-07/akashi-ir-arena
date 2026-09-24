@@ -28,6 +28,7 @@
           <div id="status" class="status" role="status"></div>
         </div>
         <p id="identity"></p>
+        <p id="teamAssignment" class="team-assignment" hidden></p>
         <div id="called" class="callout" hidden>
           入場時間になりました。入場場所へお越しください。
         </div>
@@ -48,6 +49,10 @@
         <h2>運営からのお知らせ</h2>
         <p id="globalMessage"></p>
         <p id="personalMessage"></p>
+      </section>
+      <section id="checkinNotice" class="checkin-pop" role="status" aria-live="polite" hidden>
+        <strong>✓ 入場受付が完了しました</strong>
+        <p>QRコードの読み取りが完了しました。係員の案内に従ってください。</p>
       </section>
       <section id="qrCard" class="card" hidden>
         <h2>入場用QRコード</h2>
