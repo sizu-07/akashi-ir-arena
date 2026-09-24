@@ -121,11 +121,14 @@ try {
   await assert.doesNotReject(() => page.getByRole('heading', {name: '読み取り成功'}).waitFor());
   await assert.doesNotReject(() => page.locator('#scanSuccessTicket').getByText(ticket.ticketNumber).waitFor());
   assert.equal(await page.locator('#scanSuccess').evaluate((node) => getComputedStyle(node).position), 'fixed');
+  assert.equal(await page.locator('#scanSuccess').evaluate((node) => getComputedStyle(node.querySelector('.scan-success-panel')).borderTopColor), 'rgb(40, 100, 79)');
   assert.equal(await page.locator('#nextScan').evaluate((node) => document.activeElement === node), true);
   await page.keyboard.press('Tab');
   assert.equal(await page.locator('#nextScan').evaluate((node) => document.activeElement === node), true);
   await page.screenshot({path: 'artifacts/operator-ui/scanner-success-mobile.png', fullPage: true});
-  await page.getByRole('button', {name: '次のQRコードを読み取る'}).click();
+  await page.waitForTimeout(2000);
+  assert.equal(await page.locator('#scanSuccess').isVisible(), true);
+  await page.locator('#scanSuccess.is-closing').waitFor({state: 'visible'});
   await page.locator('#scanSuccess').waitFor({state: 'hidden'});
   await page.locator('input[name="token"]').fill(`AKASHI:${ticket.qrToken}`);
   await page.getByRole('button', {name: '入場を確認', exact: true}).click();
@@ -138,7 +141,7 @@ try {
   await page.getByRole('button', {name: '入場を確認', exact: true}).click();
   await page.locator('#scanSuccess').waitFor({state: 'visible'});
   assert.equal(await page.locator('#cameraStatus').innerText(), '次の読み取り待ち');
-  await page.locator('#nextScan').click();
+  await page.locator('#scanSuccess').waitFor({state: 'hidden', timeout: 6000});
   await page.locator('#cameraStatus').getByText('読み取り中', {exact: true}).waitFor();
   await page.locator('#stop').click();
   assert.deepEqual(pageErrors, []);

@@ -7,6 +7,10 @@ let last = "";
 let lastAt = 0;
 let lastFrameAt = 0;
 let previousFocus;
+let successTimer;
+let fadeTimer;
+let blockedCameraValue = "";
+let noCodeSince = 0;
 const canvas = document.createElement("canvas");
 const context = canvas.getContext("2d", { willReadFrequently: true });
 async function init() {
@@ -26,6 +30,9 @@ async function init() {
 }
 function showSuccess(result, participants) {
   scanning = false;
+  clearTimeout(successTimer);
+  clearTimeout(fadeTimer);
+  $("scanSuccess").classList.remove("is-closing");
   previousFocus = document.activeElement;
   if (stream) $("cameraStatus").textContent = "次の読み取り待ち";
   $("scanSuccessTicket").textContent =
@@ -37,8 +44,34 @@ function showSuccess(result, participants) {
   document.querySelector("main").inert = true;
   document.querySelector("header").inert = true;
   $("nextScan").focus();
+  successTimer = setTimeout(() => dismissSuccess(), 3000);
 }
-async function check(value) {
+function finishSuccess() {
+  clearTimeout(successTimer);
+  clearTimeout(fadeTimer);
+  $("scanSuccess").hidden = true;
+  $("scanSuccess").classList.remove("is-closing");
+  document.querySelector("main").inert = false;
+  document.querySelector("header").inert = false;
+  last = "";
+  if (stream) {
+    scanning = true;
+    $("cameraStatus").textContent = "読み取り中";
+    requestAnimationFrame(scan);
+  }
+  const target =
+    previousFocus?.closest("main") && !previousFocus.disabled
+      ? previousFocus
+      : $(stream ? "stop" : "start");
+  target.focus();
+}
+function dismissSuccess() {
+  if ($("scanSuccess").hidden || $("scanSuccess").classList.contains("is-closing")) return;
+  clearTimeout(successTimer);
+  $("scanSuccess").classList.add("is-closing");
+  fadeTimer = setTimeout(finishSuccess, 650);
+}
+async function check(value, fromCamera = false) {
   if (value === last && Date.now() - lastAt < 4000) return;
   last = value;
   lastAt = Date.now();
@@ -64,7 +97,10 @@ async function check(value) {
     $("result").hidden = false;
     $("result").textContent =
       `${labels[result.code] || result.code}${result.ticket ? `\n${result.ticket.ticketNumber} ${participants}（${result.ticket.partySize}名）` : ""}${result.round ? `\n第${result.round.number}枠：${result.round.checkedInPeople}/${result.round.assignedPeople}名 入場済み` : ""}`;
-    if (result.code === "OK") showSuccess(result, participants);
+    if (result.code === "OK") {
+      if (fromCamera) blockedCameraValue = value;
+      showSuccess(result, participants);
+    }
     if (navigator.vibrate)
       navigator.vibrate(result.code === "OK" ? [100] : [200, 100, 200]);
   } catch (error) {
@@ -135,7 +171,16 @@ async function scan(now = 0) {
       lastFrameAt = now;
       value = detectWithFallback($("video"));
     }
-    if (value) await check(value);
+    if (value) {
+      noCodeSince = 0;
+      if (value !== blockedCameraValue) await check(value, true);
+    } else if (blockedCameraValue) {
+      noCodeSince ||= performance.now();
+      if (performance.now() - noCodeSince >= 500) {
+        blockedCameraValue = "";
+        noCodeSince = 0;
+      }
+    }
   } catch {}
   if (scanning) requestAnimationFrame(scan);
 }
@@ -184,22 +229,7 @@ init().catch(() => {
   $("message").textContent =
     "サーバーに接続できません。通信環境を確認して再読み込みしてください。";
 });
-$("nextScan").onclick = () => {
-  $("scanSuccess").hidden = true;
-  document.querySelector("main").inert = false;
-  document.querySelector("header").inert = false;
-  last = "";
-  if (stream) {
-    scanning = true;
-    $("cameraStatus").textContent = "読み取り中";
-    requestAnimationFrame(scan);
-  }
-  const target =
-    previousFocus?.closest("main") && !previousFocus.disabled
-      ? previousFocus
-      : $(stream ? "stop" : "start");
-  target.focus();
-};
+$("nextScan").onclick = finishSuccess;
 $("nextScan").onkeydown = (event) => {
   if (event.key === "Tab") event.preventDefault();
 };

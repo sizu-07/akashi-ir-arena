@@ -109,6 +109,11 @@
   background: var(--amber-soft);
   color: var(--amber);
 }
+.scan-result.OK {
+  border-left-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green);
+}
 .scan-result.CANCELED,
 .scan-result.NOT_FOUND {
   color: var(--red);
@@ -120,17 +125,23 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #1c1e24b3;
+  background: #102f27c9;
   overflow-y: auto;
+  opacity: 1;
+  transition: opacity 650ms ease-in-out;
+}
+.scan-success-overlay.is-closing {
+  opacity: 0;
+  pointer-events: none;
 }
 .scan-success-panel {
   width: min(100%, 480px);
   max-height: 100%;
   overflow-y: auto;
   padding: 32px;
-  border-top: 5px solid var(--accent);
+  border-top: 6px solid var(--green);
   border-radius: 3px;
-  background: var(--paper);
+  background: #f1f8f3;
   text-align: center;
   overflow-wrap: anywhere;
 }
@@ -141,33 +152,53 @@
   height: 56px;
   margin: 0 auto 16px;
   border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--green);
+  color: #fff;
   font-size: 32px;
   font-weight: 700;
 }
 .success-label {
   margin-bottom: 4px;
-  color: var(--muted);
+  color: var(--green);
   font-size: 13px;
 }
 #scanSuccessTitle {
   font-size: 26px;
+  color: var(--green);
 }
 .scan-success-ticket {
-  padding: 18px 0;
-  border-block: 1px solid var(--line);
+  padding: 18px 12px;
+  border: 1px solid #bad8c5;
+  background: #fff;
+  color: #164735;
   font-size: 21px;
   font-weight: 700;
 }
 #scanSuccessRound {
-  color: var(--muted);
+  color: var(--green);
   font-size: 14px;
+}
+.scan-success-auto {
+  margin: 16px 0 0;
+  color: var(--green);
+  font-size: 13px;
 }
 #nextScan {
   width: 100%;
   min-height: 48px;
   margin-top: 12px;
+  border-color: var(--green);
+  background: var(--green);
+  color: #fff;
+}
+#nextScan:hover {
+  border-color: #1b4937;
+  background: #1b4937;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scan-success-overlay {
+    transition: none;
+  }
 }
 @media (max-width: 760px) {
   .scanner-layout {
