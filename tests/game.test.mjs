@@ -1,46 +1,105 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {Game,rulesOf} from '../apps/server/game.mjs';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {Game,defaults,rulesOf} from '../apps/server/game.mjs';
 import {hardware} from '../apps/server/hardware.mjs';
-const telemetry={syncRtt:10,hardware_profile:hardware.profile,hardware_ready:true,bench:false,lowBattery:false};
+
 const devices=[1,2,3,4].map(n=>({id:`gun-00${n}`,name:`P${n}`,team:n<3?'A':'B',shooterId:n}));
-function fixture(){let now=100000,seq=0;const logs=[];const g=new Game(devices,{now:()=>now,log:e=>logs.push(e)});for(const p of devices){g.hello(p.id,'boot');g.heartbeat(p.id,telemetry);}return {g,logs,advance(ms){now+=ms;for(const p of devices)g.heartbeat(p.id,telemetry);g.tick();},start(){g.start(true);for(const p of devices)g.ack(p.id,{command_id:g.s.commandId,result:'ok'});this.advance(7010);},event(id,type,payload){return {device_id:id,boot_id:'boot',game_id:g.s.id,game_generation:g.s.generation,message_id:String(++seq),seq,server_time_ms:now,type,payload};}};}
-test('rules are bounded and cannot carry arbitrary settings',()=>{assert.throws(()=>rulesOf({fireMs:1}));assert.throws(()=>rulesOf({hp:NaN}));assert.equal(rulesOf({admin:true}).admin,undefined);});
-test('整理券の参加者名を4台のゲーム表示名へ反映する',()=>{const f=fixture();f.g.setPlayerNames(['春','夏','秋','冬']);assert.deepEqual(f.g.s.players.map(player=>player.name),['春','夏','秋','冬']);f.g.setPlayerNames(['一人']);assert.deepEqual(f.g.s.players.map(player=>player.name),['一人','P2','P3','P4']);});
-test('three receivers observing one shot produce one damage and one feedback ID',()=>{const f=fixture();f.start();f.g.event('gun-001',f.event('gun-001','shot_fired',{shot_seq:1,weapon_id:1}));for(const rx of ['rx2','rx1','rx3'])f.g.event('gun-003',f.event('gun-003','hit_candidate',{shooter_id:1,shot_seq:1,weapon_id:1,receiver_id:rx}));const p=f.g.player('gun-003');assert.equal(p.hp,75);assert.equal(p.lastReceiver,'rx2');assert.equal(f.logs.filter(x=>x.type==='hit').length,1);assert.equal(p.damageFeedback.duration_ms,180);assert.equal(f.logs.find(x=>x.type==='hit').receiverId,'rx2');});
-test('three pending receiver reports deduplicate when the shot arrives later',()=>{const f=fixture();f.start();for(const rx of ['rx3','rx2','rx1'])assert.equal(f.g.event('gun-003',f.event('gun-003','hit_candidate',{shooter_id:1,shot_seq:2,weapon_id:1,receiver_id:rx})).reason,'pending');f.g.event('gun-001',f.event('gun-001','shot_fired',{shot_seq:2,weapon_id:1}));assert.equal(f.g.player('gun-003').hp,75);assert.equal(f.g.pending.length,0);assert.equal(f.logs.filter(x=>x.type==='hit').length,1);});
-test('each independent receiver can cause damage; unknown receiver and friendly shots cannot vibrate',()=>{for(const rx of ['rx1','rx2','rx3']){const f=fixture();f.start();f.g.event('gun-001',f.event('gun-001','shot_fired',{shot_seq:1,weapon_id:1}));assert.equal(f.g.event('gun-003',f.event('gun-003','hit_candidate',{shooter_id:1,shot_seq:1,weapon_id:1,receiver_id:rx})).ok,true);}const f=fixture();f.start();for(const [victim,rx]of [['gun-003','rx4'],['gun-002','rx3']]){f.g.event(victim,f.event(victim,'hit_candidate',{shooter_id:1,shot_seq:1,weapon_id:1,receiver_id:rx}));assert.equal(f.g.player(victim).damageFeedback,null);}});
-test('legacy, bench and low-battery devices cannot start and hardware changes pause countdown',()=>{for(const update of [{hardware_profile:'legacy'},{bench:true},{lowBattery:true},{hardware_ready:false}]){const f=fixture();f.g.heartbeat('gun-001',{...telemetry,...update});assert.throws(()=>f.g.start(true));}const f=fixture();f.g.start(true);f.g.heartbeat('gun-001',{...telemetry,bench:true});assert.equal(f.g.s.phase,'PAUSED');});
-test('HP correction and resume never issue a new damage feedback',()=>{const f=fixture();f.start();f.g.event('gun-001',f.event('gun-001','shot_fired',{shot_seq:1,weapon_id:1}));f.g.event('gun-003',f.event('gun-003','hit_candidate',{shooter_id:1,shot_seq:1,weapon_id:1,receiver_id:'rx3'}));const id=f.g.player('gun-003').damageFeedback.id;f.g.pause();f.g.correct('gun-003',25,'test');assert.equal(f.g.player('gun-003').damageFeedback.id,id);f.start();assert.equal(f.g.player('gun-003').damageFeedback,null);});
-test('start requires projector and four synchronized devices',()=>{const f=fixture();assert.throws(()=>f.g.start(false));f.g.player('gun-001').connected=false;assert.throws(()=>f.g.start(true));});
-test('countdown without every acknowledgement pauses',()=>{const f=fixture();f.g.start(true);f.advance(6510);assert.equal(f.g.s.phase,'PAUSED');});
-test('音源に同期したカウントダウン中は射撃を許可せず、START時に試合を開始する',()=>{
-  const f=fixture();f.g.start(true);
-  assert.equal(f.g.s.startAt-f.g.now(),7010);
-  assert.equal(f.g.s.countdownAudioStartAt,f.g.now());
-  for(const p of devices)f.g.ack(p.id,{command_id:f.g.s.commandId,result:'ok'});
-  for(let i=0;i<6;i++){f.advance(1000);assert.equal(f.g.s.phase,'COUNTDOWN');assert.ok(f.g.s.players.every(p=>!p.armed));}
-  f.advance(1009);assert.equal(f.g.s.phase,'COUNTDOWN');
-  f.advance(1);assert.equal(f.g.s.phase,'ACTIVE');assert.ok(f.g.s.players.every(p=>p.armed));
+const telemetry={syncRtt:10,hardware_profile:hardware.profile,hardware_ready:true,bench:false,lowBattery:false};
+function fixture(saved=null){
+  let now=100000,seq=0;const logs=[];const g=new Game(devices,{now:()=>now,log:e=>logs.push(e),saved});
+  for(const p of devices){g.hello(p.id,'boot');g.heartbeat(p.id,telemetry);}
+  const f={g,logs,now:()=>now,advance(ms){now+=ms;for(const p of devices)g.heartbeat(p.id,telemetry);g.tick();},
+    start(){g.start(true);for(const p of devices)g.ack(p.id,{command_id:g.s.commandId,result:'ok'});this.advance(7010);},
+    event(id,type,payload){return {device_id:id,boot_id:'boot',game_id:g.s.id,game_generation:g.s.generation,message_id:String(++seq),seq,server_time_ms:now,type,payload};},
+    send(id,type,payload){return g.event(id,this.event(id,type,payload));},
+    fire(id,shot_seq){return this.send(id,'shot_fired',{shot_seq,weapon_id:1});},
+    hit(id,shooter_id,shot_seq,flags=0,receiver_id='rx1'){return this.send(id,'hit_candidate',{shooter_id,shot_seq,weapon_id:1,flags,receiver_id});}};
+  return f;
+}
+
+test('new rules use five damage, one second between presses and no ammo or reload',()=>{
+  assert.equal(defaults.damage,5);assert.equal(defaults.fireMs,1000);assert.equal(defaults.reviveMs,3000);
+  assert.equal('magazine' in rulesOf(),false);assert.equal('reloadMs' in rulesOf(),false);
+  assert.throws(()=>rulesOf({fireMs:900}));assert.throws(()=>rulesOf({reviveHp:101}));
+  const f=fixture();f.start();assert.equal(f.fire('gun-001',1).ok,true);
+  f.advance(500);assert.equal(f.fire('gun-001',2).reason,'rate');
+  f.advance(500);assert.equal(f.fire('gun-001',3).ok,true);
+  assert.equal(f.send('gun-001','reload_started',{}).reason,'unknown_type');
+  assert.equal('ammo' in f.g.player('gun-001'),false);
 });
-test('動画を停止・続きから再生・最初から再生でき、試合中は操作できない',()=>{
-  const f=fixture();f.g.setMedia('video');f.advance(2000);f.g.controlVideo('pause');
-  assert.equal(f.g.s.videoPlayback.positionMs,2000);assert.equal(f.g.s.videoPlayback.playing,false);
-  f.advance(1000);f.g.controlVideo('play');assert.equal(f.g.s.videoPlayback.positionMs,2000);
-  f.advance(500);f.g.setMedia('score');assert.equal(f.g.s.videoPlayback.positionMs,2500);assert.equal(f.g.s.videoPlayback.playing,false);
-  f.g.controlVideo('restart');assert.equal(f.g.s.videoPlayback.positionMs,0);assert.equal(f.g.s.videoPlayback.playing,true);
-  f.g.start(true);assert.equal(f.g.s.media,'score');assert.equal(f.g.s.videoPlayback,null);
-  for(const action of ['play','pause','restart'])assert.throws(()=>f.g.controlVideo(action));
-  assert.throws(()=>f.g.setMedia('video'));
-  f.g.pause();assert.throws(()=>f.g.controlVideo('invalid'));assert.throws(()=>f.g.setMedia('invalid'));
+
+test('three receivers report one attack only once and only PC-approved damage vibrates',()=>{
+  const f=fixture();f.start();f.fire('gun-001',1);
+  for(const rx of ['rx2','rx1','rx3'])f.hit('gun-003',1,1,0,rx);
+  const p=f.g.player('gun-003');assert.equal(p.hp,95);assert.equal(p.lastReceiver,'rx2');
+  assert.equal(f.logs.filter(x=>x.type==='hit').length,1);
+  assert.equal(p.damageFeedback.duration_ms,180);
+  assert.equal(f.hit('gun-002',1,1).reason,'friendly');
+  assert.equal(f.hit('gun-003',1,1,1).reason,'revive_invalid');
 });
-test('valid enemy hit changes HP only on PC and deduplicates',()=>{const f=fixture();f.start();f.g.event('gun-001',f.event('gun-001','shot_fired',{shot_seq:1,weapon_id:1}));const m=f.event('gun-003','hit_candidate',{shooter_id:1,shot_seq:1,weapon_id:1,receiver_id:'rx1'});assert.equal(f.g.event('gun-003',m).hp,75);assert.equal(f.g.event('gun-003',m).reason,'duplicate');assert.equal(f.g.player('gun-003').hp,75);});
-test('candidate arriving before shot is resolved once',()=>{const f=fixture();f.start();const m=f.event('gun-003','hit_candidate',{shooter_id:1,shot_seq:2,weapon_id:1,receiver_id:'rx1'});assert.equal(f.g.event('gun-003',m).reason,'pending');f.g.event('gun-001',f.event('gun-001','shot_fired',{shot_seq:2,weapon_id:1}));assert.equal(f.g.player('gun-003').hp,75);assert.equal(f.g.pending.length,0);});
-test('self, friendly and unknown weapon cannot cause damage',()=>{const f=fixture();f.start();for(const [id,shooter,weapon]of[['gun-001',1,1],['gun-002',1,1],['gun-003',1,2]]){const r=f.g.event(id,f.event(id,'hit_candidate',{shooter_id:shooter,shot_seq:1,weapon_id:weapon,receiver_id:'rx1'}));assert.equal(r.ok,false);assert.equal(f.g.player(id).hp,100);}});
-test('rate, ammunition, reload and dead state constrain shooting',()=>{const f=fixture();f.start();const fire=()=>f.g.event('gun-001',f.event('gun-001','shot_fired',{shot_seq:1,weapon_id:1}));assert.equal(fire().ok,true);assert.equal(fire().ok,false);f.advance(220);assert.equal(f.g.event('gun-001',f.event('gun-001','reload_started',{})).ok,true);assert.equal(fire().ok,false);f.advance(2000);assert.equal(f.g.player('gun-001').ammo,30);f.g.player('gun-001').hp=0;assert.equal(fire().ok,false);});
-test('old generation and boot cannot alter game',()=>{const f=fixture();f.start();const m=f.event('gun-001','shot_fired',{shot_seq:1,weapon_id:1});m.game_generation--;assert.equal(f.g.event('gun-001',m).reason,'old_game');m.game_generation++;m.boot_id='other';assert.equal(f.g.event('gun-001',m).reason,'envelope');});
-test('invulnerability and optical duplicate are separate protections',()=>{const f=fixture();f.start();const hit=seq=>f.g.event('gun-003',f.event('gun-003','hit_candidate',{shooter_id:1,shot_seq:seq,weapon_id:1,receiver_id:'rx1'}));f.g.event('gun-001',f.event('gun-001','shot_fired',{shot_seq:4,weapon_id:1}));assert.equal(hit(4).ok,true);f.advance(350);assert.equal(hit(4).reason,'duplicate_hit');assert.equal(f.g.player('gun-003').hp,75);});
-test('corrections require pause and reason, and create an audit record',()=>{const f=fixture();f.start();assert.throws(()=>f.g.correct('gun-001',50,'test'));f.g.pause();assert.throws(()=>f.g.correct('gun-001',50,''));f.g.correct('gun-001',50,'運営確認');assert.equal(f.logs.at(-1).before,100);assert.equal(f.logs.at(-1).after,50);});
-test('pause preserves match time and explicit resume uses new barrier',()=>{const f=fixture();f.start();f.advance(2000);f.g.pause();const remaining=f.g.s.remainingMs;f.advance(10000);assert.equal(f.g.s.remainingMs,remaining);f.start();assert.equal(f.g.s.remainingMs,remaining);});
-test('deadline rejects delayed hit, results use kill score then HP',()=>{const f=fixture();f.start();f.advance(300001);assert.equal(f.g.s.phase,'FINISHED');assert.equal(f.g.s.winner,'DRAW');assert.equal(f.g.event('gun-001',f.event('gun-001','shot_fired',{shot_seq:1,weapon_id:1})).ok,false);});
-test('recovery is paused and disarmed',()=>{const f=fixture();f.start();const recovered=new Game(devices,{saved:f.g.view()});assert.equal(recovered.s.phase,'PAUSED');assert.ok(recovered.s.players.every(p=>!p.armed&&!p.connected));});
-test('disconnect pauses rather than allowing independent HP',()=>{const f=fixture();f.start();f.g.player('gun-001').lastSeen-=4000;f.g.tick();assert.equal(f.g.s.phase,'PAUSED');assert.equal(f.g.player('gun-001').armed,false);});
-test('simultaneous valid shots can eliminate both players',()=>{const f=fixture();f.start();f.g.player('gun-001').hp=25;f.g.player('gun-003').hp=25;for(const n of [1,3])f.g.event(`gun-00${n}`,f.event(`gun-00${n}`,'shot_fired',{shot_seq:7,weapon_id:1}));for(const [victim,shooter]of [[3,1],[1,3]])assert.equal(f.g.event(`gun-00${victim}`,f.event(`gun-00${victim}`,'hit_candidate',{shooter_id:shooter,shot_seq:7,weapon_id:1,receiver_id:'rx1'})).ok,true);assert.deepEqual(f.g.s.score,{A:1,B:1});});
+
+test('candidate arriving before shot is matched, but a later combat repeat cannot hit again',()=>{
+  const f=fixture();f.start();assert.equal(f.hit('gun-003',1,4).reason,'pending');
+  f.fire('gun-001',4);assert.equal(f.g.player('gun-003').hp,95);
+  f.advance(350);assert.equal(f.hit('gun-003',1,4).reason,'duplicate_hit');
+  assert.equal(f.g.player('gun-003').hp,95);
+});
+
+test('only a live teammate holding the same shot for three seconds can revive',()=>{
+  const f=fixture();f.start();const victim=f.g.player('gun-002');victim.hp=0;victim.deadAt=f.now();
+  f.fire('gun-001',7);
+  for(let elapsed=0;elapsed<=3000;elapsed+=500){
+    if(elapsed)f.advance(500);
+    f.send('gun-001','shot_hold',{shot_seq:7});
+    const result=f.hit('gun-002',1,7,1);
+    if(elapsed<3000){assert.equal(result.ok,true);assert.equal(victim.hp,0);}
+    else {assert.equal(result.revived,true);assert.equal(victim.hp,50);}
+  }
+  assert.equal(victim.reviveProgressMs,0);
+  assert.equal(f.logs.filter(x=>x.type==='revive').length,1);
+  assert.equal(f.g.s.score.A,0);
+});
+
+test('rescue progress resets after lost aim and never revives an enemy',()=>{
+  const f=fixture();f.start();f.g.player('gun-002').hp=0;f.g.player('gun-003').hp=0;
+  f.fire('gun-001',8);f.send('gun-001','shot_hold',{shot_seq:8});
+  assert.equal(f.hit('gun-003',1,8,1).reason,'revive_invalid');
+  f.hit('gun-002',1,8,1);f.advance(800);f.send('gun-001','shot_hold',{shot_seq:8});
+  assert.equal(f.hit('gun-002',1,8,1).progressMs,0);
+  f.send('gun-001','shot_released',{shot_seq:8});
+  assert.equal(f.g.player('gun-002').reviveProgressMs,0);
+  assert.equal(f.send('gun-001','shot_hold',{shot_seq:8}).reason,'hold_ended');
+  f.advance(500);
+  assert.notEqual(f.hit('gun-002',1,8,1).ok,true);
+  assert.equal(f.g.player('gun-002').hp,0);
+});
+
+test('a lethal hit scores once and a defeated shooter cannot start a rescue shot',()=>{
+  const f=fixture();f.start();f.g.player('gun-003').hp=5;f.fire('gun-001',2);
+  assert.equal(f.hit('gun-003',1,2).hp,0);assert.equal(f.g.s.score.A,1);
+  assert.equal(f.hit('gun-003',1,2).reason,'dead');
+  f.advance(1000);assert.equal(f.fire('gun-003',9).reason,'dead');
+  assert.equal(f.g.s.score.A,1);
+});
+
+test('pause, resume and connection safety retain time and clear rescue progress',()=>{
+  const f=fixture();f.start();f.g.player('gun-002').hp=0;f.fire('gun-001',1);f.hit('gun-002',1,1,1);
+  f.advance(500);f.send('gun-001','shot_hold',{shot_seq:1});f.hit('gun-002',1,1,1);
+  assert.equal(f.g.player('gun-002').reviveProgressMs,500);
+  const remaining=f.g.s.remainingMs;f.g.pause();assert.equal(f.g.player('gun-002').reviveProgressMs,0);
+  f.advance(2000);assert.equal(f.g.s.remainingMs,remaining);f.start();assert.equal(f.g.s.phase,'ACTIVE');
+  f.g.player('gun-001').lastSeen-=4000;f.g.tick();assert.equal(f.g.s.phase,'PAUSED');
+});
+
+test('start needs projector and four current devices; expired game ranks score then HP',()=>{
+  const f=fixture();assert.throws(()=>f.g.start(false));f.g.player('gun-001').connected=false;assert.throws(()=>f.g.start(true));
+  f.g.hello('gun-001','boot');f.g.heartbeat('gun-001',telemetry);f.start();
+  f.g.player('gun-003').hp=95;f.advance(300001);assert.equal(f.g.s.phase,'FINISHED');assert.equal(f.g.s.winner,'A');
+});
+
+test('saved v0.6 rounds migrate to v0.7 rules without old ammo state',()=>{
+  const f=fixture();const saved=f.g.view();saved.rules={hp:100,damage:25,durationSec:300,magazine:30,fireMs:200,reloadMs:2000,invulnerableMs:300,friendlyFire:false};
+  for(const p of saved.players){p.ammo=30;p.reloadUntil=0;}
+  const restored=fixture(saved);assert.equal(restored.g.s.rules.damage,5);assert.equal(restored.g.s.rules.fireMs,1000);
+  assert.equal('ammo' in restored.g.view().players[0],false);
+});

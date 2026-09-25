@@ -54,7 +54,7 @@ async function action(actionName, extra = {}) {
     commandId: commandId(),
     ...extra,
   });
-  const notices = {start: '開始操作を受け付けました。', pause: '試合を一時停止しました。', finish: '試合を終了しました。', new: '次の試合を準備しました。参加者を確認してください。', sync_ticket_members: '整理券メンバーを反映しました。名前を確認してください。', media: '投影画面を切り替えました。', hp: 'HP補正を記録しました。', demo_hit: '発射・命中を送信しました。'};
+  const notices = {start: '開始操作を受け付けました。', pause: '試合を一時停止しました。', finish: '試合を終了しました。', new: '次の試合を準備しました。参加者を確認してください。', sync_ticket_members: '整理券メンバーを反映しました。名前を確認してください。', media: '投影画面を切り替えました。', hp: 'HP補正を記録しました。', demo_hit: '発射・命中を送信しました。', demo_revive: '3秒の復活照射を開始しました。'};
   const videoNotices = {play: '動画を開始しました。', pause: '動画を停止しました。', restart: '動画を最初から再生しました。'};
   message(result.notice || (actionName === 'video' ? videoNotices[extra.operation] : notices[actionName]) || '操作を反映しました。');
 }
@@ -205,13 +205,11 @@ function render() {
     meta.className = 'meta';
     meta.textContent =
       `${player.id} ｜ ${player.connected ? '接続' : '切断'}\n` +
-      `残弾 ${player.ammo} / ${state.rules.magazine} ｜ ` +
-      `${player.reloadUntil ? 'リロード中' : ''}\n` +
       `電池 ${player.battery?.toFixed(2) ?? '—'} V / ` +
       `RSSI ${player.rssi ?? '—'} dBm\n` +
       `構成 ${
-        player.hardwareProfile === 'xiao-s3-plus-3rx-motor' && player.hardwareReady
-          ? 'v0.6対応'
+        player.hardwareProfile === 'xiao-s3-plus-3rx-6led-motor-trigger' && player.hardwareReady
+          ? 'v0.7対応'
           : '未確認・旧版'
       }${player.bench ? ' / 机上モード' : ''}${player.lowBattery ? ' / 電池低下' : ''}\n` +
       `受信数 前:${player.rxFrames?.rx1 ?? '—'} ` +
@@ -224,7 +222,7 @@ function render() {
     deviceElements.push(meta);
     const summary = document.createElement('div');
     summary.className = 'player-summary';
-    summary.textContent = `${player.connected ? '接続済み' : '通信切断'} / 残弾 ${player.ammo}${player.reloadUntil ? '・リロード中' : ''}${player.lowBattery ? ' / 電池低下' : ''}`;
+    summary.textContent = `${player.connected ? '接続済み' : '通信切断'}${player.hp===0&&player.reviveProgressMs>0 ? ` / 復活照射 ${Math.ceil(player.reviveProgressMs/1000)}秒` : ''}${player.lowBattery ? ' / 電池低下' : ''}`;
     element.append(title, hp, bar, summary);
     return element;
   });
@@ -331,6 +329,7 @@ $('demoHit').onclick = guarded(() =>
     receiver: $('demoReceiver').value,
   }),
 );
+$('demoRevive').onclick = guarded(() => action('demo_revive', {shooter: $('demoShooter').value, victim: $('demoVictim').value}));
 
 $('provisionForm').onsubmit = guarded(async () => {
   const data = Object.fromEntries(new FormData($('provisionForm')));

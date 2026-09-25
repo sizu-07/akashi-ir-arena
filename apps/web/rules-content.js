@@ -1,4 +1,4 @@
-// Single wording source for live projector slides and the bundled MP4.
+// Single wording source for live projector slides and the bundled WebM.
 export const slides = [
   [
     '赤外線チーム対戦',
@@ -11,9 +11,14 @@ export const slides = [
     '同じ弾を複数箇所で受けても、ダメージは1回です。',
   ],
   [
-    'HPと弾数',
-    '命中は光・音・振動で通知。HPが0になると射撃停止。',
-    '弾切れ時はリロードボタンを押してください。',
+    'HPと射撃',
+    '1回押すと1発。1秒後、LEDの1個目が赤なら次を撃てます。',
+    '弾数は無限。命中は光と振動で通知し、HPが0になると射撃停止。',
+  ],
+  [
+    '味方を復活させる',
+    '倒れた味方の銃に向けて、引き金を押したまま3秒照射します。',
+    '照射が途切れるとやり直し。復活するとHPが50になります。',
   ],
   [
     '安全ルール',

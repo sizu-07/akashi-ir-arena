@@ -1,6 +1,6 @@
 {
-  "revision": "0.6",
-  "profile": "xiao-s3-plus-3rx-motor",
+  "revision": "0.7",
+  "profile": "xiao-s3-plus-3rx-6led-motor-trigger",
   "board": "Seeed Studio XIAO ESP32-S3 Plus",
   "flashMB": 16,
   "psramMB": 8,
@@ -14,14 +14,11 @@
   ],
   "outputs": {
     "ir":{"gpio":6,"pad":"D5","rmt":0},
-    "led":{"gpio":7,"pad":"D8","rmt":1,"pixels":8,"maxChannel":28},
-    "buzzer":{"gpio":8,"pad":"D9","frequencyHz":4000},
-    "motor":{"gpio":40,"pad":"D13 / bottom pad","activeHigh":true,"pulseMs":180,"maxPulseMs":250,"feedbackMaxAgeMs":500,"minIntervalMs":300}
+    "led":{"gpio":7,"pad":"D8","rmt":1,"pixels":6,"maxChannel":28},
+    "motor":{"gpio":40,"pad":"D13 / bottom pad","activeHigh":true,"shotPulseMs":60,"hitPulseMs":180,"countdownPulseMs":80,"maxPulseMs":250,"feedbackMaxAgeMs":500,"minIntervalMs":300}
   },
   "inputs": {
     "trigger":{"gpio":9,"pad":"D10"},
-    "reload":{"gpio":38,"pad":"D11 / bottom pad"},
-    "service":{"gpio":39,"pad":"D12 / bottom pad"},
     "battery":{"gpio":1,"pad":"D0 / ADC1","adcScale":2.0}
   },
   "motorPart": {"manufacturer":"Vybronics","mpn":"VC1030B028F","voltage":3.0,"operatingVoltage":[2.7,3.3],"ratedMaxMA":85,"startingMaxMA":120,"source":"https://www.vybronics.com/wp-content/uploads/datasheet-files/Vybronics-VC1030B028F-datasheet.pdf"},

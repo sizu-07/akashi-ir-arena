@@ -48,7 +48,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
    cb(!packet.retain&&packet.payload.length<=4096&&allowed.includes(packet.topic)?null:Error('publish denied'));};
  broker.authorizeSubscribe=(client,sub,cb)=>{cb(null,[`irgame/v1/device/${client.deviceId}/desired`,`irgame/v1/device/${client.deviceId}/command`].includes(sub.topic)?sub:null);};
  const publish=(id,suffix,payload,retain=false)=>broker.publish({topic:`irgame/v1/device/${id}/${suffix}`,payload:Buffer.from(JSON.stringify(payload)),qos:1,retain},err=>{if(err)console.error('MQTT publish:',err.message);});
- function desired(p){publish(p.id,'desired',{schema_version:1,hardware_profile:hardware.profile,damage_feedback:p.damageFeedback,game_id:game.s.id,game_generation:game.s.generation,server_time_ms:Date.now(),lease_ms:3000,phase:game.s.phase,armed:p.armed,hp:p.hp,ammo:p.ammo,team:p.team,shooter_id:p.shooterId,rules:game.s.rules,reload_until:p.reloadUntil,reload_resume_ms:p.reloadRemaining??0,start_at:game.s.startAt??0,start_committed:!!game.s.startCommitted,command_id:game.s.commandId??'',media:game.s.media},true);}
+ function desired(p){publish(p.id,'desired',{schema_version:1,hardware_profile:hardware.profile,damage_feedback:p.damageFeedback,game_id:game.s.id,game_generation:game.s.generation,server_time_ms:Date.now(),lease_ms:3000,phase:game.s.phase,armed:p.armed,hp:p.hp,revive_progress_ms:p.reviveProgressMs,team:p.team,shooter_id:p.shooterId,rules:game.s.rules,start_at:game.s.startAt??0,start_committed:!!game.s.startCommitted,command_id:game.s.commandId??'',media:game.s.media},true);}
  function sync(){for(const p of game.s.players)desired(p);}
  broker.on('publish',(packet,client)=>{if(!client)return;try{const id=client.deviceId,m=JSON.parse(packet.payload.toString()),suffix=packet.topic.split('/').at(-1);
    if(suffix==='hello'){game.hello(id,m.boot_id);desired(game.player(id));}
@@ -59,7 +59,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  function session(req){const token=(req.headers.cookie??'').split(';').map(s=>s.trim()).find(s=>s.startsWith('arena='))?.slice(6);const s=sessions.get(token);if(s&&s.expires>Date.now()){s.seen=Date.now();return s;}return null;}
  const reply=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
  async function body(req){let data='';for await(const chunk of req){data+=chunk;if(data.length>16384)throw Error('本文が大きすぎます');}return JSON.parse(data||'{}');}
- const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.mp4':'video/mp4','.mp3':'audio/mpeg','.wav':'audio/wav','.ttf':'font/ttf'};
+ const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.webm':'video/webm','.mp3':'audio/mpeg','.wav':'audio/wav','.ttf':'font/ttf'};
  const httpServer=http.createServer(async(req,res)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');
    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws:; media-src 'self'; object-src 'none'; frame-ancestors 'none'");
    try {const url=new URL(req.url,'http://localhost');
@@ -95,7 +95,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       if(url.pathname==='/api/provision'){
         if(!local(req))return reply(res,403,{error:'秘密鍵の設定はメインPCで行ってください'});
         if(typeof b.ssid!=='string'||!b.ssid.length||b.ssid.length>32||typeof b.password!=='string'||b.password.length<8||b.password.length>63||typeof b.host!=='string'||!/^[\w.-]{1,100}$/.test(b.host))throw Error('SSID・WPA2パスワード・PCのIPv4を確認してください');
-        mkdirSync(path.join(root,'config/provision'),{recursive:true});for(const d of config.devices)writeFileSync(path.join(root,`config/provision/${d.id}.json`),JSON.stringify({ssid:b.ssid,password:b.password,host:b.host,port:config.mqttPort,id:d.id,key:d.key,hardwareProfile:hardware.profile,bench:false,adcScale:2.0}));return reply(res,200,{ok:true,message:'config/provision に4台分を保存しました'});
+        mkdirSync(path.join(root,'config/provision'),{recursive:true});for(const d of config.devices)writeFileSync(path.join(root,`config/provision/${d.id}.json`),JSON.stringify({ssid:b.ssid,password:b.password,host:b.host,port:config.mqttPort,id:d.id,key:d.key,hardwareProfile:hardware.profile,bench:false,adcScale:2.0}));return reply(res,200,{ok:true,message:'config/provision に4台分を保存しました。各銃へUSBで初回登録してください'});
       }
       if(url.pathname==='/api/action'){
         if(typeof b.commandId!=='string'||b.commandId.length>80)throw Error('commandIdが必要です');const key=s.id+'/'+b.commandId;if(commands.has(key))return reply(res,200,commands.get(key));
@@ -114,9 +114,10 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
           case 'pause':game.pause();break;
           case 'finish':game.finish();break;
           case 'hp':game.correct(b.id,Number(b.hp),b.reason);break;
-          case 'media':if(b.mode==='video'&&!existsSync(path.join(root,'assets/rules.mp4')))throw Error('assets/rules.mp4がありません');game.setMedia(b.mode);break;
-          case 'video':if(!existsSync(path.join(root,'assets/rules.mp4')))throw Error('assets/rules.mp4がありません');game.controlVideo(b.operation);break;
+          case 'media':if(b.mode==='video'&&!existsSync(path.join(root,'assets/rules.webm')))throw Error('assets/rules.webmがありません');game.setMedia(b.mode);break;
+          case 'video':if(!existsSync(path.join(root,'assets/rules.webm')))throw Error('assets/rules.webmがありません');game.controlVideo(b.operation);break;
           case 'demo_hit':if(!demo)throw Error('デモ専用操作');simulators?.hit(b.shooter,b.victim,b.receiver??'rx1');break;
+          case 'demo_revive':if(!demo)throw Error('デモ専用操作');simulators?.revive(b.shooter,b.victim);break;
           default:throw Error('未知の操作');
         }
         db.log({at:Date.now(),gameId:game.s.id,type:'operator_action',operator:s.id,action:b.action,reason:b.reason});const result={ok:true,commandId:b.commandId,...operation};commands.set(key,result);if(commands.size>2000)commands.delete(commands.keys().next().value);db.save(game.s);sync();return reply(res,200,result);
@@ -131,7 +132,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       if(url.pathname==='/tickets')target.searchParams.set('game',`${gameOrigin}/`);
       res.writeHead(302,{Location:target.href});return res.end();
     }
-    const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.mp4':'assets/rules.mp4','/countdown.wav':'assets/audio/countdown/countdown.wav','/bgm.mp3':'assets/audio/bgm/bgm.mp3'};
+    const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.webm':'assets/rules.webm','/countdown.wav':'assets/audio/countdown/countdown.wav','/bgm.mp3':'assets/audio/bgm/bgm.mp3'};
     files['/operator-shared.css']='apps/ticket-web/operator-shared.css';
     files['/display.css']='apps/web/display.css';
     files['/display-icon.svg']='apps/web/display-icon.svg';

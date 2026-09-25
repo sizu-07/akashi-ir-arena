@@ -148,7 +148,7 @@
                 <input
                   name="damage"
                   type="number"
-                  value="25"
+                  value="5"
                   min="1"
                   max="1000"
                 />
@@ -163,35 +163,11 @@
                   max="3600"
                 />
               </label>
+              <input name="fireMs" type="hidden" value="1000" />
+              <input name="reviveMs" type="hidden" value="3000" />
               <label>
-                弾数
-                <input
-                  name="magazine"
-                  type="number"
-                  value="30"
-                  min="1"
-                  max="200"
-                />
-              </label>
-              <label>
-                発射間隔（ms）
-                <input
-                  name="fireMs"
-                  type="number"
-                  value="200"
-                  min="200"
-                  max="3000"
-                />
-              </label>
-              <label>
-                リロード（ms）
-                <input
-                  name="reloadMs"
-                  type="number"
-                  value="2000"
-                  min="500"
-                  max="10000"
-                />
+                復活時のHP
+                <input name="reviveHp" type="number" value="50" min="1" max="1000" />
               </label>
               <label>
                 無敵時間（ms）
@@ -260,9 +236,10 @@
               </select>
             </label>
             <button id="demoHit">発射・命中を送信</button>
+            <button id="demoRevive">味方の3秒復活を送信</button>
           </div>
           <p>
-            実際のMQTT通信経由で候補を送ります。味方撃ちや連射制限も適用されます。
+            実際のMQTT通信経由で候補を送ります。復活は射手と対象を同じチームにし、対象のHPを0にしてから使用してください。
           </p>
         </section>
 
@@ -292,7 +269,7 @@
               <button>4台分の設定ファイルを作成</button>
             </form>
             <p>
-              作成後は「製作手順」に従いUSBで各銃へ書き込みます。ルーターの設定自体は変更しません。
+              初回とWi-Fi変更時にUSBで各銃へ登録します。登録後は電源投入時に自動接続します。ルーターの設定自体は変更しません。
             </p>
           </div>
         </details>

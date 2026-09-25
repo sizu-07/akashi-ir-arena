@@ -227,7 +227,7 @@ function createPlayer(player, index) {
   const element = document.createElement('article');
   // Only fixed markup goes through innerHTML; names from the server use textContent.
   element.innerHTML =
-    '<div class="player-top"><span class="player-number"></span><span class="player-state"></span></div><h2></h2><div class="hp-line"><strong class="hp"></strong><span class="hp-label">HP</span><span class="hp-limit"></span><span class="player-sigil" aria-hidden="true"></span></div><div class="hp-track" role="meter"><div class="hp-fill"></div></div><div class="player-bottom"><span></span><span></span></div>';
+    '<div class="player-top"><span class="player-number"></span><span class="player-state"></span></div><h2></h2><div class="hp-line"><strong class="hp"></strong><span class="hp-label">HP</span><span class="hp-limit"></span><span class="player-sigil" aria-hidden="true"></span></div><div class="hp-track" role="meter"><div class="hp-fill"></div></div><div class="player-bottom"><span></span></div>';
   const node = {
     element,
     hp: element.querySelector('.hp'),
@@ -238,8 +238,7 @@ function createPlayer(player, index) {
     sigil: element.querySelector('.player-sigil'),
     meter: element.querySelector('.hp-track'),
     fill: element.querySelector('.hp-fill'),
-    ammo: element.querySelector('.player-bottom span'),
-    note: element.querySelector('.player-bottom span:last-child'),
+    note: element.querySelector('.player-bottom span'),
     previousHp: player.hp,
   };
   node.number.textContent = `P${String(index + 1).padStart(2, '0')} / TEAM ${player.team}`;
@@ -303,12 +302,9 @@ function renderPlayers() {
     node.meter.setAttribute('aria-valuemin', '0');
     node.meter.setAttribute('aria-valuemax', state.rules.hp);
     node.meter.setAttribute('aria-valuenow', player.hp);
-    node.ammo.textContent = `AMMO ${String(player.ammo).padStart(2, '0')} / ${state.rules.magazine}`;
     node.note.textContent =
       player.hp === 0
-        ? '射撃停止'
-        : player.reloadUntil
-          ? 'リロード中'
+        ? player.reviveProgressMs > 0 ? `復活照射 ${Math.min(100,Math.floor(player.reviveProgressMs / state.rules.reviveMs * 100))}%` : '射撃停止・復活待ち'
           : '受信部を隠さない';
   });
 }
@@ -486,7 +482,7 @@ $('video').onerror = () => {
   ready = false;
   acknowledgeReady();
   $('prepare').hidden = false;
-  mediaError = '動画を読み込めません。assets/rules.mp4を確認してください';
+  mediaError = '動画を読み込めません。assets/rules.webmを確認してください';
   render();
 };
 setInterval(acknowledgeReady, 1000);

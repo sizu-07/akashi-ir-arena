@@ -1,0 +1,26 @@
+{
+  "revision": "0.7.0",
+  "hardwareProfile": "xiao-s3-plus-3rx-6led-motor-trigger",
+  "chip": "esp32s3",
+  "flashMB": 16,
+  "psramMB": 8,
+  "environment": "xiao_s3_plus",
+  "platform": "espressif32@6.9.0",
+  "arduino": "2.0.17",
+  "builtAt": "2026-09-25T07:43:10.676Z",
+  "physicalTests": "NOT PERFORMED",
+  "offsets": {
+    "bootloader.bin": "0x0",
+    "partitions.bin": "0x8000",
+    "boot_app0.bin": "0xe000",
+    "firmware.bin": "0x10000"
+  },
+  "sourceHashes": {
+    "firmware/src/main.cpp": "3faa761db1b92dcb04adb2879f1f61fc19a03bb65880870383b2645d3d0f2575",
+    "firmware/include/ir_protocol.h": "ffe80912667b419d9da5039bc3c7240a22da600fb34c0be52bb2f4207b41f69a",
+    "firmware/include/feedback.h": "0d0e33cb1408ca7a84a8100bb547dc19cbdef33b9514e8ae23477e154b23978d",
+    "firmware/include/hardware_profile.h": "c4b2ba9acd629defb50d6671f29650209ba7ef2491bdbba91fb7cc5489f97492",
+    "firmware/platformio.ini": "98516c57360213ae74217e9f19d30808f599339cb48813dbe509f8a607b7bb18",
+    "specs/hardware-profile.json": "be12d9693b4ddd96123cb420d651be75ac08cbf3e83266cf45ba98a639c9b5e4"
+  }
+}

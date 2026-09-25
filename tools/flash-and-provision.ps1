@@ -14,7 +14,7 @@ if ($Device -notmatch '^gun-00[1-4]$') { throw '端末IDが不正です' }
 $settings=Join-Path (Get-Location) "config/provision/$Device.json"
 if (-not (Test-Path -LiteralPath $settings)) { throw '先にPCの運営画面でWi-Fi設定を作成してください。' }
 $parsedSettings=Get-Content -LiteralPath $settings -Raw | ConvertFrom-Json
-if ($parsedSettings.hardwareProfile -ne 'xiao-s3-plus-3rx-motor') { throw 'PC画面でv0.6のWi-Fi設定を作り直してください。' }
+if ($parsedSettings.hardwareProfile -ne 'xiao-s3-plus-3rx-6led-motor-trigger') { throw 'PC画面でv0.7のWi-Fi設定を作り直してください。' }
 & "$PSScriptRoot/build-firmware.ps1" -Python $Python -Upload -Port $Port
 if ($LASTEXITCODE -ne 0) { throw '書込み失敗' }
 $runtimePort=Read-Host 'リセット後の実行用COM番号（変更なければEnter）'
