@@ -12,7 +12,7 @@ export function rulesOf(input={}) {
 }
 export class Game {
   constructor(devices,{now=Date.now,log=()=>{},saved=null}={}) {
-    this.now=now; this.log=log; this.pending=[]; this.shots=[]; this.revives=new Map(); this.seen=new Map(); this.events=saved?.eventNo??0;this.defaultPlayerNames=devices.map(device=>device.name);
+    this.now=now; this.log=log; this.pending=[]; this.shots=[]; this.revives=new Map(); this.seen=new Map(); this.soundEvents=[]; this.events=saved?.eventNo??0;this.defaultPlayerNames=devices.map(device=>device.name);
     this.s={id:randomUUID(),generation:1,phase:'LOBBY',rules:{...defaults},remainingMs:300000,score:{A:0,B:0},media:'score',winner:null,
       players:devices.map(d=>({id:d.id,name:d.name,team:d.team,shooterId:d.shooterId,hp:100,connected:false,armed:false,lastSeen:0,bootId:null,ack:null,lastShot:-1e15,invUntil:0,rssi:null,battery:null,syncRtt:null}))};
     if(saved?.players?.length===4) {
@@ -24,9 +24,12 @@ export class Game {
     }
     for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,rxFrames:{},lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
   }
-  record(type,payload){this.s.eventNo=++this.events;this.log({n:this.events,at:this.now(),gameId:this.s.id,type,...payload});}
+  record(type,payload){const at=this.now();this.s.eventNo=++this.events;this.log({n:this.events,at,gameId:this.s.id,type,...payload});
+    const kind=type==='shot'?'shot':type==='hit'?(payload.hp===0?'defeat':'hit'):type==='revive'?'revive':type==='finish'?'match-end':null;
+    if(kind){this.soundEvents.push({n:this.events,at,kind});if(this.soundEvents.length>64)this.soundEvents.shift();}
+  }
   player(id){const p=this.s.players.find(p=>p.id===id);if(!p)throw Error('未登録端末');return p;}
-  view(){return structuredClone({...this.s,serverMs:this.now()});}
+  view(){return structuredClone({...this.s,serverMs:this.now(),soundEvents:this.soundEvents});}
   setMedia(mode) {
     if (!['score', 'rules', 'video', 'black'].includes(mode)) throw Error('映像モード不正');
     if (['ACTIVE', 'COUNTDOWN'].includes(this.s.phase)) throw Error('試合中は映像切替できません');
@@ -51,7 +54,7 @@ export class Game {
     const r=rulesOf(rules);this.s.id=randomUUID();this.s.generation++;this.s.phase='LOBBY';this.s.rules=r;this.s.remainingMs=r.durationSec*1000;this.s.score={A:0,B:0};this.s.winner=null;this.s.media='score';this.s.videoPlayback=null;
     for(const p of this.s.players)Object.assign(p,{hp:r.hp,armed:false,ack:null,lastShot:-1e15,deadAt:0,invUntil:0,reviveProgressMs:0});
     for(const p of this.s.players){p.damageFeedback=null;p.lastReceiver=null;}
-    this.shots=[];this.pending=[];this.revives.clear();this.seen.clear();this.record('new_game',{rules:r});}
+    this.shots=[];this.pending=[];this.revives.clear();this.seen.clear();this.soundEvents=[];this.record('new_game',{rules:r});}
   start(displayReady){if(!['LOBBY','PAUSED'].includes(this.s.phase))throw Error('待機・停止中のみ開始できます');
     if(!displayReady)throw Error('投影画面で「表示を準備」を押してください');
     if(this.s.players.some(p=>!p.connected||this.now()-p.lastSeen>2500||p.syncRtt===null||p.syncRtt>400))throw Error('4台の接続・時刻同期を確認してください');
@@ -60,7 +63,7 @@ export class Game {
     for(const p of this.s.players){p.ack=null;p.armed=false;p.damageFeedback=null;}this.record('countdown',{startAt:this.s.startAt,commandId:this.s.commandId});}
   pause(reason='operator'){if(this.s.phase==='ACTIVE')this.s.remainingMs=Math.max(0,this.s.endAt-this.now());
     if(['ACTIVE','COUNTDOWN'].includes(this.s.phase)){this.s.phase='PAUSED';this.s.generation++;this.s.startCommitted=false;for(const p of this.s.players){p.armed=false;p.reviveProgressMs=0;}this.pending=[];this.shots=[];this.revives.clear();this.record('pause',{reason});}}
-  finish(reason='operator'){if(this.s.phase==='ACTIVE')this.s.remainingMs=Math.max(0,this.s.endAt-this.now());this.s.phase='FINISHED';this.s.generation++;for(const p of this.s.players)p.armed=false;
+  finish(reason='operator'){if(this.s.phase==='FINISHED')return;if(this.s.phase==='ACTIVE')this.s.remainingMs=Math.max(0,this.s.endAt-this.now());this.s.phase='FINISHED';this.s.generation++;for(const p of this.s.players)p.armed=false;
     const hp=t=>this.s.players.filter(p=>p.team===t).reduce((a,p)=>a+p.hp,0);const a=this.s.score.A,b=this.s.score.B;this.s.winner=a!==b?(a>b?'A':'B'):(hp('A')===hp('B')?'DRAW':hp('A')>hp('B')?'A':'B');this.pending=[];this.shots=[];this.revives.clear();for(const p of this.s.players)p.reviveProgressMs=0;this.record('finish',{reason,winner:this.s.winner});}
   correct(id,hp,reason){if(!reason?.trim()||!Number.isInteger(hp)||hp<0||hp>this.s.rules.hp)throw Error('補正理由と範囲内のHPが必要です');
     if(this.s.phase!=='PAUSED'&&this.s.phase!=='LOBBY')throw Error('HP補正は待機・一時停止中のみ可能です');const p=this.player(id);const before=p.hp;p.hp=hp;p.reviveProgressMs=0;this.revives.delete(id);this.record('hp_correction',{deviceId:id,before,after:hp,reason});}

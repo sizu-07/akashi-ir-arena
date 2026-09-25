@@ -13,6 +13,7 @@ import {Game} from './game.mjs';
 import {hardware} from './hardware.mjs';
 import {storage} from './store.mjs';
 import {createTicketBridge} from './ticket-bridge.mjs';
+import {availableEffects,effectNames} from './sounds.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const openBrowser=(url)=>{
  try{
@@ -34,7 +35,7 @@ export async function detectRunningGameServer(port){
   const state=await response.json();return typeof state.demo==='boolean'&&Array.isArray(state.players)?state:null;
  }catch{return null;}
 }
-export async function createApp({config,demo=false,dataDir=path.join(root,'data'),bind='0.0.0.0'}={}){
+export async function createApp({config,demo=false,dataDir=path.join(root,'data'),effectsDir=path.join(root,'assets/audio/effects'),bind='0.0.0.0'}={}){
  const db=storage(dataDir), game=new Game(config.devices,{saved:db.load(),log:e=>db.log(e)});
  const ticketBridge=createTicketBridge({url:config.ticketServerUrl,apiKey:config.ticketServerApiKey,dataDir,log:e=>db.log(e)});
  const broker=aedesFactory({heartbeatInterval:5000,connectTimeout:5000});
@@ -58,6 +59,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  const mqttServer=net.createServer(broker.handle);
  function session(req){const token=(req.headers.cookie??'').split(';').map(s=>s.trim()).find(s=>s.startsWith('arena='))?.slice(6);const s=sessions.get(token);if(s&&s.expires>Date.now()){s.seen=Date.now();return s;}return null;}
  const reply=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
+ const soundFiles=()=>Object.fromEntries(Object.entries(availableEffects(effectsDir)).map(([kind,entry])=>[kind,entry.url]));
  async function body(req){let data='';for await(const chunk of req){data+=chunk;if(data.length>16384)throw Error('本文が大きすぎます');}return JSON.parse(data||'{}');}
  const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.webm':'video/webm','.mp3':'audio/mpeg','.wav':'audio/wav','.ttf':'font/ttf'};
  const httpServer=http.createServer(async(req,res)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');
@@ -78,7 +80,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       res.setHeader('Set-Cookie',`arena=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`);return reply(res,200,{csrf:s.csrf,id:s.id});
     }
     if(url.pathname==='/api/session'){const s=session(req);return reply(res,s?200:401,s?{csrf:s.csrf,id:s.id,owner,local:local(req),demo}:{});}
-    if(url.pathname==='/api/state'){if(!session(req)&&!local(req))return reply(res,401,{});return reply(res,200,{...game.view(),displayReady:displayReady(),demo,owner,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}});}
+    if(url.pathname==='/api/state'){if(!session(req)&&!local(req))return reply(res,401,{});return reply(res,200,{...game.view(),soundFiles:soundFiles(),displayReady:displayReady(),demo,owner,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}});}
     if(url.pathname==='/api/pair.svg'){
       if(!local(req))return reply(res,403,{});const addresses=Object.values(os.networkInterfaces()).flat().filter(a=>a.family==='IPv4'&&!a.internal);const host=addresses[0]?.address??'127.0.0.1';
       if(Date.now()>pairExpires){pairToken=randomBytes(16).toString('hex');pairExpires=Date.now()+600000;}
@@ -132,6 +134,14 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       if(url.pathname==='/tickets')target.searchParams.set('game',`${gameOrigin}/`);
       res.writeHead(302,{Location:target.href});return res.end();
     }
+    const effectMatch=/^\/effects\/([a-z-]+)\.(mp3|wav)$/.exec(url.pathname);
+    if(effectMatch&&effectNames.includes(effectMatch[1])){
+      const selected=availableEffects(effectsDir)[effectMatch[1]];
+      if(!selected||path.basename(selected.file)!==`${effectMatch[1]}.${effectMatch[2]}`)return reply(res,404,{});
+      const file=readFileSync(selected.file);
+      res.writeHead(200,{'Content-Type':types[`.${effectMatch[2]}`],'Content-Length':file.length,'Cache-Control':'no-store'});
+      return res.end(file);
+    }
     const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.webm':'assets/rules.webm','/countdown.wav':'assets/audio/countdown/countdown.wav','/bgm.mp3':'assets/audio/bgm/bgm.mp3'};
     files['/operator-shared.css']='apps/ticket-web/operator-shared.css';
     files['/display.css']='apps/web/display.css';
@@ -151,7 +161,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  let simulators=null;if(demo){const {simulate}=await import('./simulator.mjs');simulators=await simulate(config.devices,mqttServer.address().port);}
  let count=0;const timer=setInterval(()=>{game.tick();if(game.s.phase==='COUNTDOWN'&&!displayReady())game.pause('投影画面切断');
    ticketBridge.observe(game.s);
-   const state={...game.view(),owner,displayReady:displayReady(),demo,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}};
+   const state={...game.view(),soundFiles:soundFiles(),owner,displayReady:displayReady(),demo,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}};
    for(const ws of wss.clients)if(ws.readyState===WebSocket.OPEN){if(ws.bufferedAmount>100000){ws.close();continue;}ws.send(JSON.stringify(state));}
    if(++count%4===0){sync();db.save(game.s);}if(count%240===0){for(const [k,s] of sessions)if(s.expires<Date.now())sessions.delete(k);}
  },250);

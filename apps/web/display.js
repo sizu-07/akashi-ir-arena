@@ -11,6 +11,11 @@ let countdownSource;
 let bgmBuffer;
 let bgmSource;
 let bgmGain;
+const effectKinds = ['shot', 'hit', 'defeat', 'revive', 'match-end'];
+const effectBuffers = new Map();
+const effectLoads = new Map();
+const effectErrors = new Set();
+let lastSoundEventNo = null;
 let countdownAudioStartedAt = 0;
 let countdownAudioOffset = 0;
 let state;
@@ -47,6 +52,78 @@ function tone(frequency = 660, duration = 0.15) {
   oscillator.stop(audio.currentTime + duration);
 }
 
+function syncSoundFiles(files = {}) {
+  if (!audio) return Promise.resolve();
+  const pending = [];
+  for (const kind of effectKinds) {
+    const url = files[kind];
+    if (!url) {
+      effectBuffers.delete(kind);
+      effectLoads.delete(kind);
+      effectErrors.delete(kind);
+      continue;
+    }
+    if (effectBuffers.get(kind)?.url === url) continue;
+    if (effectLoads.get(kind)?.url === url) {
+      pending.push(effectLoads.get(kind).promise);
+      continue;
+    }
+    const entry = {url};
+    entry.promise = fetch(url, {cache: 'no-store'})
+      .then(response => {
+        if (!response.ok) throw Error(`HTTP ${response.status}`);
+        return response.arrayBuffer();
+      })
+      .then(data => audio.decodeAudioData(data))
+      .then(buffer => {
+        if (effectLoads.get(kind) !== entry) return;
+        effectBuffers.set(kind, {url, buffer});
+        effectErrors.delete(kind);
+      })
+      .catch(error => {
+        if (effectLoads.get(kind) !== entry) return;
+        effectErrors.add(kind);
+        console.warn(`効果音 ${kind} を読み込めません: ${error.message}`);
+      })
+      .finally(() => {
+        if (effectLoads.get(kind) === entry) effectLoads.delete(kind);
+      });
+    effectLoads.set(kind, entry);
+    pending.push(entry.promise);
+  }
+  return Promise.all(pending);
+}
+
+function playSound(kind) {
+  const buffer = effectBuffers.get(kind)?.buffer;
+  if (!ready || connectionLost || audio?.state !== 'running' || !buffer) return;
+  const source = audio.createBufferSource();
+  const gain = audio.createGain();
+  source.buffer = buffer;
+  gain.gain.value = 0.85;
+  source.connect(gain).connect(audio.destination);
+  source.onended = () => {source.disconnect(); gain.disconnect();};
+  source.start();
+}
+
+function playNewSoundEvents() {
+  const events = state?.soundEvents || [];
+  if (lastSoundEventNo === null) {
+    lastSoundEventNo = state?.eventNo ?? Math.max(0, ...events.map(event => event.n));
+    return;
+  }
+  for (const event of events) {
+    if (event.n <= lastSoundEventNo || !effectKinds.includes(event.kind)) continue;
+    const playIfCurrent = () => {
+      if (Date.now() + offset - event.at < 1500) playSound(event.kind);
+    };
+    const loading = effectLoads.get(event.kind)?.promise;
+    if (loading) loading.then(playIfCurrent);
+    else playIfCurrent();
+  }
+  lastSoundEventNo = Math.max(lastSoundEventNo, state?.eventNo ?? 0);
+}
+
 $('prepare').onclick = async () => {
   try {
     audio ??= new AudioContext();
@@ -61,6 +138,7 @@ $('prepare').onclick = async () => {
       if (!response.ok) throw Error('BGMを読み込めません');
       bgmBuffer = await audio.decodeAudioData(await response.arrayBuffer());
     }
+    await syncSoundFiles(state?.soundFiles);
     if (!document.fullscreenElement)
       await document.documentElement.requestFullscreen?.();
     if (state?.media === 'video' && state.videoPlayback?.playing !== false) await $('video').play();
@@ -156,6 +234,7 @@ function connect() {
   );
   ws.onopen = () => {
     lastVideoCommand = '';
+    lastSoundEventNo = null;
     connectionLost = false;
     document.body.classList.remove('connection-lost');
     acknowledgeReady();
@@ -164,6 +243,8 @@ function connect() {
     state = JSON.parse(event.data);
     offset = state.serverMs - Date.now();
     render();
+    void syncSoundFiles(state.soundFiles);
+    playNewSoundEvents();
   };
   ws.onclose = () => {
     connectionLost = true;
@@ -326,7 +407,7 @@ function render() {
     connectionLost
       ? 'PCサーバーとの接続が切れました'
       : mediaError ||
-          `${state.demo ? 'シミュレーター / ' : ''}${ready ? '表示準備完了' : '表示未準備'}`,
+          `${state.demo ? 'シミュレーター / ' : ''}${ready ? '表示準備完了' : '表示未準備'}${effectErrors.size ? ` / 効果音の読込失敗: ${[...effectErrors].join('、')}` : ''}`,
   );
   $('pair').hidden = ['ACTIVE', 'COUNTDOWN'].includes(state.phase);
   if ($('pair').hidden) $('pair').open = false;
@@ -472,7 +553,6 @@ function render() {
       stopCountdownAudio(true);
       stopBgm();
     }
-    if (state.phase === 'FINISHED') tone(400, 0.7);
     lastPhase = state.phase;
   }
 }

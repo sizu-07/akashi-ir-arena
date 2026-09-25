@@ -8,6 +8,20 @@ import {createApp} from '../apps/server/main.mjs';
 const require = createRequire(import.meta.url);
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const dir = mkdtempSync(path.join(os.tmpdir(), 'arena-projector-'));
+const effectsDir = path.join(dir, 'effects');
+mkdirSync(effectsDir);
+const effectDurations = {shot: 0.08, hit: 0.11, defeat: 0.14, revive: 0.17, 'match-end': 0.20};
+function writeEffect(name, seconds) {
+  const samples = Math.round(22050 * seconds);
+  const wav = Buffer.alloc(44 + samples * 2);
+  wav.write('RIFF', 0); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(22050, 24); wav.writeUInt32LE(44100, 28);
+  wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36);
+  wav.writeUInt32LE(samples * 2, 40);
+  writeFileSync(path.join(effectsDir, `${name}.wav`), wav);
+}
+for (const [name, seconds] of Object.entries(effectDurations)) writeEffect(name, seconds);
 const output = 'artifacts/projector';
 mkdirSync(output, {recursive: true});
 const config = {
@@ -26,6 +40,7 @@ const app = await createApp({
   config,
   demo: true,
   dataDir: dir,
+  effectsDir,
   bind: '127.0.0.1',
 });
 const base = `http://127.0.0.1:${app.httpServer.address().port}`;
@@ -38,6 +53,14 @@ try {
     viewport: {width: 1920, height: 1080},
   });
   const page = await context.newPage();
+  await page.addInitScript(() => {
+    window.bufferStarts = [];
+    const original = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...args) {
+      window.bufferStarts.push(this.buffer?.duration ?? 0);
+      return original.apply(this, args);
+    };
+  });
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
     if (message.type() === 'error')
@@ -80,6 +103,8 @@ try {
   );
   assert.ok(requests.includes(`${base}/countdown.wav`));
   assert.ok(requests.includes(`${base}/bgm.mp3`));
+  for (const name of Object.keys(effectDurations))
+    assert.ok(requests.some(url => url.startsWith(`${base}/effects/${name}.wav?v=`)));
   checks.push('Countdown audio and bgm.mp3 load during projector preparation');
   await page.waitForFunction(async () =>
     (await (await fetch('/api/state')).json()).players.every(
@@ -121,6 +146,21 @@ try {
   await shot('go');
   await page.locator('#startBurst').waitFor({state: 'hidden'});
   checks.push('Audio-synchronized READY, 5/4/3/2/1 and START transition');
+  app.game.record('shot', {deviceId: 'gun-001'});
+  app.game.record('hit', {deviceId: 'gun-003', hp: 95});
+  app.game.record('hit', {deviceId: 'gun-003', hp: 0});
+  app.game.record('revive', {deviceId: 'gun-003'});
+  await page.waitForFunction(() => [0.08, 0.11, 0.14, 0.17].every(
+    expected => window.bufferStarts.some(actual => Math.abs(actual - expected) < 0.01),
+  ));
+  checks.push('Shot, hit, defeat and revive WAV effects play from confirmed game events');
+  writeEffect('shot', 0.23);
+  await page.waitForFunction(() => performance.getEntriesByType('resource').filter(
+    entry => entry.name.includes('/effects/shot.wav?v='),
+  ).length >= 2);
+  app.game.record('shot', {deviceId: 'gun-001'});
+  await page.waitForFunction(() => window.bufferStarts.some(actual => Math.abs(actual - 0.23) < 0.01));
+  checks.push('Replacing an effect file reloads it while the projector is running');
   app.game.s.players[0].hp = 25;
   app.game.s.players[2].hp = 0;
   app.game.s.score.A = 1;
@@ -151,6 +191,7 @@ try {
   checks.push('Resume restarts the countdown animation');
   app.game.pause();
   app.game.finish();
+  await page.waitForFunction(() => window.bufferStarts.some(actual => Math.abs(actual - 0.20) < 0.01));
   await page.waitForFunction(
     () => document.getElementById('overlayTitle').textContent === 'TEAM A WIN',
   );
@@ -190,6 +231,7 @@ try {
   );
   await shot('draw');
   checks.push('Rules can be displayed after a match; draw and winner layouts');
+  checks.push('Match-end WAV effect plays on finish');
 
   app.game.reset({hp: 1000, durationSec: 3600});
   app.game.setPlayerNames([

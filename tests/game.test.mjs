@@ -60,6 +60,24 @@ test('only a live teammate holding the same shot for three seconds can revive',(
   assert.equal(f.g.s.score.A,0);
 });
 
+test('confirmed game events produce one projector sound cue each',()=>{
+  const f=fixture();f.start();
+  assert.deepEqual(f.g.view().soundEvents,[]);
+  f.fire('gun-001',1);f.hit('gun-003',1,1);f.hit('gun-003',1,1);
+  f.g.player('gun-003').hp=5;
+  f.advance(1000);f.fire('gun-001',2);f.hit('gun-003',1,2);
+  f.fire('gun-004',3);
+  for(let elapsed=0;elapsed<=3000;elapsed+=500){
+    if(elapsed)f.advance(500);
+    f.send('gun-004','shot_hold',{shot_seq:3});
+    f.hit('gun-003',4,3,1);
+  }
+  f.g.finish();f.g.finish();
+  const sounds=f.g.view().soundEvents;
+  assert.deepEqual(sounds.map(sound=>sound.kind),['shot','hit','shot','defeat','shot','revive','match-end']);
+  assert.equal(new Set(sounds.map(sound=>sound.n)).size,sounds.length);
+});
+
 test('rescue progress resets after lost aim and never revives an enemy',()=>{
   const f=fixture();f.start();f.g.player('gun-002').hp=0;f.g.player('gun-003').hp=0;
   f.fire('gun-001',8);f.send('gun-001','shot_hold',{shot_seq:8});
