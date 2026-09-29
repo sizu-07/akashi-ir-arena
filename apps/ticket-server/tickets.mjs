@@ -161,7 +161,7 @@ export class TicketQueue {
     return event;
   }
 
-  register({nickname, nicknames, partySize, consent, requestId}) {
+  register({nickname, nicknames, playerTeams, partySize, consent, requestId}) {
     if (typeof requestId !== 'string' || requestId.length < 8 || requestId.length > 100) throw Error('登録要求IDが必要です');
     const existing = this.state.tickets.find((item) => item.registrationRequestId === requestId);
     if (existing) { this.save(this.state); return this.publicTicket(existing); }
@@ -174,6 +174,10 @@ export class TicketQueue {
       : legacyPlayerNames(legacyName, size);
     if (playerNames.length !== size) throw Error('参加人数とニックネームの数が一致しません');
     if (playerNames.some((name) => !name || name.length > 20)) throw Error('ニックネームは1人ずつ1〜20文字で入力してください');
+    const teams = Array.isArray(playerTeams) && playerTeams.length ? playerTeams : null;
+    if (teams && (size < 3 || teams.length !== size || teams.some((team) => !['A', 'B'].includes(team)) || ['A', 'B'].some((team) => teams.filter((value) => value === team).length > 2))) {
+      throw Error('チームは3人以上の組で各チーム2人まで選んでください');
+    }
     if (consent !== true) throw Error('注意事項への同意が必要です');
     const waiting = this.state.tickets.filter((item) => !terminalStates.has(item.status) && item.status !== 'PLAYING').length;
     if (waiting >= this.state.settings.maxWaitingGroups) throw Error('受付上限に達しました');
@@ -187,6 +191,7 @@ export class TicketQueue {
       receptionNumber: this.state.nextReceptionNumber++,
       nickname: legacyName || playerNames.join('・'),
       playerNicknames: playerNames,
+      playerTeams: teams ? [...teams] : null,
       partySize: size,
       status: 'WAITING',
       accessToken: token(),
@@ -391,6 +396,25 @@ export class TicketQueue {
     return {changed: Boolean(elapsedAdjustmentSlots || completedRound || calledRound), elapsedAdjustmentSlots, completedRound, calledRound};
   }
 
+  roundPlayerNicknames(round) {
+    const teams = {A: [], B: []};
+    const unassigned = [];
+    for (const id of round.ticketIds) {
+      const ticket = this.ticket(id);
+      if (!ticket) continue;
+      ticket.playerNicknames.forEach((name, index) => {
+        const team = ticket.playerTeams?.[index];
+        if (team === 'A' || team === 'B') teams[team].push(name);
+        else unassigned.push(name);
+      });
+    }
+    for (const name of unassigned) {
+      if (teams.A.length < 2) teams.A.push(name);
+      else teams.B.push(name);
+    }
+    return [...teams.A, ...teams.B];
+  }
+
   publicTicket(ticketOrAccessToken) {
     const ticket = typeof ticketOrAccessToken === 'string'
       ? this.state.tickets.find((item) => item.accessToken === ticketOrAccessToken)
@@ -413,6 +437,7 @@ export class TicketQueue {
       ticketNumber: ticket.ticketNumber,
       nickname: ticket.nickname,
       playerNicknames: clone(ticket.playerNicknames),
+      playerTeams: ticket.playerTeams ? clone(ticket.playerTeams) : null,
       partySize: ticket.partySize,
       status: ticket.status,
       roundNumber: round?.number ?? null,

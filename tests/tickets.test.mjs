@@ -48,6 +48,18 @@ test('1枠15分で参加者ごとのニックネームを保存する', () => {
   assert.throws(() => queue.register({requestId: 'missing-name-request', nicknames: ['1人だけ'], partySize: 2, consent: true}), /一致/);
 });
 
+test('3人以上のチーム選択を保存し、ゲームのA/B席へ配置する', () => {
+  const queue = new TicketQueue();
+  const group = queue.register({requestId: 'team-group-request', nicknames: ['甲', '乙', '丙'], playerTeams: ['B', 'A', 'B'], partySize: 3, consent: true});
+  const solo = queue.register({requestId: 'team-solo-request', nicknames: ['丁'], partySize: 1, consent: true});
+  assert.deepEqual(queue.publicTicket(group.accessToken).playerTeams, ['B', 'A', 'B']);
+  assert.deepEqual(queue.roundPlayerNicknames(queue.round(queue.state.tickets.find((ticket) => ticket.accessToken === group.accessToken).roundId)), ['乙', '丁', '甲', '丙']);
+  assert.equal(queue.state.tickets.find((ticket) => ticket.accessToken === solo.accessToken).playerTeams, null);
+  assert.throws(() => queue.register({requestId: 'team-overflow-request', nicknames: ['1', '2', '3'], playerTeams: ['A', 'A', 'A'], partySize: 3, consent: true}), /2人まで/);
+  assert.throws(() => queue.register({requestId: 'team-count-request', nicknames: ['1', '2', '3', '4'], playerTeams: ['A', 'B'], partySize: 4, consent: true}), /2人まで/);
+  assert.throws(() => queue.register({requestId: 'team-invalid-request', nicknames: ['1', '2', '3'], playerTeams: ['A', 'B', 'C'], partySize: 3, consent: true}), /2人まで/);
+});
+
 test('現在時刻に依存せず切りのよい15分枠へ割り当て、前枠の開始時刻を入場予定にする', () => {
   let now = new Date('2026-09-17T17:07:00+09:00').getTime();
   const queue = new TicketQueue({now: () => now});
@@ -694,8 +706,8 @@ test('登録から呼出・入場・ゲーム開始終了・次枠呼出までHT
   const app = await createTicketApp({dataDir: dir, operatorPassword: password, gameApiKey: apiKey});
   const base = `http://127.0.0.1:${app.server.address().port}`;
   try {
-    const registerGroup = async (requestId, names) => (await (await fetch(`${base}/api/public/register`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({requestId, nicknames: names, partySize: names.length, consent: true})})).json());
-    const first = await registerGroup('e2e-first-group', ['春', '夏', '秋', '冬']);
+    const registerGroup = async (requestId, names, playerTeams) => (await (await fetch(`${base}/api/public/register`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({requestId, nicknames: names, playerTeams, partySize: names.length, consent: true})})).json());
+    const first = await registerGroup('e2e-first-group', ['春', '夏', '秋', '冬'], ['B', 'A', 'B', 'A']);
     await registerGroup('e2e-next-group', ['東', '西', '南', '北']);
     const loginResponse = await fetch(`${base}/api/operator/login`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password})});
     const login = await loginResponse.json();
@@ -706,7 +718,7 @@ test('登録から呼出・入場・ゲーム開始終了・次枠呼出までHT
     assert.equal((await checkIn.json()).code, 'OK');
     assert.equal((await (await fetch(`${base}/api/public/ticket/${first.accessToken}`)).json()).status, 'CHECKED_IN');
     const current = await (await fetch(`${base}/api/game/current-round`, {headers: {Authorization: `Bearer ${apiKey}`}})).json();
-    assert.deepEqual(current.playerNicknames, ['春', '夏', '秋', '冬']);
+    assert.deepEqual(current.playerNicknames, ['夏', '冬', '春', '秋']);
     const event = (eventId, type, targetRoundId) => fetch(`${base}/api/game/events`, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`}, body: JSON.stringify({eventId, type, targetRoundId, occurredAt: Date.now(), source: 'e2e-game'})});
     assert.equal((await event('e2e-start', 'GAME_STARTED', current.roundId)).status, 200);
     assert.equal((await (await fetch(`${base}/api/public/ticket/${first.accessToken}`)).json()).status, 'PLAYING');
