@@ -35,6 +35,7 @@ config/
 *.credentials
 
 # KiCad editor-local state and locks (design files remain tracked)
+hardware/circuit/.history/
 *.kicad_prl
 *.lck
 *.kicad_sch-bak
