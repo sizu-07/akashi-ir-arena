@@ -1,42 +1,67 @@
 #include <Arduino.h>
-#include "hardware_profile.h"
 
 #if !CONFIG_IDF_TARGET_ESP32S3
 #error "Limit diagnostic requires XIAO ESP32-S3 Plus"
 #endif
 
-// The only external signal read by this firmware is D10 / GPIO9.
-// Connect a dry-contact switch between D10 and GND; LOW means closed.
+// Pin mapping is taken from hardware/circuit/4E赤外線.kicad_pcb (legacy board).
+// Each switch connector has its signal on pin 1 and GND on pin 2.
+// The v0.7 hardware profile is different; do not use it for this board test.
+struct SwitchInput {
+  const char* label;
+  const char* net;
+  uint8_t gpio;
+  int lastLevel;
+};
+SwitchInput switches[] = {
+  {"SW1/J8", "SW_TRIGGER", 2, HIGH},
+  {"SW2/J9", "SW_MODE", 5, HIGH},
+  {"SW3/J10", "SW_RELOAD", 4, HIGH},
+};
 constexpr uint32_t REPORT_INTERVAL_MS = 500;
-int lastLevel = HIGH;
 uint32_t lastReportAt = 0;
 
-void report(const char* kind, int level) {
-  Serial.printf("%s time_ms=%lu pin=D10/GPIO%d raw=%s limit=%s\n", kind,
-                static_cast<unsigned long>(millis()), TRIGGER,
-                level == LOW ? "LOW" : "HIGH",
-                level == LOW ? "PRESSED" : "RELEASED");
+const char* levelText(int level) { return level == LOW ? "LOW" : "HIGH"; }
+const char* pressedText(int level) { return level == LOW ? "PRESSED" : "RELEASED"; }
+
+void reportEdge(const SwitchInput& input, int level) {
+  Serial.printf("EDGE time_ms=%lu switch=%s net=%s gpio=%u raw=%s state=%s\n",
+                static_cast<unsigned long>(millis()), input.label, input.net, input.gpio,
+                levelText(level), pressedText(level));
+}
+
+void reportState(const char* kind) {
+  Serial.printf("%s time_ms=%lu", kind, static_cast<unsigned long>(millis()));
+  for (const auto& input : switches) {
+    const int level = digitalRead(input.gpio);
+    Serial.printf(" %s/GPIO%u=%s(%s)", input.label, input.gpio,
+                  levelText(level), pressedText(level));
+  }
+  Serial.println();
 }
 
 void setup() {
-  pinMode(TRIGGER, INPUT_PULLUP);
+  for (auto& input : switches) pinMode(input.gpio, INPUT_PULLUP);
   Serial.begin(115200);
-  lastLevel = digitalRead(TRIGGER);
-  Serial.println("LIMIT ONLY READY: D10/GPIO9, INPUT_PULLUP, LOW=PRESSED");
-  report("START", lastLevel);
+  for (auto& input : switches) input.lastLevel = digitalRead(input.gpio);
+  Serial.println("THREE SWITCH DIAGNOSTIC READY: INPUT_PULLUP, LOW=PRESSED");
+  Serial.println("SW1/J8=GPIO2 SW_TRIGGER; SW2/J9=GPIO5 SW_MODE; SW3/J10=GPIO4 SW_RELOAD");
+  reportState("START");
   lastReportAt = millis();
 }
 
 void loop() {
-  const int level = digitalRead(TRIGGER);
-  if (level != lastLevel) {
-    lastLevel = level;
-    report("EDGE", level);
+  for (auto& input : switches) {
+    const int level = digitalRead(input.gpio);
+    if (level != input.lastLevel) {
+      input.lastLevel = level;
+      reportEdge(input, level);
+    }
   }
   const uint32_t now = millis();
   if (now - lastReportAt >= REPORT_INTERVAL_MS) {
     lastReportAt = now;
-    report("STATE", level);
+    reportState("STATE");
   }
   delay(1);
 }
