@@ -1,4 +1,4 @@
-param([string]$Python = 'python',[ValidateSet('xiao_s3_plus','board_diagnostics')][string]$Environment = 'xiao_s3_plus',[switch]$Upload,[string]$Port)
+param([string]$Python = 'python',[ValidateSet('xiao_s3_plus','board_diagnostics','limit_diagnostics')][string]$Environment = 'xiao_s3_plus',[switch]$Upload,[string]$Port)
 $ErrorActionPreference='Stop'
 $projectPath = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location $projectPath
@@ -13,7 +13,11 @@ $previousCore=$env:PLATFORMIO_CORE_DIR
 try {
   if (Test-Path "$drive/.tools/python") { $env:PYTHONPATH="$drive/.tools/python" }
   $env:PLATFORMIO_CORE_DIR="$drive/.tools/platformio"
-  $firmwareDir = if ($Environment -eq 'board_diagnostics') { "$drive/firmware/diagnostic" } else { "$drive/firmware" }
+  $firmwareDir = switch ($Environment) {
+    'board_diagnostics' { "$drive/firmware/diagnostic" }
+    'limit_diagnostics' { "$drive/firmware/limit-diagnostic" }
+    default { "$drive/firmware" }
+  }
   $arguments=@('-m','platformio','run','-e',$Environment,'-d',$firmwareDir)
   if ($Upload) { if (-not $Port) { throw '-Uploadには-Port COM番号が必要です' }; $arguments+=@('-t','upload','--upload-port',$Port) }
   & $Python @arguments
