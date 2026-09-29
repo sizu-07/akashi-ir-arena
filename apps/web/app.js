@@ -158,7 +158,7 @@ const names = {
 };
 
 function render() {
-  $('connection').textContent = state.demo ? '接続済 / デモ' : '接続済';
+  $('connection').textContent = state.demo ? 'シミュレーター稼働中（実機未接続）' : '実機サーバー接続済';
   $('connection').className = 'badge';
   $('phase').textContent = names[state.phase];
   $('clock').textContent = time(state.remainingMs);
@@ -169,7 +169,7 @@ function render() {
   if (state.phase !== 'LOBBY') $('testMode').checked = state.testMode;
   $('readiness').textContent =
     `投影: ${state.displayReady ? '準備完了' : '準備が必要'} ／ ` +
-    `接続: ${connectedPlayers}/4 ／ ` +
+    `${state.demo ? '仮想端末' : '実機接続'}: ${connectedPlayers}/4 ／ ` +
     `整理券: ${!state.ticketBridge?.enabled ? '未設定' : state.ticketBridge.connected ? '同期済み' : `未同期（再送待ち${state.ticketBridge.pending}件）`} ／ ` +
     `メンバー: ${!state.ticketBridge?.enabled ? '手動名' : state.ticketBridge.membersLoaded ? '反映済み' : '未反映'}`;
   $('syncTicketMembers').textContent = state.ticketBridge?.membersLoaded ? '整理券メンバーを更新' : '整理券メンバーを反映';
@@ -187,6 +187,7 @@ function render() {
     else if ($('testMode').checked || state.testMode) $('nextStep').textContent = `接続中の${connectedPlayers}台で動作確認します。未接続の端末は参加しません。`;
     else if (connectedPlayers < 4) $('nextStep').textContent = `端末が${connectedPlayers}/4台接続されています。通常試合には4台必要です。`;
   }
+  if (state.demo) $('nextStep').textContent = 'デモモードです。表示中の4台は仮想端末です。実機を確認するには「起動_本番.cmd」で起動してください。';
   document.querySelectorAll('[data-media]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.media === state.media)));
 
   const deviceElements = [];
@@ -209,7 +210,7 @@ function render() {
     const meta = document.createElement('div');
     meta.className = 'meta';
     meta.textContent =
-      `${player.id} ｜ ${player.connected ? '接続' : '切断'}\n` +
+      `${player.id} ｜ ${player.connected ? state.demo ? '仮想接続' : '接続' : '切断'}\n` +
       `電池 ${player.battery?.toFixed(2) ?? '—'} V / ` +
       `RSSI ${player.rssi ?? '—'} dBm\n` +
       `構成 ${
@@ -227,7 +228,7 @@ function render() {
     deviceElements.push(meta);
     const summary = document.createElement('div');
     summary.className = 'player-summary';
-    summary.textContent = `${player.connected ? '接続済み' : '通信切断'}${player.hp===0&&player.reviveProgressMs>0 ? ` / 復活照射 ${Math.ceil(player.reviveProgressMs/1000)}秒` : ''}${player.lowBattery ? ' / 電池低下' : ''}`;
+    summary.textContent = `${player.connected ? state.demo ? '仮想端末' : '接続済み' : '通信切断'}${player.hp===0&&player.reviveProgressMs>0 ? ` / 復活照射 ${Math.ceil(player.reviveProgressMs/1000)}秒` : ''}${player.lowBattery ? ' / 電池低下' : ''}`;
     element.append(title, hp, bar, summary);
     return element;
   });

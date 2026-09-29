@@ -377,7 +377,7 @@ function renderPlayers() {
       ? '接続待ち'
       : player.hp === 0
         ? '撃破'
-        : '接続済み';
+        : state.demo ? '仮想端末' : '接続済み';
     node.fill.style.transform = `scaleX(${Math.max(0, Math.min(1, player.hp / state.rules.hp))})`;
     node.meter.setAttribute('aria-label', `${player.name} HP`);
     node.meter.setAttribute('aria-valuemin', '0');
