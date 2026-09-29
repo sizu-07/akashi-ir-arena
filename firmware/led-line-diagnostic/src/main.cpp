@@ -11,12 +11,17 @@ constexpr uint8_t MOTOR_PIN = 9;
 constexpr uint8_t IR_PIN = 6;
 constexpr uint8_t SW1_PIN = 2;
 constexpr uint32_t DEBOUNCE_MS = 20;
+constexpr uint32_t REPORT_INTERVAL_MS = 2000;
 
 bool highPhase = false;
 bool dataReady = false;
+esp_err_t configCode = ESP_FAIL;
+esp_err_t driveCode = ESP_FAIL;
+esp_err_t initialLowCode = ESP_FAIL;
 int rawSw1 = HIGH;
 int stableSw1 = HIGH;
 uint32_t rawChangedAt = 0;
+uint32_t lastReportAt = 0;
 bool armed = false;
 
 void setDataLevel(bool high) {
@@ -51,13 +56,11 @@ void setup() {
   config.pull_up_en = GPIO_PULLUP_DISABLE;
   config.pull_down_en = GPIO_PULLDOWN_DISABLE;
   config.intr_type = GPIO_INTR_DISABLE;
-  const esp_err_t configResult = gpio_config(&config);
-  const esp_err_t driveResult = configResult == ESP_OK
-                                    ? gpio_set_drive_capability(dataPin, GPIO_DRIVE_CAP_3)
-                                    : configResult;
-  const esp_err_t lowResult = driveResult == ESP_OK ? gpio_set_level(dataPin, 0) : driveResult;
-  dataReady = lowResult == ESP_OK;
-  Serial.printf("GPIO43 config=%d drive=%d initial_low=%d\n", configResult, driveResult, lowResult);
+  configCode = gpio_config(&config);
+  driveCode = configCode == ESP_OK ? gpio_set_drive_capability(dataPin, GPIO_DRIVE_CAP_3) : configCode;
+  initialLowCode = driveCode == ESP_OK ? gpio_set_level(dataPin, 0) : driveCode;
+  dataReady = initialLowCode == ESP_OK;
+  Serial.printf("GPIO43 config=%d drive=%d initial_low=%d\n", configCode, driveCode, initialLowCode);
   Serial.println("LED DATA LINE DIAGNOSTIC: motor and IR held OFF");
   Serial.println("No WS2812 frames are sent; the LED strip is expected to remain OFF");
   Serial.println("Press and release SW1 once to toggle DATA, then measure at leisure");
@@ -65,6 +68,7 @@ void setup() {
   rawSw1 = stableSw1 = digitalRead(SW1_PIN);
   rawChangedAt = millis();
   armed = stableSw1 == HIGH;
+  lastReportAt = millis();
 }
 
 void loop() {
@@ -81,6 +85,12 @@ void loop() {
       armed = false;
       setDataLevel(!highPhase);
     }
+  }
+  if (now - lastReportAt >= REPORT_INTERVAL_MS) {
+    lastReportAt = now;
+    Serial.printf("STATUS GPIO43 command=%s ready=%s config=%d drive=%d initial_low=%d\n",
+                  highPhase ? "HIGH" : "LOW", dataReady ? "YES" : "NO",
+                  configCode, driveCode, initialLowCode);
   }
   delay(1);
 }
