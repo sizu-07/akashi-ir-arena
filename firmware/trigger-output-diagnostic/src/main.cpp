@@ -20,6 +20,15 @@ constexpr uint8_t IR_PWM_CHANNEL = 0;
 constexpr uint32_t IR_CARRIER_HZ = 38000;
 constexpr uint8_t IR_DUTY_33_PERCENT = 85;  // 85 / 255
 constexpr rmt_channel_t LED_RMT_CHANNEL = RMT_CHANNEL_1;
+// RMT clock: 80 MHz APB / 2 = 40 MHz, one tick = 25 ns.
+// WS2812B ECO: each bit is 1.25 us; low between frames exceeds 280 us.
+constexpr uint16_t LED_0_HIGH_TICKS = 13;  // 0.325 us
+constexpr uint16_t LED_0_LOW_TICKS = 37;   // 0.925 us
+constexpr uint16_t LED_1_HIGH_TICKS = 26;  // 0.650 us
+constexpr uint16_t LED_1_LOW_TICKS = 24;   // 0.600 us
+constexpr uint16_t LED_RESET_US = 300;
+static_assert(LED_0_HIGH_TICKS + LED_0_LOW_TICKS == 50, "WS2812B zero bit timing");
+static_assert(LED_1_HIGH_TICKS + LED_1_LOW_TICKS == 50, "WS2812B one bit timing");
 
 int rawSw1 = HIGH;
 int stableSw1 = HIGH;
@@ -44,14 +53,14 @@ bool writeLeds(bool on) {
         const bool one = value & (1u << bit);
         auto& item = items[count++];
         item.level0 = 1;
-        item.duration0 = one ? 24 : 12;
+        item.duration0 = one ? LED_1_HIGH_TICKS : LED_0_HIGH_TICKS;
         item.level1 = 0;
-        item.duration1 = one ? 24 : 36;
+        item.duration1 = one ? LED_1_LOW_TICKS : LED_0_LOW_TICKS;
       }
     }
   }
   const esp_err_t result = rmt_write_items(LED_RMT_CHANNEL, items, count, true);
-  delayMicroseconds(100);  // WS2812 reset/latch interval
+  delayMicroseconds(LED_RESET_US);  // Low-level reset/latch interval
   if (result != ESP_OK) Serial.printf("ERROR LED RMT code=%d\n", result);
   return result == ESP_OK;
 }
@@ -102,7 +111,7 @@ void setup() {
   ledcWrite(IR_PWM_CHANNEL, 0);
 
   rmt_config_t led = RMT_DEFAULT_CONFIG_TX(static_cast<gpio_num_t>(LED_PIN), LED_RMT_CHANNEL);
-  led.clk_div = 2;  // 25 ns RMT tick; WS2812 uses 1.2 us per bit here.
+  led.clk_div = 2;  // 25 ns RMT tick; WS2812B ECO uses 1.25 us per bit.
   led.tx_config.idle_output_en = true;
   led.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
   const esp_err_t configResult = rmt_config(&led);
