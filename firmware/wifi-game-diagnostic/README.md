@@ -30,6 +30,14 @@ the same settings. Provisioning restarts the board. The sketch prints no
 password or device key. The existing `tools/provision.py --port COM3 --file
 config/provision/gun-001.json` can send the file.
 
+If the access point accepts Wi-Fi association but does not provide DHCP, the
+diagnostic alone can use a fixed address. Add `staticIp`, `gateway`, and
+`subnet` to the JSON. For example, with a PC wired address of `192.168.137.1/24`,
+use `"staticIp":"192.168.137.2","gateway":"192.168.137.1",` and
+`"subnet":"255.255.255.0"`, after verifying that `.2` is free. These extra
+Preferences keys are read by this diagnostic; the v0.7 production firmware
+currently still requires DHCP.
+
 Success is visible both in the serial output and at `http://localhost:8080/api/state`
 on the PC: `WIFI CONNECTED`, `MQTT CONNECTED`, `GAME HELLO SENT`, increasing
 `desired` and `time_sync` counts, and a `connected=true` player with

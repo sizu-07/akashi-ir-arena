@@ -10,8 +10,15 @@ with open(args.file, encoding='utf-8-sig') as f:
 if config.get('hardwareProfile') != 'xiao-s3-plus-3rx-6led-motor-trigger':
     raise SystemExit('v0.7のhardwareProfileが必要です。PC画面でWi-Fi設定を再作成してください。')
 with serial.Serial(args.port, 115200, timeout=1) as device:
-    time.sleep(2)
-    device.write((json.dumps(config) + '\n').encode())
+    time.sleep(3)
+    device.reset_input_buffer()
+    payload = (json.dumps(config, separators=(',', ':')) + '\n').encode()
+    # USB CDC's receive buffer can overflow when a complete provisioning line
+    # is written in one burst, especially while Wi-Fi is connecting.
+    for offset in range(0, len(payload), 32):
+        device.write(payload[offset:offset + 32])
+        device.flush()
+        time.sleep(0.03)
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         response = device.readline().decode(errors='replace')

@@ -13,11 +13,12 @@
 constexpr int LEGACY_MOTOR_GPIO = 9;
 constexpr int LEGACY_IR_GPIO = 6;
 constexpr uint32_t STATUS_INTERVAL_MS = 2000;
-constexpr uint32_t WIFI_RETRY_MS = 10000;
+constexpr uint32_t WIFI_RETRY_MS = 30000;
 
 Preferences prefs;
 esp_mqtt_client_handle_t mqtt = nullptr;
 String ssid, password, host, id, key, bootId, serialLine;
+String staticIp, staticGateway, staticSubnet;
 uint16_t port = 1883;
 volatile bool mqttConnected = false;
 volatile bool sendHello = false;
@@ -27,6 +28,16 @@ volatile int syncRtt = -1;
 uint32_t lastStatus = 0, lastWifiAttempt = 0, lastTelemetry = 0;
 bool mqttStarted = false;
 bool scanRequested = false;
+
+void wifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  if (event == ARDUINO_EVENT_WIFI_STA_CONNECTED)
+    Serial.println("WIFI ASSOCIATED: waiting for DHCP address");
+  else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
+    Serial.printf("WIFI DISCONNECTED reason=%d\n", info.wifi_sta_disconnected.reason);
+  else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP)
+    Serial.printf("WIFI GOT_IP ip=%s gateway=%s\n",
+                  WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str());
+}
 
 void publish(const char* suffix, JsonDocument& payload, int qos = 1) {
   if (!mqttConnected) return;
@@ -87,6 +98,9 @@ void loadConfig() {
   id = prefs.getString("id", "");
   key = prefs.getString("key", "");
   port = static_cast<uint16_t>(prefs.getUInt("port", 1883));
+  staticIp = prefs.getString("staticIp", "");
+  staticGateway = prefs.getString("staticGateway", "");
+  staticSubnet = prefs.getString("staticSubnet", "");
 }
 
 void acceptProvisioning() {
@@ -115,6 +129,9 @@ void acceptProvisioning() {
     String nextHost = doc["host"] | "";
     String nextId = doc["id"] | "";
     String nextKey = doc["key"] | "";
+    String nextStaticIp = doc["staticIp"] | "";
+    String nextGateway = doc["gateway"] | "";
+    String nextSubnet = doc["subnet"] | "";
     int nextPort = doc["port"] | 1883;
     if (nextSsid.isEmpty() || nextSsid.length() > 32 || nextPassword.length() < 8 ||
         nextPassword.length() > 63 || nextHost.isEmpty() || nextHost.length() > 100 ||
@@ -123,9 +140,20 @@ void acceptProvisioning() {
       Serial.println("PROVISION ERROR required fields or length");
       continue;
     }
+    if (!nextStaticIp.isEmpty()) {
+      IPAddress ipAddress, gatewayAddress, subnetAddress;
+      if (!ipAddress.fromString(nextStaticIp) || !gatewayAddress.fromString(nextGateway) ||
+          !subnetAddress.fromString(nextSubnet)) {
+        Serial.println("PROVISION ERROR static IP fields");
+        continue;
+      }
+    }
     for (const char* field : {"ssid", "password", "host", "id", "key"})
       prefs.putString(field, doc[field].as<const char*>());
     prefs.putUInt("port", nextPort);
+    prefs.putString("staticIp", nextStaticIp);
+    prefs.putString("staticGateway", nextGateway);
+    prefs.putString("staticSubnet", nextSubnet);
     Serial.println("PROVISION SAVED: restarting; credentials are not printed");
     Serial.flush();
     delay(200);
@@ -169,8 +197,19 @@ void setup() {
     Serial.println("CONFIG REQUIRED: send one game provisioning JSON line over USB");
     return;
   }
+  WiFi.onEvent(wifiEvent);
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
+  if (!staticIp.isEmpty()) {
+    IPAddress ipAddress, gatewayAddress, subnetAddress;
+    ipAddress.fromString(staticIp);
+    gatewayAddress.fromString(staticGateway);
+    subnetAddress.fromString(staticSubnet);
+    if (!WiFi.config(ipAddress, gatewayAddress, subnetAddress))
+      Serial.println("WIFI STATIC IP CONFIG FAILED");
+    else
+      Serial.printf("WIFI STATIC IP %s gateway=%s\n", staticIp.c_str(), staticGateway.c_str());
+  }
   WiFi.begin(ssid.c_str(), password.c_str());
   lastWifiAttempt = millis();
   Serial.printf("WIFI CONNECTING ssid=%s\n", ssid.c_str());
@@ -184,8 +223,9 @@ void loop() {
     Serial.println("WIFI SCAN START");
     int count = WiFi.scanNetworks();
     for (int i = 0; i < count; ++i)
-      Serial.printf("WIFI NETWORK ssid=%s channel=%d rssi=%d\n",
-                    WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i));
+      Serial.printf("WIFI NETWORK ssid=%s channel=%d rssi=%d encryption=%d\n",
+                    WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i),
+                    WiFi.encryptionType(i));
     WiFi.scanDelete();
     Serial.printf("WIFI SCAN END count=%d\n", count);
   }
@@ -232,9 +272,10 @@ void loop() {
   }
   if (now - lastStatus >= STATUS_INTERVAL_MS) {
     lastStatus = now;
-    Serial.printf("STATUS configured=%s wifi=%s ip=%s rssi=%d mqtt=%s desired=%lu time_sync=%lu rtt_ms=%d\n",
+    Serial.printf("STATUS configured=%s wifi=%s status_code=%d ip=%s rssi=%d mqtt=%s desired=%lu time_sync=%lu rtt_ms=%d\n",
                   ssid.isEmpty() || host.isEmpty() || id.isEmpty() || key.isEmpty() ? "NO" : "YES",
                   WiFi.status() == WL_CONNECTED ? "CONNECTED" : "OFFLINE",
+                  WiFi.status(),
                   WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "-",
                   WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0,
                   mqttConnected ? "CONNECTED" : "OFFLINE",
