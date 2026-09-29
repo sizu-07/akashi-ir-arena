@@ -1,4 +1,4 @@
-param([string]$Python = 'python',[ValidateSet('xiao_s3_plus','board_diagnostics','limit_diagnostics','trigger_output_diagnostics','led_line_diagnostics')][string]$Environment = 'xiao_s3_plus',[switch]$Upload,[string]$Port)
+param([string]$Python = 'python',[ValidateSet('xiao_s3_plus','board_diagnostics','limit_diagnostics','trigger_output_diagnostics','led_line_diagnostics','wifi_game_diagnostics')][string]$Environment = 'xiao_s3_plus',[switch]$Upload,[string]$Port)
 $ErrorActionPreference='Stop'
 $projectPath = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location $projectPath
@@ -18,6 +18,7 @@ try {
     'limit_diagnostics' { "$drive/firmware/limit-diagnostic" }
     'trigger_output_diagnostics' { "$drive/firmware/trigger-output-diagnostic" }
     'led_line_diagnostics' { "$drive/firmware/led-line-diagnostic" }
+    'wifi_game_diagnostics' { "$drive/firmware/wifi-game-diagnostic" }
     default { "$drive/firmware" }
   }
   $arguments=@('-m','platformio','run','-e',$Environment,'-d',$firmwareDir)
