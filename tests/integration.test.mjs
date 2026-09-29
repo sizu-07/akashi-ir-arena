@@ -9,6 +9,35 @@ test('HTTP authentication, operator lease, CSRF, MQTT auth and ACL',async()=>{co
  const bad=mqtt.connect(`mqtt://127.0.0.1:${app.mqttServer.address().port}`,{clientId:'gun-002',username:'gun-002',password:'wrong',reconnectPeriod:0});await new Promise(resolve=>{bad.once('error',()=>{bad.end(true);resolve();});});
  }finally{if(client)await client.endAsync(true);await app.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+test('実機モーターデモの被弾操作は接続した診断端末へMQTT指示を送り、試合状態を変えない',async()=>{
+ const dir=mkdtempSync(path.join(os.tmpdir(),'arena-motor-demo-'));
+ const config={httpPort:0,mqttPort:0,operatorPin:'12345678',devices:[1,2,3,4].map(n=>({id:`gun-00${n}`,key:`test-key-${n}`,name:`P${n}`,team:n<3?'A':'B',shooterId:n}))};
+ const app=await createApp({config,dataDir:dir,bind:'127.0.0.1'});
+ const base=`http://127.0.0.1:${app.httpServer.address().port}`;
+ let client;
+ try{
+  const login=await fetch(`${base}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:config.operatorPin})});
+  const session=await login.json(),cookie=login.headers.get('set-cookie').split(';')[0];
+  const send=()=>fetch(`${base}/api/action`,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie,'X-CSRF-Token':session.csrf},body:JSON.stringify({commandId:'hit-test-1',action:'motor_demo_hit',id:'gun-001'})});
+  assert.equal((await send()).status,400);
+  client=mqtt.connect(`mqtt://127.0.0.1:${app.mqttServer.address().port}`,{clientId:'gun-001',username:'gun-001',password:'test-key-1',reconnectPeriod:0});
+  await new Promise((resolve,reject)=>{client.once('connect',resolve);client.once('error',reject);});
+  const topic='irgame/v1/device/gun-001';
+  await client.subscribeAsync(`${topic}/command`,{qos:1});
+  await client.publishAsync(`${topic}/hello`,JSON.stringify({boot_id:'motor-test-boot'}),{qos:1});
+  await client.publishAsync(`${topic}/telemetry`,JSON.stringify({boot_id:'motor-test-boot',hardware_profile:'xiao-s3-plus-3rx-6led-motor-trigger',firmware_version:'legacy-motor-demo-1',hardware_ready:false,bench:true,device_time_ms:1,syncRtt:7,demo_shots:1,demo_hits:0}),{qos:1});
+  const before={phase:app.game.s.phase,hp:app.game.player('gun-001').hp};
+  assert.equal(app.game.player('gun-001').demoShots,1);
+  const command=new Promise((resolve,reject)=>{
+   const timer=setTimeout(()=>reject(Error('被弾指示が届きません')),2000);
+   client.on('message',function onMessage(name,raw){const body=JSON.parse(raw);if(name===`${topic}/command`&&body.type==='motor_demo_hit'){clearTimeout(timer);client.off('message',onMessage);resolve(body);}});
+  });
+  assert.equal((await send()).status,200);
+  assert.deepEqual((await command).command_id,'hit-test-1');
+  assert.deepEqual({phase:app.game.s.phase,hp:app.game.player('gun-001').hp},before);
+ }finally{if(client)await client.endAsync(true);await app.close();rmSync(dir,{recursive:true,force:true});}
+});
 test('使用中のHTTPポートではEADDRINUSEを呼出元へ返し、途中起動を残さない',async()=>{const occupied=net.createServer();await new Promise(resolve=>occupied.listen(0,'127.0.0.1',resolve));const dir=mkdtempSync(path.join(os.tmpdir(),'arena-port-test-'));const config={httpPort:occupied.address().port,mqttPort:0,operatorPin:'12345678',devices:[]};
  try {await assert.rejects(createApp({config,dataDir:dir,bind:'127.0.0.1'}),error=>error.code==='EADDRINUSE'&&error.port===config.httpPort);}
  finally{await new Promise(resolve=>occupied.close(resolve));rmSync(dir,{recursive:true,force:true});}

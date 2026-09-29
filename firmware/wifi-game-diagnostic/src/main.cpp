@@ -3,6 +3,7 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <mqtt_client.h>
+#include <esp_timer.h>
 #include "hardware_profile.h"
 
 #if !CONFIG_IDF_TARGET_ESP32S3
@@ -12,13 +13,19 @@
 // 4E legacy PCB only. Never initialize the incompatible v0.7 output profile.
 constexpr int LEGACY_MOTOR_GPIO = 9;
 constexpr int LEGACY_IR_GPIO = 6;
+constexpr int LEGACY_SW1_GPIO = 2;
+constexpr uint32_t SWITCH_DEBOUNCE_MS = 25;
 constexpr uint32_t STATUS_INTERVAL_MS = 2000;
 constexpr uint32_t WIFI_RETRY_MS = 30000;
 
 Preferences prefs;
 esp_mqtt_client_handle_t mqtt = nullptr;
+esp_timer_handle_t motorTimer = nullptr;
+struct HitCommand { char commandId[81]; };
+QueueHandle_t hitCommands = nullptr;
 String ssid, password, host, id, key, bootId, serialLine;
 String staticIp, staticGateway, staticSubnet;
+String lastHitCommand;
 uint16_t port = 1883;
 volatile bool mqttConnected = false;
 volatile bool sendHello = false;
@@ -28,6 +35,63 @@ volatile int syncRtt = -1;
 uint32_t lastStatus = 0, lastWifiAttempt = 0, lastTelemetry = 0;
 bool mqttStarted = false;
 bool scanRequested = false;
+volatile bool motorActive = false;
+uint32_t lastMotorStart = 0, demoShots = 0, demoHits = 0;
+int triggerRaw = HIGH, triggerStable = HIGH;
+uint32_t triggerChangedAt = 0;
+bool triggerArmed = false;
+
+void stopMotor(void* = nullptr) {
+  digitalWrite(LEGACY_MOTOR_GPIO, LOW);
+  motorActive = false;
+}
+
+bool pulseMotor(const char* kind, uint32_t durationMs) {
+  const uint32_t now = millis();
+  if (!motorTimer || motorActive ||
+      (lastMotorStart && now - lastMotorStart < MOTOR_MIN_INTERVAL_MS)) {
+    Serial.printf("MOTOR %s SKIPPED cooldown\n", kind);
+    return false;
+  }
+  lastMotorStart = now;
+  digitalWrite(LEGACY_MOTOR_GPIO, HIGH);
+  motorActive = true;
+  if (esp_timer_start_once(motorTimer, uint64_t(durationMs) * 1000) != ESP_OK) {
+    stopMotor();
+    Serial.printf("MOTOR %s FAILED timer\n", kind);
+    return false;
+  }
+  Serial.printf("MOTOR %s ON duration_ms=%lu\n", kind, static_cast<unsigned long>(durationMs));
+  return true;
+}
+
+void handleTrigger(uint32_t now) {
+  int level = digitalRead(LEGACY_SW1_GPIO);
+  if (level != triggerRaw) {
+    triggerRaw = level;
+    triggerChangedAt = now;
+  }
+  if (level == triggerStable || now - triggerChangedAt < SWITCH_DEBOUNCE_MS) return;
+  triggerStable = level;
+  if (level == HIGH) {
+    triggerArmed = true;
+    Serial.println("SW1 RELEASED");
+  } else if (triggerArmed) {
+    triggerArmed = false;
+    Serial.println("SW1 PRESSED: shot test");
+    if (pulseMotor("SHOT", SHOT_PULSE_MS)) ++demoShots;
+  }
+}
+
+void handleHitCommands() {
+  if (!hitCommands) return;
+  HitCommand command{};
+  while (xQueueReceive(hitCommands, &command, 0) == pdTRUE) {
+    if (lastHitCommand == command.commandId) continue;
+    lastHitCommand = command.commandId;
+    if (pulseMotor("HIT", HIT_PULSE_MS)) ++demoHits;
+  }
+}
 
 void wifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   if (event == ARDUINO_EVENT_WIFI_STA_CONNECTED)
@@ -79,13 +143,23 @@ void mqttEvent(void*, esp_event_base_t, int32_t eventId, void* eventData) {
       }
     } else if (topic.endsWith("/command")) {
       StaticJsonDocument<256> doc;
-      if (!deserializeJson(doc, event->data, event->data_len) &&
-          strcmp(doc["type"] | "", "time_sync") == 0) {
-        uint32_t echo = doc["echo"] | 0;
-        syncRtt = static_cast<int>(millis() - echo);
-        ++syncCount;
-        Serial.printf("GAME TIME_SYNC rtt_ms=%d count=%lu\n", syncRtt,
-                      static_cast<unsigned long>(syncCount));
+      if (!deserializeJson(doc, event->data, event->data_len)) {
+        const char* type = doc["type"] | "";
+        if (strcmp(type, "time_sync") == 0) {
+          uint32_t echo = doc["echo"] | 0;
+          syncRtt = static_cast<int>(millis() - echo);
+          ++syncCount;
+          Serial.printf("GAME TIME_SYNC rtt_ms=%d count=%lu\n", syncRtt,
+                        static_cast<unsigned long>(syncCount));
+        } else if (strcmp(type, "motor_demo_hit") == 0) {
+          const char* commandId = doc["command_id"] | "";
+          size_t length = strlen(commandId);
+          if (length > 0 && length <= 80 && hitCommands) {
+            HitCommand command{};
+            memcpy(command.commandId, commandId, length);
+            xQueueSend(hitCommands, &command, 0);
+          }
+        }
       }
     }
   }
@@ -187,12 +261,21 @@ void setup() {
   pinMode(LEGACY_MOTOR_GPIO, OUTPUT);
   digitalWrite(LEGACY_IR_GPIO, LOW);
   pinMode(LEGACY_IR_GPIO, OUTPUT);
+  pinMode(LEGACY_SW1_GPIO, INPUT_PULLUP);
   Serial.begin(115200);
   delay(800);
+  esp_timer_create_args_t timerArgs{};
+  timerArgs.callback = stopMotor;
+  timerArgs.name = "motor-off";
+  ESP_ERROR_CHECK(esp_timer_create(&timerArgs, &motorTimer));
+  hitCommands = xQueueCreate(4, sizeof(HitCommand));
+  triggerRaw = triggerStable = digitalRead(LEGACY_SW1_GPIO);
+  triggerChangedAt = millis();
+  triggerArmed = triggerStable == HIGH;
   prefs.begin("ir-arena", false);
   loadConfig();
   bootId = String(esp_random(), HEX) + String(esp_random(), HEX);
-  Serial.println("WIFI GAME DIAGNOSTIC: legacy motor and IR held OFF; no LED/IR frames");
+  Serial.println("LEGACY MOTOR DEMO: SW1=shot 60ms; operator hit=180ms; IR/LED OFF");
   if (ssid.isEmpty() || host.isEmpty() || id.isEmpty() || key.isEmpty()) {
     Serial.println("CONFIG REQUIRED: send one game provisioning JSON line over USB");
     return;
@@ -217,6 +300,8 @@ void setup() {
 
 void loop() {
   acceptProvisioning();
+  handleTrigger(millis());
+  handleHitCommands();
   if (scanRequested) {
     scanRequested = false;
     WiFi.mode(WIFI_STA);
@@ -248,7 +333,7 @@ void loop() {
       StaticJsonDocument<256> doc;
       doc["boot_id"] = bootId;
       doc["hardware_profile"] = HARDWARE_PROFILE;
-      doc["firmware_version"] = "wifi-game-diag-1";
+      doc["firmware_version"] = "legacy-motor-demo-1";
       publish("hello", doc);
       Serial.println("GAME HELLO SENT");
       lastTelemetry = 0;
@@ -258,10 +343,12 @@ void loop() {
       StaticJsonDocument<512> doc;
       doc["boot_id"] = bootId;
       doc["hardware_profile"] = HARDWARE_PROFILE;
-      doc["firmware_version"] = "wifi-game-diag-1";
+      doc["firmware_version"] = "legacy-motor-demo-1";
       doc["hardware_ready"] = false;
       doc["bench"] = true;
-      doc["motor_active"] = false;
+      doc["motor_active"] = motorActive;
+      doc["demo_shots"] = demoShots;
+      doc["demo_hits"] = demoHits;
       doc.createNestedObject("rx_frames");
       doc["device_time_ms"] = now;
       doc["syncRtt"] = syncRtt;
@@ -272,7 +359,7 @@ void loop() {
   }
   if (now - lastStatus >= STATUS_INTERVAL_MS) {
     lastStatus = now;
-    Serial.printf("STATUS configured=%s wifi=%s status_code=%d ip=%s rssi=%d mqtt=%s desired=%lu time_sync=%lu rtt_ms=%d\n",
+    Serial.printf("STATUS configured=%s wifi=%s status_code=%d ip=%s rssi=%d mqtt=%s desired=%lu time_sync=%lu rtt_ms=%d motor=%s shots=%lu hits=%lu\n",
                   ssid.isEmpty() || host.isEmpty() || id.isEmpty() || key.isEmpty() ? "NO" : "YES",
                   WiFi.status() == WL_CONNECTED ? "CONNECTED" : "OFFLINE",
                   WiFi.status(),
@@ -280,7 +367,10 @@ void loop() {
                   WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0,
                   mqttConnected ? "CONNECTED" : "OFFLINE",
                   static_cast<unsigned long>(desiredCount),
-                  static_cast<unsigned long>(syncCount), syncRtt);
+                  static_cast<unsigned long>(syncCount), syncRtt,
+                  motorActive ? "ON" : "OFF",
+                  static_cast<unsigned long>(demoShots),
+                  static_cast<unsigned long>(demoHits));
   }
   delay(10);
 }

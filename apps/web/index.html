@@ -243,6 +243,16 @@
           </p>
         </section>
 
+        <section id="motorDemoPanel" class="panel" hidden>
+          <h2>実機モーター動作確認</h2>
+          <p>基板のSW1を押すと射撃の振動を60 ms、下のボタンを押すと被弾の振動を180 ms出します。HP・スコア・赤外線・LEDは動かしません。</p>
+          <div class="settings">
+            <label>対象端末 <select id="motorDemoTarget"></select></label>
+            <button id="motorDemoHit">被弾振動を送信</button>
+          </div>
+          <p id="motorDemoStatus">端末の接続を確認しています。</p>
+        </section>
+
         <details id="provisionPanel" class="panel" hidden>
           <summary>銃のWi-Fi設定を作成（メインPC限定）</summary>
           <div class="details-body">

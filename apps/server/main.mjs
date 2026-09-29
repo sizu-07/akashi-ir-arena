@@ -120,6 +120,15 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
           case 'video':if(!existsSync(path.join(root,'assets/rules.webm')))throw Error('assets/rules.webmがありません');game.controlVideo(b.operation);break;
           case 'demo_hit':if(!demo)throw Error('デモ専用操作');simulators?.hit(b.shooter,b.victim,b.receiver??'rx1');break;
           case 'demo_revive':if(!demo)throw Error('デモ専用操作');simulators?.revive(b.shooter,b.victim);break;
+          case 'motor_demo_hit':{
+            if(demo)throw Error('実機モーターデモ専用操作');
+            const player=game.player(b.id);
+            if(!player.connected||player.firmwareVersion!=='legacy-motor-demo-1'||!player.bench)
+              throw Error('対象端末は実機モーターデモに接続していません');
+            publish(player.id,'command',{type:'motor_demo_hit',command_id:b.commandId,server_time_ms:Date.now()});
+            operation={notice:`${player.name}へ被弾振動を送信しました。端末の被弾回数を確認してください。`};
+            break;
+          }
           default:throw Error('未知の操作');
         }
         db.log({at:Date.now(),gameId:game.s.id,type:'operator_action',operator:s.id,action:b.action,reason:b.reason});const result={ok:true,commandId:b.commandId,...operation};commands.set(key,result);if(commands.size>2000)commands.delete(commands.keys().next().value);db.save(game.s);sync();return reply(res,200,result);

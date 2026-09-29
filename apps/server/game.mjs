@@ -22,7 +22,7 @@ export class Game {
       this.s.players=devices.map(d=>{const {ammo,reloadUntil,reloadRemaining,...old}=saved.players.find(p=>p.id===d.id)??{};return {...old,...d,key:undefined,connected:false,armed:false,lastSeen:0,ack:null,bootId:null,lastShot:-1e15};});
       this.record('recovery',{phase:this.s.phase});
     }
-    for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,rxFrames:{},lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
+    for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,demoShots:null,demoHits:null,rxFrames:{},lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
   }
   record(type,payload){const at=this.now();this.s.eventNo=++this.events;this.log({n:this.events,at,gameId:this.s.id,type,...payload});
     const kind=type==='shot'?'shot':type==='hit'?(payload.hp===0?'defeat':'hit'):type==='revive'?'revive':type==='finish'?'match-end':null;
@@ -74,6 +74,8 @@ export class Game {
     p.hardwareProfile=typeof data.hardware_profile==='string'?data.hardware_profile.slice(0,80):null;
     p.hardwareReady=data.hardware_ready===true;p.firmwareVersion=typeof data.firmware_version==='string'?data.firmware_version.slice(0,24):null;
     p.bench=data.bench===true;p.lowBattery=data.lowBattery===true;p.motorActive=data.motor_active===true;
+    p.demoShots=Number.isSafeInteger(data.demo_shots)&&data.demo_shots>=0?data.demo_shots:null;
+    p.demoHits=Number.isSafeInteger(data.demo_hits)&&data.demo_hits>=0?data.demo_hits:null;
     p.rxFrames=Object.fromEntries(receiverIds.map(k=>[k,Number.isSafeInteger(data.rx_frames?.[k])&&data.rx_frames[k]>=0?data.rx_frames[k]:null]));
     if(!deviceReady(p)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause(p.lowBattery?'電池低下':'端末構成・机上モードを確認');}
   ack(id,payload){const p=this.player(id);if(this.s.phase==='COUNTDOWN'&&deviceReady(p)&&payload.command_id===this.s.commandId&&payload.result==='ok'){p.ack=this.s.commandId;this.s.startCommitted=this.s.players.every(p=>p.ack===this.s.commandId);}}
