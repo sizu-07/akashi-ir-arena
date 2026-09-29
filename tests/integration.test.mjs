@@ -38,6 +38,49 @@ test('実機モーターデモの被弾操作は接続した診断端末へMQTT�
   assert.deepEqual({phase:app.game.s.phase,hp:app.game.player('gun-001').hp},before);
  }finally{if(client)await client.endAsync(true);await app.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+test('整理券連携中でも接続済み診断端末1台で動作確認を開始できる',async()=>{
+ const dir=mkdtempSync(path.join(os.tmpdir(),'arena-partial-test-'));
+ const ticketEvents=[];
+ const ticketServer=http.createServer((req,res)=>{if(req.url==='/api/game/events')ticketEvents.push(req.url);res.writeHead(200,{'Content-Type':'application/json'});res.end('{"ok":true}');});
+ await new Promise(resolve=>ticketServer.listen(0,'127.0.0.1',resolve));
+ const config={httpPort:0,mqttPort:0,operatorPin:'12345678',ticketServerUrl:`http://127.0.0.1:${ticketServer.address().port}`,ticketServerApiKey:'test-key',devices:[1,2,3,4].map(n=>({id:`gun-00${n}`,key:`test-key-${n}`,name:`P${n}`,team:n<3?'A':'B',shooterId:n}))};
+ let app,client,display,telemetryTimer;
+ try{
+  app=await createApp({config,dataDir:dir,bind:'127.0.0.1'});
+  const base=`http://127.0.0.1:${app.httpServer.address().port}`;
+  const login=await fetch(`${base}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:config.operatorPin})});
+  const session=await login.json(),cookie=login.headers.get('set-cookie').split(';')[0];
+  const action=async(name,extra={})=>fetch(`${base}/api/action`,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie,'X-CSRF-Token':session.csrf},body:JSON.stringify({commandId:`${name}-${Date.now()}`,action:name,...extra})});
+  display=new WebSocket(base.replace('http:','ws:')+'/ws/display',{headers:{Origin:base}});
+  await new Promise((resolve,reject)=>{display.once('open',resolve);display.once('error',reject);});
+  display.send(JSON.stringify({type:'ready',ready:true}));
+  client=mqtt.connect(`mqtt://127.0.0.1:${app.mqttServer.address().port}`,{clientId:'gun-001',username:'gun-001',password:'test-key-1',reconnectPeriod:0});
+  await new Promise((resolve,reject)=>{client.once('connect',resolve);client.once('error',reject);});
+  const topic='irgame/v1/device/gun-001';
+  await client.publishAsync(`${topic}/hello`,JSON.stringify({boot_id:'bench-boot'}),{qos:1});
+  const telemetry=()=>client.publish(`${topic}/telemetry`,JSON.stringify({boot_id:'bench-boot',hardware_profile:'xiao-s3-plus-3rx-6led-motor-trigger',firmware_version:'legacy-motor-demo-1',hardware_ready:false,bench:true,device_time_ms:1,syncRtt:7,lowBattery:false}),{qos:1});
+  telemetry();telemetryTimer=setInterval(telemetry,700);
+  await new Promise(resolve=>setTimeout(resolve,150));
+  assert.equal(app.game.player('gun-001').connected,true);
+  const start=await action('start',{testMode:true});
+  assert.equal(start.status,200,await start.text());
+  assert.deepEqual(app.game.s.participantIds,['gun-001']);
+  await new Promise((resolve,reject)=>{const deadline=Date.now()+8500;const timer=setInterval(()=>{if(app.game.s.phase==='ACTIVE'){clearInterval(timer);resolve();}else if(app.game.s.phase==='PAUSED'||Date.now()>deadline){clearInterval(timer);reject(Error(`開始に失敗しました: ${app.game.s.phase}`));}},50);});
+  assert.equal(app.game.player('gun-001').armed,false);
+  assert.equal((await action('finish')).status,200);
+  assert.equal(app.game.s.winner,null);
+  await new Promise(resolve=>setTimeout(resolve,300));
+  assert.deepEqual(ticketEvents,[]);
+ }finally{
+  if(telemetryTimer)clearInterval(telemetryTimer);
+  if(client)await client.endAsync(true);
+  if(display)display.close();
+  if(app)await app.close();
+  await new Promise(resolve=>ticketServer.close(resolve));
+  rmSync(dir,{recursive:true,force:true});
+ }
+});
 test('使用中のHTTPポートではEADDRINUSEを呼出元へ返し、途中起動を残さない',async()=>{const occupied=net.createServer();await new Promise(resolve=>occupied.listen(0,'127.0.0.1',resolve));const dir=mkdtempSync(path.join(os.tmpdir(),'arena-port-test-'));const config={httpPort:occupied.address().port,mqttPort:0,operatorPin:'12345678',devices:[]};
  try {await assert.rejects(createApp({config,dataDir:dir,bind:'127.0.0.1'}),error=>error.code==='EADDRINUSE'&&error.port===config.httpPort);}
  finally{await new Promise(resolve=>occupied.close(resolve));rmSync(dir,{recursive:true,force:true});}

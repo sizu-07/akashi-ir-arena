@@ -13,13 +13,15 @@ export function rulesOf(input={}) {
 export class Game {
   constructor(devices,{now=Date.now,log=()=>{},saved=null}={}) {
     this.now=now; this.log=log; this.pending=[]; this.shots=[]; this.revives=new Map(); this.seen=new Map(); this.soundEvents=[]; this.events=saved?.eventNo??0;this.defaultPlayerNames=devices.map(device=>device.name);
-    this.s={id:randomUUID(),generation:1,phase:'LOBBY',rules:{...defaults},remainingMs:300000,score:{A:0,B:0},media:'score',winner:null,
+    this.s={id:randomUUID(),generation:1,phase:'LOBBY',rules:{...defaults},remainingMs:300000,score:{A:0,B:0},media:'score',winner:null,testMode:false,participantIds:[],
       players:devices.map(d=>({id:d.id,name:d.name,team:d.team,shooterId:d.shooterId,hp:100,connected:false,armed:false,lastSeen:0,bootId:null,ack:null,lastShot:-1e15,invUntil:0,rssi:null,battery:null,syncRtt:null}))};
     if(saved?.players?.length===4) {
       this.s={...saved,phase:['ACTIVE','COUNTDOWN','PAUSED'].includes(saved.phase)?'PAUSED':saved.phase,generation:saved.generation+1};
       const legacy=!Number.isInteger(saved.rules?.reviveMs);
       this.s.rules=rulesOf(legacy?{...saved.rules,damage:5,fireMs:1000,reviveMs:3000,reviveHp:Math.min(50,saved.rules?.hp??100)}:saved.rules);
       this.s.players=devices.map(d=>{const {ammo,reloadUntil,reloadRemaining,...old}=saved.players.find(p=>p.id===d.id)??{};return {...old,...d,key:undefined,connected:false,armed:false,lastSeen:0,ack:null,bootId:null,lastShot:-1e15};});
+      this.s.testMode= saved.testMode===true;
+      this.s.participantIds=Array.isArray(saved.participantIds)?saved.participantIds:devices.map(d=>d.id);
       this.record('recovery',{phase:this.s.phase});
     }
     for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,demoShots:null,demoHits:null,rxFrames:{},lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
@@ -29,6 +31,11 @@ export class Game {
     if(kind){this.soundEvents.push({n:this.events,at,kind});if(this.soundEvents.length>64)this.soundEvents.shift();}
   }
   player(id){const p=this.s.players.find(p=>p.id===id);if(!p)throw Error('未登録端末');return p;}
+  participants(){return this.s.players.filter(p=>this.s.participantIds.includes(p.id));}
+  isParticipant(id){return this.s.participantIds.includes(id);}
+  testReady(p){return deviceReady(p)||(p.firmwareVersion==='legacy-motor-demo-1'&&p.bench&&p.hardwareProfile===hardware.profile&&!p.lowBattery);}
+  readyForMatch(p){return this.s.testMode?this.testReady(p):deviceReady(p);}
+  current(p){return p.connected&&this.now()-p.lastSeen<=2500&&p.syncRtt!==null&&p.syncRtt<=400;}
   view(){return structuredClone({...this.s,serverMs:this.now(),soundEvents:this.soundEvents});}
   setMedia(mode) {
     if (!['score', 'rules', 'video', 'black'].includes(mode)) throw Error('映像モード不正');
@@ -51,24 +58,30 @@ export class Game {
   }
   setPlayerNames(names=[]){for(const [index,player] of this.s.players.entries()){const name=String(names[index]??'').trim();player.name=name&&name.length<=20?name:this.defaultPlayerNames[index];}this.record('player_names_updated',{names:this.s.players.map(player=>player.name)});}
   reset(rules){if(!['LOBBY','FINISHED'].includes(this.s.phase))throw Error('終了してから新試合を作成してください');
-    const r=rulesOf(rules);this.s.id=randomUUID();this.s.generation++;this.s.phase='LOBBY';this.s.rules=r;this.s.remainingMs=r.durationSec*1000;this.s.score={A:0,B:0};this.s.winner=null;this.s.media='score';this.s.videoPlayback=null;
+    const r=rulesOf(rules);this.s.id=randomUUID();this.s.generation++;this.s.phase='LOBBY';this.s.rules=r;this.s.remainingMs=r.durationSec*1000;this.s.score={A:0,B:0};this.s.winner=null;this.s.testMode=false;this.s.participantIds=[];this.s.media='score';this.s.videoPlayback=null;
     for(const p of this.s.players)Object.assign(p,{hp:r.hp,armed:false,ack:null,lastShot:-1e15,deadAt:0,invUntil:0,reviveProgressMs:0});
     for(const p of this.s.players){p.damageFeedback=null;p.lastReceiver=null;}
     this.shots=[];this.pending=[];this.revives.clear();this.seen.clear();this.soundEvents=[];this.record('new_game',{rules:r});}
-  start(displayReady){if(!['LOBBY','PAUSED'].includes(this.s.phase))throw Error('待機・停止中のみ開始できます');
+  start(displayReady,{testMode=false}={}){if(!['LOBBY','PAUSED'].includes(this.s.phase))throw Error('待機・停止中のみ開始できます');
     if(!displayReady)throw Error('投影画面で「表示を準備」を押してください');
-    if(this.s.players.some(p=>!p.connected||this.now()-p.lastSeen>2500||p.syncRtt===null||p.syncRtt>400))throw Error('4台の接続・時刻同期を確認してください');
-    if(this.s.players.some(p=>!deviceReady(p)))throw Error('4台のv0.7対応・通常モード・電池状態を確認してください');
-    this.s.generation++;this.s.phase='COUNTDOWN';this.s.startAt=this.now()+countdownDurationMs;this.s.countdownAudioStartAt=this.s.startAt-countdownDurationMs;this.s.commandId=randomUUID();this.s.startCommitted=false;this.s.media='score';this.s.videoPlayback=null;
-    for(const p of this.s.players){p.ack=null;p.armed=false;p.damageFeedback=null;}this.record('countdown',{startAt:this.s.startAt,commandId:this.s.commandId});}
+    const resuming=this.s.phase==='PAUSED';
+    const mode=resuming?this.s.testMode:testMode===true;
+    const selected=resuming?this.participants():mode?this.s.players.filter(p=>p.connected):this.s.players;
+    if(!selected.length)throw Error('接続・時刻同期した端末が1台以上必要です');
+    if(!mode&&selected.length!==4)throw Error('通常試合は4台必要です');
+    if(selected.some(p=>!this.current(p)))throw Error('参加端末の接続・時刻同期を確認してください');
+    if(selected.some(p=>mode?!this.testReady(p):!deviceReady(p)))throw Error(mode?'参加端末の構成・電池状態を確認してください':'4台のv0.7対応・通常モード・電池状態を確認してください');
+    this.s.testMode=mode;this.s.participantIds=selected.map(p=>p.id);
+    this.s.generation++;this.s.phase='COUNTDOWN';this.s.startAt=this.now()+countdownDurationMs;this.s.countdownAudioStartAt=this.s.startAt-countdownDurationMs;this.s.commandId=randomUUID();this.s.startCommitted=selected.every(p=>!deviceReady(p));this.s.media='score';this.s.videoPlayback=null;
+    for(const p of this.s.players){p.ack=null;p.armed=false;p.damageFeedback=null;}this.record('countdown',{startAt:this.s.startAt,commandId:this.s.commandId,testMode:mode,participantIds:this.s.participantIds});}
   pause(reason='operator'){if(this.s.phase==='ACTIVE')this.s.remainingMs=Math.max(0,this.s.endAt-this.now());
     if(['ACTIVE','COUNTDOWN'].includes(this.s.phase)){this.s.phase='PAUSED';this.s.generation++;this.s.startCommitted=false;for(const p of this.s.players){p.armed=false;p.reviveProgressMs=0;}this.pending=[];this.shots=[];this.revives.clear();this.record('pause',{reason});}}
   finish(reason='operator'){if(this.s.phase==='FINISHED')return;if(this.s.phase==='ACTIVE')this.s.remainingMs=Math.max(0,this.s.endAt-this.now());this.s.phase='FINISHED';this.s.generation++;for(const p of this.s.players)p.armed=false;
-    const hp=t=>this.s.players.filter(p=>p.team===t).reduce((a,p)=>a+p.hp,0);const a=this.s.score.A,b=this.s.score.B;this.s.winner=a!==b?(a>b?'A':'B'):(hp('A')===hp('B')?'DRAW':hp('A')>hp('B')?'A':'B');this.pending=[];this.shots=[];this.revives.clear();for(const p of this.s.players)p.reviveProgressMs=0;this.record('finish',{reason,winner:this.s.winner});}
+    const hp=t=>this.s.players.filter(p=>p.team===t).reduce((a,p)=>a+p.hp,0);const a=this.s.score.A,b=this.s.score.B;this.s.winner=this.s.testMode?null:a!==b?(a>b?'A':'B'):(hp('A')===hp('B')?'DRAW':hp('A')>hp('B')?'A':'B');this.pending=[];this.shots=[];this.revives.clear();for(const p of this.s.players)p.reviveProgressMs=0;this.record('finish',{reason,winner:this.s.winner});}
   correct(id,hp,reason){if(!reason?.trim()||!Number.isInteger(hp)||hp<0||hp>this.s.rules.hp)throw Error('補正理由と範囲内のHPが必要です');
     if(this.s.phase!=='PAUSED'&&this.s.phase!=='LOBBY')throw Error('HP補正は待機・一時停止中のみ可能です');const p=this.player(id);const before=p.hp;p.hp=hp;p.reviveProgressMs=0;this.revives.delete(id);this.record('hp_correction',{deviceId:id,before,after:hp,reason});}
   hello(id,bootId){const p=this.player(id);if(typeof bootId!=='string'||bootId.length>80)throw Error('boot_id不正');
-    if(p.bootId!==bootId){p.armed=false;p.syncRtt=null;p.hardwareReady=false;p.hardwareProfile=null;p.damageFeedback=null;if(['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause('端末再起動');}p.bootId=bootId;p.connected=true;p.lastSeen=this.now();}
+    if(p.bootId!==bootId){p.armed=false;p.syncRtt=null;p.hardwareReady=false;p.hardwareProfile=null;p.damageFeedback=null;if(this.isParticipant(id)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause('端末再起動');}p.bootId=bootId;p.connected=true;p.lastSeen=this.now();}
   heartbeat(id,data){const p=this.player(id);p.connected=true;p.lastSeen=this.now();p.battery=Number.isFinite(data.battery)?data.battery:null;p.rssi=data.rssi??null;
     p.syncRtt=Number.isFinite(data.syncRtt)&&data.syncRtt>=0?data.syncRtt:null;
     p.hardwareProfile=typeof data.hardware_profile==='string'?data.hardware_profile.slice(0,80):null;
@@ -77,8 +90,8 @@ export class Game {
     p.demoShots=Number.isSafeInteger(data.demo_shots)&&data.demo_shots>=0?data.demo_shots:null;
     p.demoHits=Number.isSafeInteger(data.demo_hits)&&data.demo_hits>=0?data.demo_hits:null;
     p.rxFrames=Object.fromEntries(receiverIds.map(k=>[k,Number.isSafeInteger(data.rx_frames?.[k])&&data.rx_frames[k]>=0?data.rx_frames[k]:null]));
-    if(!deviceReady(p)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause(p.lowBattery?'電池低下':'端末構成・机上モードを確認');}
-  ack(id,payload){const p=this.player(id);if(this.s.phase==='COUNTDOWN'&&deviceReady(p)&&payload.command_id===this.s.commandId&&payload.result==='ok'){p.ack=this.s.commandId;this.s.startCommitted=this.s.players.every(p=>p.ack===this.s.commandId);}}
+    if(this.isParticipant(id)&&!this.readyForMatch(p)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause(p.lowBattery?'電池低下':'端末構成・机上モードを確認');}
+  ack(id,payload){const p=this.player(id);if(this.s.phase==='COUNTDOWN'&&this.isParticipant(id)&&deviceReady(p)&&payload.command_id===this.s.commandId&&payload.result==='ok'){p.ack=this.s.commandId;this.s.startCommitted=this.participants().every(p=>!deviceReady(p)||p.ack===this.s.commandId);}}
   event(id,m){this.tick();const p=this.player(id),t=this.now();
     if(!m||m.device_id!==id||m.boot_id!==p.bootId||typeof m.message_id!=='string'||m.message_id.length>160||!Number.isSafeInteger(m.seq))return {ok:false,reason:'envelope'};
     if(m.game_id!==this.s.id||m.game_generation!==this.s.generation)return {ok:false,reason:'old_game'};
@@ -143,10 +156,10 @@ export class Game {
   }
   flushPending(){this.pending=this.pending.filter(h=>{const r=this.hit(h);if(r.reason!=='await_shot'){this.record('candidate_result',{messageId:h.m.message_id,...r});return false;}if(this.now()>h.expires){this.record('candidate_result',{messageId:h.m.message_id,ok:false,reason:'shot_timeout'});return false;}return true;});}
   tick(){const t=this.now();
-    for(const p of this.s.players)if(p.connected&&t-p.lastSeen>3000){p.connected=false;p.armed=false;if(this.s.phase==='ACTIVE')this.pause('端末通信断');}
+    for(const p of this.s.players)if(p.connected&&t-p.lastSeen>3000){p.connected=false;p.armed=false;if(this.isParticipant(p.id)&&this.s.phase==='ACTIVE')this.pause('端末通信断');}
     if(this.s.phase==='COUNTDOWN'){
-      if(t>=this.s.startAt-500&&this.s.players.some(p=>!p.connected||t-p.lastSeen>2500||!deviceReady(p)||p.ack!==this.s.commandId))this.pause('開始ACK未完了');
-      else if(t>=this.s.startAt){this.s.phase='ACTIVE';this.s.endAt=this.s.startAt+this.s.remainingMs;for(const p of this.s.players)p.armed=true;this.record('start',{});}
+      if(t>=this.s.startAt-500&&this.participants().some(p=>!this.current(p)||!this.readyForMatch(p)||(deviceReady(p)&&p.ack!==this.s.commandId)))this.pause('参加端末の開始準備未完了');
+      else if(t>=this.s.startAt){this.s.phase='ACTIVE';this.s.endAt=this.s.startAt+this.s.remainingMs;for(const p of this.s.players)p.armed=this.isParticipant(p.id)&&deviceReady(p);this.record('start',{testMode:this.s.testMode,participantIds:this.s.participantIds});}
     }
     if(this.s.phase==='ACTIVE'){this.s.remainingMs=Math.max(0,this.s.endAt-t);this.flushPending();if(!this.s.remainingMs)this.finish('time');}
     this.shots=this.shots.filter(s=>t-s.received<1200||s.holdUntil>t);

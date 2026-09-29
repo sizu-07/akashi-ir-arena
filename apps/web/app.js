@@ -135,7 +135,8 @@ function disable() {
   $('takeover').disabled = pending || !connected;
   $('syncTicketMembers').disabled = locked || !state?.ticketBridge?.enabled || state?.phase !== 'LOBBY';
   $('newMatch').disabled = locked || !['LOBBY', 'FINISHED'].includes(state?.phase);
-  document.querySelector('[data-action=start]').disabled = locked || !['LOBBY', 'PAUSED'].includes(state?.phase) || (state?.phase === 'LOBBY' && state?.ticketBridge?.enabled && !state.ticketBridge.membersLoaded);
+  $('testMode').disabled = locked || state?.phase !== 'LOBBY';
+  document.querySelector('[data-action=start]').disabled = locked || !['LOBBY', 'PAUSED'].includes(state?.phase) || (state?.phase === 'LOBBY' && !$('testMode').checked && state?.ticketBridge?.enabled && !state.ticketBridge.membersLoaded);
   document.querySelector('[data-action=pause]').disabled = locked || !['COUNTDOWN', 'ACTIVE'].includes(state?.phase);
   document.querySelector('[data-action=finish]').disabled = locked || state?.phase === 'FINISHED';
   $('rulesForm').querySelector('button').disabled = locked || !['LOBBY', 'FINISHED'].includes(state?.phase);
@@ -165,13 +166,14 @@ function render() {
   $('role').textContent = state.owner === sessionId ? '主操作端末' : '閲覧専用';
 
   const connectedPlayers = state.players.filter((player) => player.connected).length;
+  if (state.phase !== 'LOBBY') $('testMode').checked = state.testMode;
   $('readiness').textContent =
     `投影: ${state.displayReady ? '準備完了' : '準備が必要'} ／ ` +
     `接続: ${connectedPlayers}/4 ／ ` +
     `整理券: ${!state.ticketBridge?.enabled ? '未設定' : state.ticketBridge.connected ? '同期済み' : `未同期（再送待ち${state.ticketBridge.pending}件）`} ／ ` +
     `メンバー: ${!state.ticketBridge?.enabled ? '手動名' : state.ticketBridge.membersLoaded ? '反映済み' : '未反映'}`;
   $('syncTicketMembers').textContent = state.ticketBridge?.membersLoaded ? '整理券メンバーを更新' : '整理券メンバーを反映';
-  document.querySelector('[data-action=start]').textContent = state.phase === 'PAUSED' ? '試合を再開' : state.phase === 'COUNTDOWN' ? '開始カウントダウン中' : '試合を開始';
+  document.querySelector('[data-action=start]').textContent = state.phase === 'PAUSED' ? state.testMode ? '動作確認を再開' : '試合を再開' : state.phase === 'COUNTDOWN' ? '開始カウントダウン中' : $('testMode').checked ? '動作確認を開始' : '試合を開始';
   const hints = {
     LOBBY: state.ticketBridge?.enabled && !state.ticketBridge.membersLoaded ? '整理券メンバーを反映し、参加者の名前を確認してください。' : '参加者・端末を確認し、準備が整ったら「試合を開始」を押してください。',
     COUNTDOWN: '開始カウントダウン中です。異常があれば「一時停止」を押してください。',
@@ -182,7 +184,8 @@ function render() {
   $('nextStep').textContent = hints[state.phase];
   if (['LOBBY', 'PAUSED'].includes(state.phase)) {
     if (!state.displayReady) $('nextStep').textContent = '「投影画面を開く」から「表示を準備」を押してください。';
-    else if (connectedPlayers < 4) $('nextStep').textContent = `端末が${connectedPlayers}/4台接続されています。4台の接続を確認してください。`;
+    else if ($('testMode').checked || state.testMode) $('nextStep').textContent = `接続中の${connectedPlayers}台で動作確認します。未接続の端末は参加しません。`;
+    else if (connectedPlayers < 4) $('nextStep').textContent = `端末が${connectedPlayers}/4台接続されています。通常試合には4台必要です。`;
   }
   document.querySelectorAll('[data-media]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.media === state.media)));
 
@@ -286,9 +289,10 @@ document.querySelectorAll('[data-action]').forEach((button) => {
       return;
     }
 
-    await action(button.dataset.action);
+    await action(button.dataset.action, button.dataset.action === 'start' ? {testMode: $('testMode').checked} : {});
   });
 });
+$('testMode').onchange = () => { if (state) render(); };
 
 document.querySelectorAll('[data-media]').forEach((button) => {
   button.onclick = guarded(() => action('media', {mode: button.dataset.media}));

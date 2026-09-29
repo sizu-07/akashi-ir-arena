@@ -93,6 +93,7 @@ export function createTicketBridge({url, apiKey, dataDir, log = () => {}} = {}) 
       const phase = game.phase;
       if (previousPhase === null) { previousPhase = phase; return; }
       if (phase === previousPhase) return;
+      if (game.testMode) { previousPhase = phase; return; }
       if (phase === 'ACTIVE') enqueue(previousPhase === 'PAUSED' ? 'GAME_RESUMED' : 'GAME_STARTED', game);
       else if (phase === 'PAUSED' && ['ACTIVE', 'COUNTDOWN'].includes(previousPhase)) enqueue('GAME_PAUSED', game);
       else if (phase === 'FINISHED' && previousPhase !== 'FINISHED') enqueue('GAME_ENDED', game);

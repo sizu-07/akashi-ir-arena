@@ -668,6 +668,32 @@ test('対象枠が未確定のゲームイベントを送信せず、古い不�
   }
 });
 
+test('動作確認モードは整理券枠があっても試合イベントを送信しない', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-bench-test-'));
+  const received = [];
+  const server = (await import('node:http')).createServer(async (request, response) => {
+    if (request.method === 'POST' && request.url === '/api/game/events') received.push(request.url);
+    response.writeHead(200, {'Content-Type': 'application/json'});
+    response.end(request.url === '/api/game/current-round'
+      ? JSON.stringify({roundId: 'round-1', playerNicknames: ['A', 'B', 'C', 'D'], ready: true})
+      : '{"ok":true}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const bridge = createTicketBridge({url: `http://127.0.0.1:${server.address().port}`, apiKey: 'test-key', dataDir: dir});
+  try {
+    await bridge.loadPlayerNicknames();
+    for (const phase of ['LOBBY', 'COUNTDOWN', 'ACTIVE', 'PAUSED', 'COUNTDOWN', 'ACTIVE', 'FINISHED']) {
+      bridge.observe({id: 'bench-game', phase, testMode: true});
+    }
+    await bridge.close();
+    assert.deepEqual(received, []);
+    assert.equal(bridge.pending, 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
 test('整理券の参加者名と対象枠をゲーム側へ連携する', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-player-name-test-'));
   const received = [];

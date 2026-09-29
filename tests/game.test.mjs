@@ -115,6 +115,42 @@ test('start needs projector and four current devices; expired game ranks score t
   f.g.player('gun-003').hp=95;f.advance(300001);assert.equal(f.g.s.phase,'FINISHED');assert.equal(f.g.s.winner,'A');
 });
 
+test('one connected motor demo board can run a test match without other boards',()=>{
+  let now=100000;
+  const g=new Game(devices,{now:()=>now});
+  const bench={...telemetry,hardware_ready:false,bench:true,firmware_version:'legacy-motor-demo-1'};
+  g.hello('gun-001','bench-boot');g.heartbeat('gun-001',bench);
+  assert.throws(()=>g.start(true),/接続・時刻同期/);
+  assert.throws(()=>g.start(false,{testMode:true}),/投影画面/);
+  g.start(true,{testMode:true});
+  assert.equal(g.s.phase,'COUNTDOWN');
+  assert.deepEqual(g.s.participantIds,['gun-001']);
+  assert.equal(g.s.startCommitted,true);
+  now+=7010;g.heartbeat('gun-001',bench);g.tick();
+  assert.equal(g.s.phase,'ACTIVE');
+  assert.equal(g.s.players.every(p=>!p.armed),true);
+  g.hello('gun-002','late-boot');g.heartbeat('gun-002',telemetry);
+  now+=3500;g.heartbeat('gun-001',bench);g.tick();
+  assert.equal(g.s.phase,'ACTIVE');
+  assert.equal(g.player('gun-002').connected,false);
+  now+=3500;g.tick();
+  assert.equal(g.s.phase,'PAUSED');
+  g.heartbeat('gun-001',bench);g.start(true);
+  assert.deepEqual(g.s.participantIds,['gun-001']);
+  g.finish();assert.equal(g.s.winner,null);
+  g.reset();assert.equal(g.s.testMode,false);assert.deepEqual(g.s.participantIds,[]);
+});
+
+test('test match still waits for real participants to acknowledge the start',()=>{
+  let now=100000;
+  const g=new Game(devices,{now:()=>now});
+  g.hello('gun-001','boot');g.heartbeat('gun-001',telemetry);
+  g.start(true,{testMode:true});
+  assert.equal(g.s.startCommitted,false);
+  now+=6600;g.heartbeat('gun-001',telemetry);g.tick();
+  assert.equal(g.s.phase,'PAUSED');
+});
+
 test('saved v0.6 rounds migrate to v0.7 rules without old ammo state',()=>{
   const f=fixture();const saved=f.g.view();saved.rules={hp:100,damage:25,durationSec:300,magazine:30,fireMs:200,reloadMs:2000,invulnerableMs:300,friendlyFire:false};
   for(const p of saved.players){p.ammo=30;p.reloadUntil=0;}

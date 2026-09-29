@@ -331,7 +331,7 @@ function createPlayer(player, index) {
 
 function renderPlayers() {
   // Retain the cards between 100 ms clock updates so damage animations can finish.
-  const players = [...state.players].sort((a, b) =>
+  const players = state.players.filter((player) => !state.testMode || state.participantIds?.includes(player.id)).sort((a, b) =>
     a.team.localeCompare(b.team),
   );
   const ids = new Set(players.map((player) => player.id));
@@ -407,11 +407,11 @@ function render() {
     connectionLost
       ? 'PCサーバーとの接続が切れました'
       : mediaError ||
-          `${state.demo ? 'シミュレーター / ' : ''}${ready ? '表示準備完了' : '表示未準備'}${effectErrors.size ? ` / 効果音の読込失敗: ${[...effectErrors].join('、')}` : ''}`,
+          `${state.demo ? 'シミュレーター / ' : ''}${state.testMode ? '動作確認 / ' : ''}${ready ? '表示準備完了' : '表示未準備'}${effectErrors.size ? ` / 効果音の読込失敗: ${[...effectErrors].join('、')}` : ''}`,
   );
   $('pair').hidden = ['ACTIVE', 'COUNTDOWN'].includes(state.phase);
   if ($('pair').hidden) $('pair').open = false;
-  setText('phase', connectionLost ? '接続切断' : phaseNames[state.phase]);
+  setText('phase', connectionLost ? '接続切断' : state.testMode && state.phase === 'ACTIVE' ? '動作確認中' : state.testMode && state.phase === 'FINISHED' ? '動作確認終了' : phaseNames[state.phase]);
   const milliseconds =
     state.phase === 'ACTIVE' && !connectionLost
       ? Math.max(0, state.endAt - now)
@@ -433,16 +433,20 @@ function render() {
     'urgent',
     state.phase === 'ACTIVE' && seconds <= 30,
   );
-  setText(
-    'matchNote',
-    {
+  const matchNotes = {
       LOBBY: 'STAND BY — 開始の合図を待て',
       COUNTDOWN: 'GET READY — まもなく開始',
       ACTIVE: 'LIVE BATTLE — その一撃で、流れを変えろ',
       PAUSED: 'HOLD ON — 運営の合図を待て',
       FINISHED: 'BATTLE OVER — 試合終了',
-    }[state.phase],
-  );
+    };
+  setText('matchNote', state.testMode ? {
+    LOBBY: 'DEVICE TEST — 準備待ち',
+    COUNTDOWN: 'DEVICE TEST — まもなく開始',
+    ACTIVE: 'DEVICE TEST — 動作確認中',
+    PAUSED: 'DEVICE TEST — 一時停止中',
+    FINISHED: 'DEVICE TEST — 動作確認終了',
+  }[state.phase] : matchNotes[state.phase]);
   renderPlayers();
 
   if (lastMedia !== state.media) {
@@ -534,14 +538,19 @@ function render() {
       'HOLD ON / 射撃をやめてください',
     );
   } else if (state.phase === 'FINISHED') {
-    const draw = state.winner === 'DRAW';
-    $('overlay').dataset.draw = String(draw);
-    showOverlay(
-      'finished',
-      draw ? '引き分け' : `TEAM ${state.winner} WIN`,
-      `撃破数　A ${state.score.A} : ${state.score.B} B`,
-      draw ? 'DRAW GAME / 試合終了' : 'WINNER / 勝利チーム',
-    );
+    if (state.testMode) {
+      $('overlay').dataset.draw = 'true';
+      showOverlay('finished', '動作確認終了', `接続端末 ${state.participantIds?.length ?? 0}台`, 'TEST COMPLETE / 試合判定なし');
+    } else {
+      const draw = state.winner === 'DRAW';
+      $('overlay').dataset.draw = String(draw);
+      showOverlay(
+        'finished',
+        draw ? '引き分け' : `TEAM ${state.winner} WIN`,
+        `撃破数　A ${state.score.A} : ${state.score.B} B`,
+        draw ? 'DRAW GAME / 試合終了' : 'WINNER / 勝利チーム',
+      );
+    }
   }
 
   if (lastPhase !== state.phase) {

@@ -112,7 +112,11 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
             operation={notice:`整理券メンバーを反映しました: ${game.s.players.map(player=>player.name).join(' / ')}`};
             break;
           }
-          case 'start':if(game.s.phase==='LOBBY'&&ticketBridge.enabled&&preparedTicketGameId!==game.s.id)throw Error('先に「整理券メンバーを反映」を押してください');game.start(displayReady());break;
+          case 'start':{
+            const testMode=game.s.phase==='PAUSED'?game.s.testMode:b.testMode===true;
+            if(!testMode&&game.s.phase==='LOBBY'&&ticketBridge.enabled&&preparedTicketGameId!==game.s.id)throw Error('先に「整理券メンバーを反映」を押してください');
+            game.start(displayReady(),{testMode});break;
+          }
           case 'pause':game.pause();break;
           case 'finish':game.finish();break;
           case 'hp':game.correct(b.id,Number(b.hp),b.reason);break;
