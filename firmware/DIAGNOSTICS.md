@@ -16,7 +16,9 @@ powershell -ExecutionPolicy Bypass -File tools/build-firmware.ps1 -Environment b
 
 ## 操作
 
-115200 bpsでシリアルモニターを開き、改行付きでコマンドを送ります。起動時は出力がすべてOFFです。コマンドごとに対象部品と配線・電源を確認してから実行してください。
+VS Codeでは Microsoft の `Serial Monitor` 拡張（`ms-vscode.vscode-serial-monitor`）を使用します。下部の「Serial Monitor」タブを開き、Portを接続中のCOM番号（今回の実機はCOM3）、Baud rateを `115200`、Line endingを `LF` に設定して「Start Monitoring」を押します。下部の入力欄にコマンドを入れ、送信ボタンを押してください。書き込み時はCOMポートを同時に開けないため、先に「Stop Monitoring」を押します。
+
+起動時は出力がすべてOFFです。コマンドごとに対象部品と配線・電源を確認してから実行してください。
 
 | コマンド | 確認内容 |
 |---|---|
