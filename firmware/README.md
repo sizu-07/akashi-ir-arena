@@ -7,3 +7,5 @@
 - `release/v0.7/`：新仕様をコンパイルした書込み用BINとハッシュ。実機試験は未実施
 
 ビルドはプロジェクト最上位から `powershell -File tools/build-firmware.ps1` を実行します。実機への書込みとWi-Fi設定は `powershell -ExecutionPolicy Bypass -File tools/flash-and-provision.ps1` を実行します。
+
+基板単体の入出力を確認する診断版は [DIAGNOSTICS.md](DIAGNOSTICS.md) を参照してください。ゲーム本体とは別のPlatformIOプロジェクトです。
