@@ -16,12 +16,17 @@ RingbufHandle_t rxRings[RX_COUNT]{};
 uint32_t rxValid[RX_COUNT]{}, rxInvalid[RX_COUNT]{};
 esp_timer_handle_t motorTimer = nullptr;
 uint32_t motorLastStart = 0;
-bool motorRunning = false, triggerDown = false;
+uint32_t irTxCount = 0, lastStatusAt = 0;
+volatile bool motorRunning = false, motorStoppedEvent = false;
+bool limitPressed = false;
+char ledState[24] = "off";
 String commandLine;
 
 void stopMotor(void* = nullptr) {
+  const bool wasRunning = motorRunning;
   digitalWrite(MOTOR, LOW);
   motorRunning = false;
+  if (wasRunning) motorStoppedEvent = true;
 }
 
 void showLeds(uint8_t index, uint8_t red, uint8_t green, uint8_t blue) {
@@ -63,6 +68,7 @@ void sendIr() {
   items[33].level0 = 1; items[33].duration0 = 560;
   items[33].level1 = 0; items[33].duration1 = 1000;
   rmt_write_items(TX_CH, items, 34, true);
+  ++irTxCount;
 }
 
 bool nearDuration(uint16_t got, uint16_t expected) {
@@ -111,22 +117,28 @@ void pollReceiver(int receiver) {
 }
 
 void status() {
-  Serial.printf("PROFILE %s\n", HARDWARE_PROFILE);
-  Serial.printf("CHIP %s FLASH_MB %u\n", ESP.getChipModel(), ESP.getFlashChipSize() / 1048576);
-  Serial.printf("TRIGGER %s BATTERY_ADC_MV %lu\n", triggerDown ? "PRESSED" : "RELEASED",
-                static_cast<unsigned long>(analogReadMilliVolts(BATTERY)));
+  Serial.printf("STATUS uptime_ms=%lu chip=%s flash_mb=%u limit_gpio9=%s gpio9_level=%s battery_adc_mv=%lu led_command=%s motor_gpio40=%s ir_tx_commands=%lu",
+                static_cast<unsigned long>(millis()), ESP.getChipModel(), ESP.getFlashChipSize() / 1048576,
+                limitPressed ? "PRESSED" : "RELEASED", limitPressed ? "LOW" : "HIGH",
+                static_cast<unsigned long>(analogReadMilliVolts(BATTERY)), ledState,
+                motorRunning ? "ON" : "OFF", static_cast<unsigned long>(irTxCount));
   for (int i = 0; i < RX_COUNT; ++i)
-    Serial.printf("RX %s valid=%lu invalid=%lu\n", RX_IDS[i],
-                  static_cast<unsigned long>(rxValid[i]), static_cast<unsigned long>(rxInvalid[i]));
-  Serial.printf("MOTOR %s\n", motorRunning ? "ON" : "OFF");
+    Serial.printf(" %s_valid=%lu %s_invalid=%lu", RX_IDS[i],
+                  static_cast<unsigned long>(rxValid[i]), RX_IDS[i],
+                  static_cast<unsigned long>(rxInvalid[i]));
+  Serial.println();
 }
 
 void command(String line) {
   line.trim(); line.toLowerCase();
   if (line == "help") {
     Serial.println("COMMANDS: help, status, led off, led red|green|blue [1-6], motor, ir");
+    Serial.println("STATUS repeats every second; LIMIT GPIO9 changes print immediately.");
   } else if (line == "status") status();
-  else if (line == "led off") { showLeds(0, 0, 0, 0); Serial.println("OK LED OFF"); }
+  else if (line == "led off") {
+    showLeds(0, 0, 0, 0); snprintf(ledState, sizeof(ledState), "off");
+    Serial.println("EVENT LED off");
+  }
   else if (line.startsWith("led ")) {
     String rest = line.substring(4);
     int space = rest.indexOf(' ');
@@ -140,7 +152,8 @@ void command(String line) {
     else if (color == "green") showLeds(index, 0, 28, 0);
     else if (color == "blue") showLeds(index, 0, 0, 28);
     else { Serial.println("ERROR LED COLOR"); return; }
-    Serial.println("OK LED");
+    snprintf(ledState, sizeof(ledState), "%s:%s", color.c_str(), index ? number.c_str() : "all");
+    Serial.printf("EVENT LED %s\n", ledState);
   } else if (line == "motor") {
     const uint32_t now = millis();
     if (motorRunning || (motorLastStart && now - motorLastStart < MOTOR_MIN_INTERVAL_MS)) {
@@ -151,8 +164,8 @@ void command(String line) {
     if (esp_timer_start_once(motorTimer, SHOT_PULSE_MS * 1000) != ESP_OK) {
       stopMotor(); Serial.println("ERROR MOTOR TIMER"); return;
     }
-    Serial.printf("OK MOTOR %lu ms\n", static_cast<unsigned long>(SHOT_PULSE_MS));
-  } else if (line == "ir") { sendIr(); Serial.println("OK IR SENT"); }
+    Serial.printf("EVENT MOTOR ON duration_ms=%lu\n", static_cast<unsigned long>(SHOT_PULSE_MS));
+  } else if (line == "ir") { sendIr(); Serial.printf("EVENT IR TX count=%lu\n", static_cast<unsigned long>(irTxCount)); }
   else if (line.length()) Serial.println("ERROR UNKNOWN COMMAND");
 }
 
@@ -188,18 +201,21 @@ void setup() {
   led.clk_div = 2; led.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
   ESP_ERROR_CHECK(rmt_config(&led)); ESP_ERROR_CHECK(rmt_driver_install(LED_CH, 0, 0));
   showLeds(0, 0, 0, 0);
-  triggerDown = digitalRead(TRIGGER) == LOW;
+  limitPressed = digitalRead(TRIGGER) == LOW;
   Serial.println("BOARD DIAGNOSTICS READY; outputs remain off until commanded");
+  Serial.printf("PROFILE %s LIMIT_INPUT GPIO%d / D10 (LOW=PRESSED)\n", HARDWARE_PROFILE, TRIGGER);
   command("help"); status();
+  lastStatusAt = millis();
 }
 
 void loop() {
   for (int i = 0; i < RX_COUNT; ++i) pollReceiver(i);
   const bool current = digitalRead(TRIGGER) == LOW;
-  if (current != triggerDown) {
-    triggerDown = current;
-    Serial.printf("TRIGGER %s\n", current ? "PRESSED" : "RELEASED");
+  if (current != limitPressed) {
+    limitPressed = current;
+    Serial.printf("EVENT LIMIT GPIO9 %s\n", current ? "PRESSED" : "RELEASED");
   }
+  if (motorStoppedEvent) { motorStoppedEvent = false; Serial.println("EVENT MOTOR OFF"); }
   while (Serial.available()) {
     const char c = Serial.read();
     if (c == '\n') { command(commandLine); commandLine = ""; }
@@ -208,5 +224,7 @@ void loop() {
       else commandLine = "";
     }
   }
+  const uint32_t now = millis();
+  if (now - lastStatusAt >= 1000) { lastStatusAt = now; status(); }
   delay(1);
 }
