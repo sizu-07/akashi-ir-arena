@@ -9,15 +9,27 @@ constexpr bool ceilingsAndEnvelopes() {
         if (dutyAt(pattern, t, beat) > MAX_DUTY) return false;
     if (dutyAt(pattern, duration(pattern)) != 0) return false;
   }
-  if (dutyAt(Pattern::Shot, 100) != 110 || duration(Pattern::Shot) != 310) return false;
+  if (dutyAt(Pattern::Shot, 100) != 150 || duration(Pattern::Shot) != 310) return false;
   if (!(reviveDuty(150) < reviveDuty(250) && reviveDuty(250) < reviveDuty(350))) return false;
-  if (!(reviveDuty(350) == MAX_DUTY && reviveDuty(450) < MAX_DUTY && reviveDuty(500) == 0)) return false;
+  if (!(reviveDuty(350) == RUN_MAX_DUTY && reviveDuty(450) < RUN_MAX_DUTY && reviveDuty(500) == 0)) return false;
   uint32_t lastEnergy = 0;
   for (uint8_t beat = 0; beat < 5; ++beat) {
     uint32_t energy = 0;
     for (uint32_t t = 0; t < COUNTDOWN_MS; ++t) energy += dutyAt(Pattern::Countdown, t, beat);
     if (energy <= lastEnergy) return false;
     lastEnergy = energy;
+  }
+  return true;
+}
+constexpr bool startupThenBoundedRunning() {
+  for (auto pattern : {Pattern::Shot, Pattern::Hit, Pattern::Countdown, Pattern::Defeat, Pattern::Revive}) {
+    for (uint8_t beat = 0; beat < 5; ++beat) {
+      for (uint32_t t = 0; t < duration(pattern); ++t) {
+        const uint32_t within = pattern == Pattern::Defeat ? t % (DEFEAT_PULSE_MS + DEFEAT_REST_MS) : t;
+        if (within < STARTUP_MS && dutyAt(pattern, t, beat) != STARTUP_DUTY) return false;
+        if (within >= STARTUP_MS + SETTLE_MS && dutyAt(pattern, t, beat) > RUN_MAX_DUTY) return false;
+      }
+    }
   }
   return true;
 }
@@ -49,5 +61,6 @@ constexpr bool timerDelayCancelAndWrap() {
   return frame.finished && frame.duty == 0 && motor.ready(2000u);
 }
 static_assert(ceilingsAndEnvelopes(), "All effects must stay under the PWM ceiling, fade out and grow as intended");
+static_assert(startupThenBoundedRunning(), "Every pulse needs its startup kick, then must stay below the running-duty ceiling");
 static_assert(completeTriplePulseAndRecovery(), "Death must finish three separate pulses and enforce recovery before the next effect");
 static_assert(timerDelayCancelAndWrap(), "Effects must stop on cancellation, timer delay and millis rollover");

@@ -20,7 +20,7 @@ constexpr uint32_t SWITCH_DEBOUNCE_MS = 25;
 constexpr uint32_t STATUS_INTERVAL_MS = 2000;
 constexpr uint32_t WIFI_RETRY_MS = 30000;
 constexpr uint8_t MOTOR_CHANNEL = 2;
-constexpr char DEMO_FIRMWARE_VERSION[] = "legacy-motor-demo-4";
+constexpr char DEMO_FIRMWARE_VERSION[] = "legacy-motor-demo-5";
 using MotorPattern = legacy_feedback::Pattern;
 
 Preferences prefs;
@@ -90,13 +90,14 @@ const char* patternName(MotorPattern pattern) {
 void motorTick(void*) {
   portENTER_CRITICAL(&motorMux);
   const auto frame = motorController.update(millis());
+  const bool changed = motorDuty != frame.duty;
   motorDuty = frame.duty;
   motorActive = frame.duty > 0;
   currentMotorPattern = motorController.pattern();
   if (frame.pulseStarted && frame.pattern == MotorPattern::Defeat) ++demoDefeatPulses;
   if (frame.pulseStarted && frame.pattern == MotorPattern::Countdown) ++demoCountdownBeats;
   portEXIT_CRITICAL(&motorMux);
-  ledcWrite(MOTOR_CHANNEL, legacy_feedback::clampDuty(frame.duty));
+  if (changed) ledcWrite(MOTOR_CHANNEL, legacy_feedback::clampDuty(frame.duty));
 }
 
 bool motorReady() {
@@ -433,8 +434,9 @@ void setup() {
   prefs.begin("ir-arena", false);
   loadConfig();
   bootId = String(esp_random(), HEX) + String(esp_random(), HEX);
-  Serial.printf("LEGACY MOTOR DEMO 4: PWM ceiling=%u/255; shot=310ms PWM110; revive=swell500ms; reset_reason=%d; IR/LED OFF\n",
-                legacy_feedback::MAX_DUTY, esp_reset_reason());
+  Serial.printf("LEGACY MOTOR DEMO 5: startup=%u/255 for %lu ms; run_ceiling=%u/255; shot=310ms PWM150; reset_reason=%d; IR/LED OFF\n",
+                legacy_feedback::STARTUP_DUTY, static_cast<unsigned long>(legacy_feedback::STARTUP_MS),
+                legacy_feedback::RUN_MAX_DUTY, esp_reset_reason());
   if (ssid.isEmpty() || host.isEmpty() || id.isEmpty() || key.isEmpty()) {
     Serial.println("CONFIG REQUIRED: send one game provisioning JSON line over USB");
     return;
@@ -510,6 +512,9 @@ void loop() {
       doc["motor_active"] = motorActive;
       doc["motor_duty"] = motorDuty;
       doc["motor_pwm_limit"] = legacy_feedback::MAX_DUTY;
+      doc["motor_run_limit"] = legacy_feedback::RUN_MAX_DUTY;
+      doc["motor_startup_ms"] = legacy_feedback::STARTUP_MS;
+      doc["motor_hw_duty"] = ledcRead(MOTOR_CHANNEL);
       doc["motor_pattern"] = patternName(currentMotorPattern);
       doc["motor_queue_depth"] = motorCommands ? uxQueueMessagesWaiting(motorCommands) : 0;
       doc["motor_dropped_commands"] = droppedMotorCommands;

@@ -143,7 +143,7 @@ function disable() {
   $('hpForm').querySelector('button').disabled = locked || !['LOBBY', 'PAUSED'].includes(state?.phase);
   const motorTarget = state?.players?.find((player) => player.id === $('motorDemoTarget').value);
   for (const button of ['motorDemoHit', 'motorDemoDefeat', 'motorDemoRevive'])
-    $(button).disabled = locked || state?.demo || !motorTarget?.connected || !['legacy-motor-demo-3', 'legacy-motor-demo-4'].includes(motorTarget.firmwareVersion);
+    $(button).disabled = locked || state?.demo || !motorTarget?.connected || !motorTarget.firmwareVersion?.startsWith('legacy-motor-demo-') || !Number.isInteger(motorTarget.demoDefeats) || !Number.isInteger(motorTarget.demoRevives);
   const mediaLocked = locked || ['ACTIVE', 'COUNTDOWN'].includes(state?.phase);
   document.querySelectorAll('[data-media], [data-video]').forEach((button) => {
     button.disabled = mediaLocked || (button.dataset.video === 'pause' && state?.media !== 'video');
@@ -243,7 +243,7 @@ function render() {
     ? `${motorTarget.connected ? '接続中' : '切断'} ／ 射撃 ${motorTarget.demoShots ?? 0}回 ／ 被弾 ${motorTarget.demoHits ?? 0}回 ／ カウントダウン ${motorTarget.demoCountdownBeats ?? 0}拍 ／ HP 0 ${motorTarget.demoDefeats ?? 0}回（${motorTarget.demoDefeatPulses ?? 0}拍）／ 復活 ${motorTarget.demoRevives ?? 0}回 ／ 投影音声 ${state.displayReady ? '準備完了' : '未準備'}`
     : '実機モーターデモの端末を選択してください。';
   $('motorDemoDrive').textContent = motorTarget?.motorPwmLimit != null
-    ? `PWM上限 ${motorTarget.motorPwmLimit}/255（${Math.round(motorTarget.motorPwmLimit / 255 * 100)}%）／ 現在 ${motorTarget.motorPattern ?? 'OFF'}・PWM ${motorTarget.motorDuty ?? 0} ／ 待機 ${motorTarget.motorQueueDepth ?? 0}件 ／ 破棄 ${motorTarget.motorDroppedCommands ?? 0}件 ／ カウントダウン未実行 ${motorTarget.demoCountdownMissed ?? 0}拍${motorTarget.resetReason === 9 ? ' ／ 前回の再起動原因：電圧低下検出' : ''}`
+    ? `${motorTarget.motorRunLimit != null ? `持続PWM上限 ${motorTarget.motorRunLimit}/255 ／ 始動 ${motorTarget.motorPwmLimit}/255・${motorTarget.motorStartupMs} ms` : `PWM上限 ${motorTarget.motorPwmLimit}/255`} ／ 現在 ${motorTarget.motorPattern ?? 'OFF'}・PWM ${motorTarget.motorDuty ?? 0}${motorTarget.motorHwDuty != null ? `（読み戻し ${motorTarget.motorHwDuty}）` : ''} ／ 待機 ${motorTarget.motorQueueDepth ?? 0}件 ／ 破棄 ${motorTarget.motorDroppedCommands ?? 0}件 ／ カウントダウン未実行 ${motorTarget.demoCountdownMissed ?? 0}拍${motorTarget.resetReason === 9 ? ' ／ 前回の再起動原因：電圧低下検出' : ''}`
     : 'PWM状態は端末の更新・接続後に表示されます。';
 
   if (first) {

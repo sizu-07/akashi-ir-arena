@@ -5,29 +5,36 @@ This sketch verifies the same communication path as the v0.7 game firmware:
 `telemetry`, `desired`, and `time_sync` on `irgame/v1/device/<id>/...`.
 
 The v0.7 hardware profile does **not** match the existing 4E circuit board.
-This sketch uses the legacy SW1 (GPIO2) and motor output (GPIO9). Each debounced
-The current `legacy-motor-demo-4` applies a common **180/255 PWM ceiling**
-(about 71%) at 5 kHz / 8 bit. This is a provisional reduction of load, not a
+This sketch uses the legacy SW1 (GPIO2) and motor output (GPIO9).
+The current `legacy-motor-demo-5` uses a **220/255 startup kick for 60 ms**,
+then settles over 20 ms to a **180/255 sustained-duty ceiling** at 5 kHz / 8 bit.
+The user reported that every motor effect stopped working after the previous
+180/255 absolute ceiling and lower startup duties were introduced. Insufficient
+startup torque is a hypothesis; motor-rail measurements and a physical retest
+are still needed. The kick restores the previously working 220 duty briefly; it
+does not reintroduce full-duty 255 or continuous high drive. This is not a
 verified voltage or current protection setting: the motor rail is not measured
 by this firmware. With a measured 3 V rail, `3 * 180 / 255 = 2.12 V` is only a
 rough average drive estimate; each ON pulse still applies the motor rail voltage.
 The motor part number, startup current, fitted regulator and voltage under load
 must be checked before a reliable hardware operating limit can be established.
 
-SW1 produces one 310 ms shot at 110/255, with a short, bounded 140/255 startup
-assist and a soft ending. A hit is one 420 ms pulse at 170/255 with soft start/end.
+SW1 produces one 310 ms shot at 150/255 after the startup kick and has a soft
+ending. A hit is one 420 ms pulse at 180/255 after the same kick.
 The committed countdown produces five 300 ms pulses, once per second,
-with steady duties 65, 85, 110, 140 and 170 (a brief bounded startup assist is
-included). HP 0 produces three 180 ms pulses at 170/255, with **300 ms OFF**
-between pulses. Revive swells over 500 ms: a quiet opening, an accelerating rise
-to 180/255, a short peak and a fade out. The operator screen also
+with steady duties 120, 135, 150, 165 and 180. Every pulse includes the startup
+kick. HP 0 produces three 180 ms pulses at 180/255, with **300 ms OFF** between
+pulses. Revive starts with the kick, then swells from 130/255 to 180/255, holds
+a short peak and fades out within 500 ms. The operator screen also
 has separate buttons for the defeat and revive patterns without changing HP.
 A 5 ms timer updates the complete envelope and cuts output after its duration,
 independently of networking or the main loop. All runtime PWM writes are made by
-that task. Effects are followed by 250 ms OFF. Busy/cooldown commands wait in an
+that task, and unchanged duty is held without repeatedly updating the PWM driver.
+Effects are followed by 250 ms OFF. Busy/cooldown commands wait in an
 eight-entry queue instead of being silently skipped; stale commands expire after
 five seconds. Queue overflow/expiry and missed countdown marks are counted.
-The screen shows the applied duty, ceiling, queue and previous brownout reset
+The screen shows the requested duty, PWM register readback, startup/run ceilings,
+queue and previous brownout reset
 reason, which helps distinguish a control rejection from a possible power fault.
 An absent brownout flag does not rule out a dip on the separate motor rail.
 PWM changes the motor's average drive; it does not raise its supply voltage.
