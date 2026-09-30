@@ -26,9 +26,13 @@ test('実機モーターデモの被弾操作は接続した診断端末へMQTT�
   const topic='irgame/v1/device/gun-001';
   await client.subscribeAsync(`${topic}/command`,{qos:1});
   await client.publishAsync(`${topic}/hello`,JSON.stringify({boot_id:'motor-test-boot'}),{qos:1});
-  await client.publishAsync(`${topic}/telemetry`,JSON.stringify({boot_id:'motor-test-boot',hardware_profile:'xiao-s3-plus-3rx-6led-motor-trigger',firmware_version:'legacy-motor-demo-3',hardware_ready:false,bench:true,device_time_ms:1,syncRtt:7,demo_shots:1,demo_hits:0,demo_defeats:0,demo_revives:0}),{qos:1});
+  await client.publishAsync(`${topic}/telemetry`,JSON.stringify({boot_id:'motor-test-boot',hardware_profile:'xiao-s3-plus-3rx-6led-motor-trigger',firmware_version:'legacy-motor-demo-4',hardware_ready:false,bench:true,device_time_ms:1,syncRtt:7,demo_shots:1,demo_hits:0,demo_defeats:0,demo_revives:0,motor_pwm_limit:180,motor_duty:110,motor_pattern:'SHOT',motor_queue_depth:1,motor_dropped_commands:0,reset_reason:9,demo_countdown_missed:0}),{qos:1});
   const before={phase:app.game.s.phase,hp:app.game.player('gun-001').hp};
   assert.equal(app.game.player('gun-001').demoShots,1);
+  assert.equal(app.game.player('gun-001').motorPwmLimit,180);
+  assert.equal(app.game.player('gun-001').motorDuty,110);
+  assert.equal(app.game.player('gun-001').motorQueueDepth,1);
+  assert.equal(app.game.player('gun-001').resetReason,9);
   const command=new Promise((resolve,reject)=>{
    const timer=setTimeout(()=>reject(Error('被弾指示が届きません')),2000);
    client.on('message',function onMessage(name,raw){const body=JSON.parse(raw);if(name===`${topic}/command`&&body.type==='motor_demo_hit'){clearTimeout(timer);client.off('message',onMessage);resolve(body);}});

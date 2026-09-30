@@ -246,7 +246,7 @@
 
         <section id="motorDemoPanel" class="panel" hidden>
           <h2>実機モーター動作確認</h2>
-          <p>SW1で射撃（310 ms・出力約86%）、被弾操作で強い1回（420 ms）振動します。動作確認の試合開始時には、開始5秒前から1秒ごとに約300 msずつ強く振動します。HPが0になると3回、復活すると0.5秒かけて弱から強へ変化します。効果音は準備済みのPC投影画面から鳴ります。赤外線・LEDは動かしません。</p>
+          <p>SW1で弱い射撃振動（310 ms）、被弾操作で強い1回（420 ms）振動します。開始5秒前からは1秒ごとに約300 ms、小さい振動から徐々に大きくなります。HPが0になると300 msずつ休止しながら3回、復活すると0.5秒で弱い振動から勢いよく膨らみ、余韻を残して止まります。最大PWM出力は暫定的に約71%に制限しています。効果音は準備済みのPC投影画面から鳴ります。</p>
           <div class="settings">
             <label>対象端末 <select id="motorDemoTarget"></select></label>
             <button id="motorDemoHit">被弾振動を送信</button>
@@ -254,6 +254,7 @@
             <button id="motorDemoRevive">復活振動を送信</button>
           </div>
           <p id="motorDemoStatus">端末の接続を確認しています。</p>
+          <p id="motorDemoDrive">PWM状態は端末の更新・接続後に表示されます。</p>
         </section>
 
         <details id="provisionPanel" class="panel" hidden>

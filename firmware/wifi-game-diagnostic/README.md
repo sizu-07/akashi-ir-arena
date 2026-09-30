@@ -6,16 +6,32 @@ This sketch verifies the same communication path as the v0.7 game firmware:
 
 The v0.7 hardware profile does **not** match the existing 4E circuit board.
 This sketch uses the legacy SW1 (GPIO2) and motor output (GPIO9). Each debounced
-SW1 press produces one 310 ms shot pulse at 220/255 PWM duty. The real-device
-operator screen sends an authenticated MQTT command for one strong 420 ms hit
-pulse. A committed test-match countdown produces five 300 ms pulses at one-second
-intervals, with duty rising from 150/255 to 230/255. A transition to HP 0
-produces three strong 180 ms pulses; a transition from HP 0 to positive HP
-produces a 500 ms PWM ramp from 120/255 to 255/255. The operator screen also
+The current `legacy-motor-demo-4` applies a common **180/255 PWM ceiling**
+(about 71%) at 5 kHz / 8 bit. This is a provisional reduction of load, not a
+verified voltage or current protection setting: the motor rail is not measured
+by this firmware. With a measured 3 V rail, `3 * 180 / 255 = 2.12 V` is only a
+rough average drive estimate; each ON pulse still applies the motor rail voltage.
+The motor part number, startup current, fitted regulator and voltage under load
+must be checked before a reliable hardware operating limit can be established.
+
+SW1 produces one 310 ms shot at 110/255, with a short, bounded 140/255 startup
+assist and a soft ending. A hit is one 420 ms pulse at 170/255 with soft start/end.
+The committed countdown produces five 300 ms pulses, once per second,
+with steady duties 65, 85, 110, 140 and 170 (a brief bounded startup assist is
+included). HP 0 produces three 180 ms pulses at 170/255, with **300 ms OFF**
+between pulses. Revive swells over 500 ms: a quiet opening, an accelerating rise
+to 180/255, a short peak and a fade out. The operator screen also
 has separate buttons for the defeat and revive patterns without changing HP.
-A hardware timer ends each pulse, and starts are separated by at least 300 ms.
+A 5 ms timer updates the complete envelope and cuts output after its duration,
+independently of networking or the main loop. All runtime PWM writes are made by
+that task. Effects are followed by 250 ms OFF. Busy/cooldown commands wait in an
+eight-entry queue instead of being silently skipped; stale commands expire after
+five seconds. Queue overflow/expiry and missed countdown marks are counted.
+The screen shows the applied duty, ceiling, queue and previous brownout reset
+reason, which helps distinguish a control rejection from a possible power fault.
+An absent brownout flag does not rule out a dip on the separate motor rail.
 PWM changes the motor's average drive; it does not raise its supply voltage.
-The diagnostic shot exceeds the v0.7 game profile's
+These diagnostic effects exceed the v0.7 game profile's
 250 ms pulse limit and must not be copied into the game firmware. The IR output (GPIO6)
 remains LOW and no LED or IR frames are sent. It reports `hardware_ready=false`
 and `bench=true`, so only a partial-device test match can start. Successful
@@ -23,6 +39,12 @@ shot, hit, defeat and revive pulses publish events for sound playback on the pre
 projection screen. The motor must
 be connected to J6 with its intended 3 V supply; a 6 V supply must not be used
 for this test.
+
+PWM/current and motor startup considerations are described in the
+[Pololu motor and supply guide](https://www.pololu.com/docs/0J73/4.1).
+The provisional ceiling does not replace measurement of J6-1 versus GND during
+an actual motor pulse. Until that measurement and motor ratings are available,
+neither the occasional non-start nor a guaranteed usable voltage limit is known.
 
 Build and upload with the existing tool:
 
@@ -57,5 +79,6 @@ on the PC: `WIFI CONNECTED`, `MQTT CONNECTED`, `GAME HELLO SENT`, increasing
 `desired` and `time_sync` counts, and a `connected=true` player with
 `bench=true` and `hardwareReady=false`. The game server must be running in
 real-device mode (`npm start`, not `npm run demo`). The operator screen shows
-separate shot, hit, defeat and revive pulse counts. This test does not establish LED, IR, the
+separate shot, hit, defeat and revive pulse counts and the PWM diagnostics.
+Weak PWM settings may not start an uncharacterized motor. This test does not establish LED, IR, the
 full game trigger path, or complete-match behavior.

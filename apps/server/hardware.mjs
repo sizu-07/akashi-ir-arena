@@ -2,4 +2,4 @@ import {readFileSync} from 'node:fs';
 export const hardware=JSON.parse(readFileSync(new URL('../../specs/hardware-profile.json',import.meta.url),'utf8'));
 export const receiverIds=hardware.receivers.map(r=>r.id);
 export function deviceReady(p){return p.hardwareProfile===hardware.profile&&p.hardwareReady===true&&!p.bench&&!p.lowBattery;}
-export function legacyMotorDemo(p){return ['legacy-motor-demo-1','legacy-motor-demo-2','legacy-motor-demo-3'].includes(p.firmwareVersion)&&p.bench&&p.hardwareProfile===hardware.profile;}
+export function legacyMotorDemo(p){return ['legacy-motor-demo-1','legacy-motor-demo-2','legacy-motor-demo-3','legacy-motor-demo-4'].includes(p.firmwareVersion)&&p.bench&&p.hardwareProfile===hardware.profile;}
