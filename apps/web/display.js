@@ -574,6 +574,15 @@ $('video').onerror = () => {
   mediaError = '動画を読み込めません。assets/rules.webmを確認してください';
   render();
 };
+$('pair').ontoggle = async () => {
+  if (!$('pair').open) return;
+  try {
+    const response = await fetch('/api/pair-info', {cache: 'no-store'});
+    if (!response.ok) throw Error(`HTTP ${response.status}`);
+    $('pairUrl').textContent = (await response.json()).url;
+    $('qr').src = `/api/pair.svg?t=${Date.now()}`;
+  } catch { $('pairUrl').textContent = '接続先を取得できません'; }
+};
 setInterval(acknowledgeReady, 1000);
 setInterval(render, 100);
 connect();

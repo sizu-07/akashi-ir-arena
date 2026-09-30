@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {hardware,receiverIds,deviceReady} from './hardware.mjs';
+import {hardware,receiverIds,deviceReady,legacyMotorDemo} from './hardware.mjs';
 export const countdownDurationMs = 7010;
 export const defaults = Object.freeze({hp:100, damage:5, durationSec:300, fireMs:1000, invulnerableMs:300, reviveMs:3000, reviveHp:50, friendlyFire:false});
 export function rulesOf(input={}) {
@@ -24,16 +24,16 @@ export class Game {
       this.s.participantIds=Array.isArray(saved.participantIds)?saved.participantIds:devices.map(d=>d.id);
       this.record('recovery',{phase:this.s.phase});
     }
-    for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,demoShots:null,demoHits:null,rxFrames:{},lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
+    for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,demoShots:null,demoHits:null,demoDefeats:null,demoRevives:null,demoCountdownBeats:null,demoDefeatPulses:null,rxFrames:{},lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
   }
   record(type,payload){const at=this.now();this.s.eventNo=++this.events;this.log({n:this.events,at,gameId:this.s.id,type,...payload});
-    const kind=type==='shot'?'shot':type==='hit'?(payload.hp===0?'defeat':'hit'):type==='revive'?'revive':type==='finish'?'match-end':null;
+    const kind=['shot','motor_demo_shot'].includes(type)?'shot':type==='motor_demo_hit'?'hit':type==='motor_demo_defeat'?'defeat':type==='motor_demo_revive'?'revive':type==='hit'?(payload.hp===0?'defeat':'hit'):type==='revive'?'revive':type==='finish'?'match-end':null;
     if(kind){this.soundEvents.push({n:this.events,at,kind});if(this.soundEvents.length>64)this.soundEvents.shift();}
   }
   player(id){const p=this.s.players.find(p=>p.id===id);if(!p)throw Error('未登録端末');return p;}
   participants(){return this.s.players.filter(p=>this.s.participantIds.includes(p.id));}
   isParticipant(id){return this.s.participantIds.includes(id);}
-  testReady(p){return deviceReady(p)||(p.firmwareVersion==='legacy-motor-demo-1'&&p.bench&&p.hardwareProfile===hardware.profile&&!p.lowBattery);}
+  testReady(p){return deviceReady(p)||(legacyMotorDemo(p)&&!p.lowBattery);}
   readyForMatch(p){return this.s.testMode?this.testReady(p):deviceReady(p);}
   current(p){return p.connected&&this.now()-p.lastSeen<=2500&&p.syncRtt!==null&&p.syncRtt<=400;}
   view(){return structuredClone({...this.s,serverMs:this.now(),soundEvents:this.soundEvents});}
@@ -89,6 +89,10 @@ export class Game {
     p.bench=data.bench===true;p.lowBattery=data.lowBattery===true;p.motorActive=data.motor_active===true;
     p.demoShots=Number.isSafeInteger(data.demo_shots)&&data.demo_shots>=0?data.demo_shots:null;
     p.demoHits=Number.isSafeInteger(data.demo_hits)&&data.demo_hits>=0?data.demo_hits:null;
+    p.demoDefeats=Number.isSafeInteger(data.demo_defeats)&&data.demo_defeats>=0?data.demo_defeats:null;
+    p.demoRevives=Number.isSafeInteger(data.demo_revives)&&data.demo_revives>=0?data.demo_revives:null;
+    p.demoCountdownBeats=Number.isSafeInteger(data.demo_countdown_beats)&&data.demo_countdown_beats>=0?data.demo_countdown_beats:null;
+    p.demoDefeatPulses=Number.isSafeInteger(data.demo_defeat_pulses)&&data.demo_defeat_pulses>=0?data.demo_defeat_pulses:null;
     p.rxFrames=Object.fromEntries(receiverIds.map(k=>[k,Number.isSafeInteger(data.rx_frames?.[k])&&data.rx_frames[k]>=0?data.rx_frames[k]:null]));
     if(this.isParticipant(id)&&!this.readyForMatch(p)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause(p.lowBattery?'電池低下':'端末構成・机上モードを確認');}
   ack(id,payload){const p=this.player(id);if(this.s.phase==='COUNTDOWN'&&this.isParticipant(id)&&deviceReady(p)&&payload.command_id===this.s.commandId&&payload.result==='ok'){p.ack=this.s.commandId;this.s.startCommitted=this.participants().every(p=>!deviceReady(p)||p.ack===this.s.commandId);}}

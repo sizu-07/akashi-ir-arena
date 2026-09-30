@@ -118,7 +118,7 @@ test('start needs projector and four current devices; expired game ranks score t
 test('one connected motor demo board can run a test match without other boards',()=>{
   let now=100000;
   const g=new Game(devices,{now:()=>now});
-  const bench={...telemetry,hardware_ready:false,bench:true,firmware_version:'legacy-motor-demo-1'};
+  const bench={...telemetry,hardware_ready:false,bench:true,firmware_version:'legacy-motor-demo-2'};
   g.hello('gun-001','bench-boot');g.heartbeat('gun-001',bench);
   assert.throws(()=>g.start(true),/接続・時刻同期/);
   assert.throws(()=>g.start(false,{testMode:true}),/投影画面/);

@@ -54,7 +54,7 @@ async function action(actionName, extra = {}) {
     commandId: commandId(),
     ...extra,
   });
-  const notices = {start: '開始操作を受け付けました。', pause: '試合を一時停止しました。', finish: '試合を終了しました。', new: '次の試合を準備しました。参加者を確認してください。', sync_ticket_members: '整理券メンバーを反映しました。名前を確認してください。', media: '投影画面を切り替えました。', hp: 'HP補正を記録しました。', demo_hit: '発射・命中を送信しました。', demo_revive: '3秒の復活照射を開始しました。', motor_demo_hit: '被弾振動を送信しました。'};
+  const notices = {start: '開始操作を受け付けました。', pause: '試合を一時停止しました。', finish: '試合を終了しました。', new: '次の試合を準備しました。参加者を確認してください。', sync_ticket_members: '整理券メンバーを反映しました。名前を確認してください。', media: '投影画面を切り替えました。', hp: 'HP補正を記録しました。', demo_hit: '発射・命中を送信しました。', demo_revive: '3秒の復活照射を開始しました。', motor_demo_hit: '被弾振動を送信しました。', motor_demo_defeat: 'HP 0の振動を送信しました。', motor_demo_revive: '復活振動を送信しました。'};
   const videoNotices = {play: '動画を開始しました。', pause: '動画を停止しました。', restart: '動画を最初から再生しました。'};
   message(result.notice || (actionName === 'video' ? videoNotices[extra.operation] : notices[actionName]) || '操作を反映しました。');
 }
@@ -142,7 +142,8 @@ function disable() {
   $('rulesForm').querySelector('button').disabled = locked || !['LOBBY', 'FINISHED'].includes(state?.phase);
   $('hpForm').querySelector('button').disabled = locked || !['LOBBY', 'PAUSED'].includes(state?.phase);
   const motorTarget = state?.players?.find((player) => player.id === $('motorDemoTarget').value);
-  $('motorDemoHit').disabled = locked || state?.demo || !motorTarget?.connected || motorTarget.firmwareVersion !== 'legacy-motor-demo-1';
+  for (const button of ['motorDemoHit', 'motorDemoDefeat', 'motorDemoRevive'])
+    $(button).disabled = locked || state?.demo || !motorTarget?.connected || motorTarget.firmwareVersion !== 'legacy-motor-demo-3';
   const mediaLocked = locked || ['ACTIVE', 'COUNTDOWN'].includes(state?.phase);
   document.querySelectorAll('[data-media], [data-video]').forEach((button) => {
     button.disabled = mediaLocked || (button.dataset.video === 'pause' && state?.media !== 'video');
@@ -238,8 +239,8 @@ function render() {
   $('demoPanel').hidden = !state.demo;
   $('motorDemoPanel').hidden = state.demo;
   const motorTarget = state.players.find((player) => player.id === $('motorDemoTarget').value);
-  $('motorDemoStatus').textContent = motorTarget?.firmwareVersion === 'legacy-motor-demo-1'
-    ? `${motorTarget.connected ? '接続中' : '切断'} ／ 射撃振動 ${motorTarget.demoShots ?? 0}回 ／ 被弾振動 ${motorTarget.demoHits ?? 0}回`
+  $('motorDemoStatus').textContent = motorTarget?.firmwareVersion?.startsWith('legacy-motor-demo-')
+    ? `${motorTarget.connected ? '接続中' : '切断'} ／ 射撃 ${motorTarget.demoShots ?? 0}回 ／ 被弾 ${motorTarget.demoHits ?? 0}回 ／ カウントダウン ${motorTarget.demoCountdownBeats ?? 0}拍 ／ HP 0 ${motorTarget.demoDefeats ?? 0}回（${motorTarget.demoDefeatPulses ?? 0}拍）／ 復活 ${motorTarget.demoRevives ?? 0}回 ／ 投影音声 ${state.displayReady ? '準備完了' : '未準備'}`
     : '実機モーターデモの端末を選択してください。';
 
   if (first) {
@@ -343,6 +344,8 @@ $('demoHit').onclick = guarded(() =>
 );
 $('demoRevive').onclick = guarded(() => action('demo_revive', {shooter: $('demoShooter').value, victim: $('demoVictim').value}));
 $('motorDemoHit').onclick = guarded(() => action('motor_demo_hit', {id: $('motorDemoTarget').value}));
+$('motorDemoDefeat').onclick = guarded(() => action('motor_demo_defeat', {id: $('motorDemoTarget').value}));
+$('motorDemoRevive').onclick = guarded(() => action('motor_demo_revive', {id: $('motorDemoTarget').value}));
 
 $('provisionForm').onsubmit = guarded(async () => {
   const data = Object.fromEntries(new FormData($('provisionForm')));

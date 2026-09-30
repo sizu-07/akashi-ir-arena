@@ -26,7 +26,7 @@ test('実機モーターデモの被弾操作は接続した診断端末へMQTT�
   const topic='irgame/v1/device/gun-001';
   await client.subscribeAsync(`${topic}/command`,{qos:1});
   await client.publishAsync(`${topic}/hello`,JSON.stringify({boot_id:'motor-test-boot'}),{qos:1});
-  await client.publishAsync(`${topic}/telemetry`,JSON.stringify({boot_id:'motor-test-boot',hardware_profile:'xiao-s3-plus-3rx-6led-motor-trigger',firmware_version:'legacy-motor-demo-1',hardware_ready:false,bench:true,device_time_ms:1,syncRtt:7,demo_shots:1,demo_hits:0}),{qos:1});
+  await client.publishAsync(`${topic}/telemetry`,JSON.stringify({boot_id:'motor-test-boot',hardware_profile:'xiao-s3-plus-3rx-6led-motor-trigger',firmware_version:'legacy-motor-demo-3',hardware_ready:false,bench:true,device_time_ms:1,syncRtt:7,demo_shots:1,demo_hits:0,demo_defeats:0,demo_revives:0}),{qos:1});
   const before={phase:app.game.s.phase,hp:app.game.player('gun-001').hp};
   assert.equal(app.game.player('gun-001').demoShots,1);
   const command=new Promise((resolve,reject)=>{
@@ -35,6 +35,29 @@ test('実機モーターデモの被弾操作は接続した診断端末へMQTT�
   });
   assert.equal((await send()).status,200);
   assert.deepEqual((await command).command_id,'hit-test-1');
+  for(const type of ['motor_demo_defeat','motor_demo_revive']){
+   const next=new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(Error(`${type} 指示が届きません`)),2000);
+    client.on('message',function onMessage(name,raw){const body=JSON.parse(raw);if(name===`${topic}/command`&&body.type===type){clearTimeout(timer);client.off('message',onMessage);resolve(body);}});
+   });
+   const response=await fetch(`${base}/api/action`,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie,'X-CSRF-Token':session.csrf},body:JSON.stringify({commandId:`${type}-test`,action:type,id:'gun-001'})});
+   assert.equal(response.status,200);
+   assert.equal((await next).command_id,`${type}-test`);
+  }
+  assert.deepEqual({phase:app.game.s.phase,hp:app.game.player('gun-001').hp},before);
+  const shot={type:'motor_demo_shot',boot_id:'motor-test-boot',count:2};
+  const hit={type:'motor_demo_hit',boot_id:'motor-test-boot',count:1};
+  await client.publishAsync(`${topic}/event`,JSON.stringify(shot),{qos:1});
+  await client.publishAsync(`${topic}/event`,JSON.stringify(shot),{qos:1});
+  await client.publishAsync(`${topic}/event`,JSON.stringify(hit),{qos:1});
+  await client.publishAsync(`${topic}/event`,JSON.stringify({...hit,boot_id:'wrong',count:2}),{qos:1});
+  await client.publishAsync(`${topic}/event`,JSON.stringify({type:'motor_demo_defeat',boot_id:'motor-test-boot',count:1}),{qos:1});
+  await client.publishAsync(`${topic}/event`,JSON.stringify({type:'motor_demo_revive',boot_id:'motor-test-boot',count:1}),{qos:1});
+  assert.deepEqual(app.game.view().soundEvents.map(event=>event.kind),['shot','hit','defeat','revive']);
+  assert.equal(app.game.player('gun-001').demoShots,2);
+  assert.equal(app.game.player('gun-001').demoHits,1);
+  assert.equal(app.game.player('gun-001').demoDefeats,1);
+  assert.equal(app.game.player('gun-001').demoRevives,1);
   assert.deepEqual({phase:app.game.s.phase,hp:app.game.player('gun-001').hp},before);
  }finally{if(client)await client.endAsync(true);await app.close();rmSync(dir,{recursive:true,force:true});}
 });

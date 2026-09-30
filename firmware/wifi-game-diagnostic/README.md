@@ -6,11 +6,21 @@ This sketch verifies the same communication path as the v0.7 game firmware:
 
 The v0.7 hardware profile does **not** match the existing 4E circuit board.
 This sketch uses the legacy SW1 (GPIO2) and motor output (GPIO9). Each debounced
-SW1 press produces one 60 ms shot pulse. The real-device operator screen sends
-an authenticated MQTT command for a 180 ms hit pulse. A hardware timer ends
-each pulse, and starts are separated by at least 300 ms. The IR output (GPIO6)
+SW1 press produces one 310 ms shot pulse at 220/255 PWM duty. The real-device
+operator screen sends an authenticated MQTT command for one strong 420 ms hit
+pulse. A committed test-match countdown produces five 300 ms pulses at one-second
+intervals, with duty rising from 150/255 to 230/255. A transition to HP 0
+produces three strong 180 ms pulses; a transition from HP 0 to positive HP
+produces a 500 ms PWM ramp from 120/255 to 255/255. The operator screen also
+has separate buttons for the defeat and revive patterns without changing HP.
+A hardware timer ends each pulse, and starts are separated by at least 300 ms.
+PWM changes the motor's average drive; it does not raise its supply voltage.
+The diagnostic shot exceeds the v0.7 game profile's
+250 ms pulse limit and must not be copied into the game firmware. The IR output (GPIO6)
 remains LOW and no LED or IR frames are sent. It reports `hardware_ready=false`
-and `bench=true`, so the game does not allow a match to start. The motor must
+and `bench=true`, so only a partial-device test match can start. Successful
+shot, hit, defeat and revive pulses publish events for sound playback on the prepared PC
+projection screen. The motor must
 be connected to J6 with its intended 3 V supply; a 6 V supply must not be used
 for this test.
 
@@ -47,5 +57,5 @@ on the PC: `WIFI CONNECTED`, `MQTT CONNECTED`, `GAME HELLO SENT`, increasing
 `desired` and `time_sync` counts, and a `connected=true` player with
 `bench=true` and `hardwareReady=false`. The game server must be running in
 real-device mode (`npm start`, not `npm run demo`). The operator screen shows
-separate shot and hit pulse counts. This test does not establish LED, IR, the
+separate shot, hit, defeat and revive pulse counts. This test does not establish LED, IR, the
 full game trigger path, or complete-match behavior.

@@ -10,7 +10,7 @@ import aedesFactory from 'aedes';
 import {WebSocketServer,WebSocket} from 'ws';
 import QRCode from 'qrcode';
 import {Game} from './game.mjs';
-import {hardware} from './hardware.mjs';
+import {hardware,legacyMotorDemo} from './hardware.mjs';
 import {storage} from './store.mjs';
 import {createTicketBridge} from './ticket-bridge.mjs';
 import {availableEffects,effectNames} from './sounds.mjs';
@@ -30,6 +30,10 @@ const listenServer=(server,port,bind)=>new Promise((resolve,reject)=>{
  server.once('error',failed);server.once('listening',listening);server.listen(port,bind);
 });
 const closeServer=server=>server.listening?new Promise(resolve=>server.close(resolve)):Promise.resolve();
+export function tabletAddressOf(interfaces){
+ const addresses=Object.entries(interfaces).flatMap(([name,items])=>(items??[]).filter(a=>a.family==='IPv4'&&!a.internal).map(a=>({name,address:a.address})));
+ return addresses.find(a=>/wi-?fi|wlan|wireless|無線/i.test(a.name))?.address??addresses[0]?.address??'127.0.0.1';
+}
 export async function detectRunningGameServer(port){
  try {const response=await fetch(`http://127.0.0.1:${port}/api/state`,{signal:AbortSignal.timeout(1000)});if(!response.ok)return null;
   const state=await response.json();return typeof state.demo==='boolean'&&Array.isArray(state.players)?state:null;
@@ -42,6 +46,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
  const local=req=>['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
  const sessions=new Map(),commands=new Map(),attempts=new Map();let owner=null,preparedTicketGameId=null,pairToken=randomBytes(16).toString('hex'),pairExpires=Date.now()+600000;
+ const demoEventCounts=new Map();
  const wss=new WebSocketServer({noServer:true,maxPayload:8192});
  const displayReady=()=>[...wss.clients].some(ws=>ws.display&&ws.displayReady&&ws.readyState===WebSocket.OPEN);
  broker.authenticate=(client,username,password,cb)=>{const d=config.devices.find(d=>d.id===username);const ok=!!d&&equal(password?.toString(),d.key)&&client.id===d.id;client.deviceId=ok?d.id:null;cb(null,ok);};
@@ -54,7 +59,23 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  broker.on('publish',(packet,client)=>{if(!client)return;try{const id=client.deviceId,m=JSON.parse(packet.payload.toString()),suffix=packet.topic.split('/').at(-1);
    if(suffix==='hello'){game.hello(id,m.boot_id);desired(game.player(id));}
    else if(suffix==='telemetry'){if(m.boot_id!==game.player(id).bootId)return;game.heartbeat(id,m);publish(id,'command',{type:'time_sync',echo:m.device_time_ms,server_time_ms:Date.now()});}
-   else if(suffix==='event'){const result=game.event(id,m);db.log({at:Date.now(),gameId:game.s.id,type:'device_event_result',deviceId:id,eventType:m.type,messageId:m.message_id,...result});publish(id,'command',{type:'event_result',candidate_message_id:m.message_id,game_id:game.s.id,game_generation:game.s.generation,...result});db.save(game.s);sync();}
+   else if(suffix==='event'){
+     const player=game.player(id);
+     if(['motor_demo_shot','motor_demo_hit','motor_demo_defeat','motor_demo_revive'].includes(m.type)&&legacyMotorDemo(player)){
+       if(m.boot_id!==player.bootId||!Number.isSafeInteger(m.count)||m.count<1)return;
+       let seen=demoEventCounts.get(id);
+       if(!seen||seen.bootId!==player.bootId){seen={bootId:player.bootId,motor_demo_shot:0,motor_demo_hit:0,motor_demo_defeat:0,motor_demo_revive:0};demoEventCounts.set(id,seen);}
+       if(m.count<=seen[m.type])return;
+       seen[m.type]=m.count;
+       if(m.type==='motor_demo_shot')player.demoShots=m.count;
+       else if(m.type==='motor_demo_hit')player.demoHits=m.count;
+       else if(m.type==='motor_demo_defeat')player.demoDefeats=m.count;
+       else player.demoRevives=m.count;
+       game.record(m.type,{deviceId:id,count:m.count});db.save(game.s);
+     }else{
+       const result=game.event(id,m);db.log({at:Date.now(),gameId:game.s.id,type:'device_event_result',deviceId:id,eventType:m.type,messageId:m.message_id,...result});publish(id,'command',{type:'event_result',candidate_message_id:m.message_id,game_id:game.s.id,game_generation:game.s.generation,...result});db.save(game.s);sync();
+     }
+   }
  }catch(e){db.log({at:Date.now(),type:'invalid_device_message',reason:e.message});}});
  const mqttServer=net.createServer(broker.handle);
  function session(req){const token=(req.headers.cookie??'').split(';').map(s=>s.trim()).find(s=>s.startsWith('arena='))?.slice(6);const s=sessions.get(token);if(s&&s.expires>Date.now()){s.seen=Date.now();return s;}return null;}
@@ -81,8 +102,12 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
     }
     if(url.pathname==='/api/session'){const s=session(req);return reply(res,s?200:401,s?{csrf:s.csrf,id:s.id,owner,local:local(req),demo}:{});}
     if(url.pathname==='/api/state'){if(!session(req)&&!local(req))return reply(res,401,{});return reply(res,200,{...game.view(),soundFiles:soundFiles(),displayReady:displayReady(),demo,owner,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}});}
+    if(url.pathname==='/api/pair-info'){
+      if(!local(req))return reply(res,403,{});
+      return reply(res,200,{url:`http://${tabletAddressOf(os.networkInterfaces())}:${httpServer.address().port}/`});
+    }
     if(url.pathname==='/api/pair.svg'){
-      if(!local(req))return reply(res,403,{});const addresses=Object.values(os.networkInterfaces()).flat().filter(a=>a.family==='IPv4'&&!a.internal);const host=addresses[0]?.address??'127.0.0.1';
+      if(!local(req))return reply(res,403,{});const host=tabletAddressOf(os.networkInterfaces());
       if(Date.now()>pairExpires){pairToken=randomBytes(16).toString('hex');pairExpires=Date.now()+600000;}
       res.writeHead(200,{'Content-Type':'image/svg+xml','Cache-Control':'no-store'});return res.end(await QRCode.toString(`http://${host}:${httpServer.address().port}/?pair=${pairToken}`,{type:'svg'}));
     }
@@ -124,13 +149,18 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
           case 'video':if(!existsSync(path.join(root,'assets/rules.webm')))throw Error('assets/rules.webmがありません');game.controlVideo(b.operation);break;
           case 'demo_hit':if(!demo)throw Error('デモ専用操作');simulators?.hit(b.shooter,b.victim,b.receiver??'rx1');break;
           case 'demo_revive':if(!demo)throw Error('デモ専用操作');simulators?.revive(b.shooter,b.victim);break;
-          case 'motor_demo_hit':{
+          case 'motor_demo_hit':
+          case 'motor_demo_defeat':
+          case 'motor_demo_revive':{
             if(demo)throw Error('実機モーターデモ専用操作');
             const player=game.player(b.id);
-            if(!player.connected||player.firmwareVersion!=='legacy-motor-demo-1'||!player.bench)
+            if(!player.connected||!legacyMotorDemo(player))
               throw Error('対象端末は実機モーターデモに接続していません');
-            publish(player.id,'command',{type:'motor_demo_hit',command_id:b.commandId,server_time_ms:Date.now()});
-            operation={notice:`${player.name}へ被弾振動を送信しました。端末の被弾回数を確認してください。`};
+            if(b.action!=='motor_demo_hit'&&player.firmwareVersion!=='legacy-motor-demo-3')
+              throw Error('この振動は端末の更新後に使用できます');
+            publish(player.id,'command',{type:b.action,command_id:b.commandId,server_time_ms:Date.now()});
+            const name={motor_demo_hit:'被弾',motor_demo_defeat:'HP 0',motor_demo_revive:'復活'}[b.action];
+            operation={notice:`${player.name}へ${name}振動を送信しました。端末の状態を確認してください。`};
             break;
           }
           default:throw Error('未知の操作');
