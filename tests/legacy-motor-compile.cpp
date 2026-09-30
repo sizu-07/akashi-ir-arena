@@ -1,66 +1,50 @@
 #include "../firmware/wifi-game-diagnostic/include/motor_feedback.h"
-#include <initializer_list>
 using namespace legacy_feedback;
-
-constexpr bool ceilingsAndEnvelopes() {
-  for (auto pattern : {Pattern::Shot, Pattern::Hit, Pattern::Countdown, Pattern::Defeat, Pattern::Revive}) {
-    for (uint8_t beat = 0; beat < 5; ++beat)
-      for (uint32_t t = 0; t <= duration(pattern) + 20; ++t)
-        if (dutyAt(pattern, t, beat) > MAX_DUTY) return false;
-    if (dutyAt(pattern, duration(pattern)) != 0) return false;
-  }
-  if (dutyAt(Pattern::Shot, 100) != 150 || duration(Pattern::Shot) != 310) return false;
-  if (!(reviveDuty(150) < reviveDuty(250) && reviveDuty(250) < reviveDuty(350))) return false;
-  if (!(reviveDuty(350) == RUN_MAX_DUTY && reviveDuty(450) < RUN_MAX_DUTY && reviveDuty(500) == 0)) return false;
-  uint32_t lastEnergy = 0;
-  for (uint8_t beat = 0; beat < 5; ++beat) {
-    uint32_t energy = 0;
-    for (uint32_t t = 0; t < COUNTDOWN_MS; ++t) energy += dutyAt(Pattern::Countdown, t, beat);
-    if (energy <= lastEnergy) return false;
-    lastEnergy = energy;
-  }
-  return true;
+constexpr bool rapidPressesNeverReplay() {
+  Trigger t; t.initialize(false, 0);
+  if(t.update(true, 100, true) != TriggerEvent::None) return false;
+  if(t.update(true, 124, true) != TriggerEvent::None) return false;
+  if(t.update(true, 125, true) != TriggerEvent::Shot) return false;
+  t.update(false, 150, true); t.update(false, 175, true);
+  t.update(true, 200, true);
+  if(t.update(true, 225, true) != TriggerEvent::Ignored) return false;
+  // Passing the cooldown while held must never replay the rejected press.
+  if(t.update(true, 1125, true) != TriggerEvent::None) return false;
+  t.update(false, 1200, true); t.update(false, 1225, true);
+  t.update(true, 1250, true);
+  return t.update(true, 1275, true) == TriggerEvent::Shot;
 }
-constexpr bool startupThenBoundedRunning() {
-  for (auto pattern : {Pattern::Shot, Pattern::Hit, Pattern::Countdown, Pattern::Defeat, Pattern::Revive}) {
-    for (uint8_t beat = 0; beat < 5; ++beat) {
-      for (uint32_t t = 0; t < duration(pattern); ++t) {
-        const uint32_t within = pattern == Pattern::Defeat ? t % (DEFEAT_PULSE_MS + DEFEAT_REST_MS) : t;
-        if (within < STARTUP_MS && dutyAt(pattern, t, beat) != STARTUP_DUTY) return false;
-        if (within >= STARTUP_MS + SETTLE_MS && dutyAt(pattern, t, beat) > RUN_MAX_DUTY) return false;
-      }
-    }
-  }
-  return true;
+constexpr bool exactCooldownAndBusyRejection() {
+  Trigger t; t.initialize(false, 0);
+  t.update(true, 0, true);
+  if(t.update(true, 25, true) != TriggerEvent::Shot) return false;
+  t.update(false, 50, true); t.update(false, 75, true);
+  t.update(true, 975, true);
+  if(t.update(true, 1000, true) != TriggerEvent::Ignored) return false;
+  t.update(false, 1000, true); t.update(false, 1025, true);
+  t.update(true, 1025, true);
+  if(t.update(true, 1050, true) != TriggerEvent::Shot) return false;
+  t.update(false, 1075, true); t.update(false, 1100, true);
+  t.update(true, 2200, false);
+  if(t.update(true, 2225, false) != TriggerEvent::Ignored) return false;
+  return t.update(true, 2300, true) == TriggerEvent::None;
 }
-constexpr bool completeTriplePulseAndRecovery() {
-  Controller motor;
-  if (!motor.start(Pattern::Defeat, 1000)) return false;
-  unsigned pulses = 0;
-  for (uint32_t elapsed = 0; elapsed <= duration(Pattern::Defeat); elapsed += 5) {
-    const auto frame = motor.update(1000 + elapsed);
-    if (frame.pulseStarted) ++pulses;
-    if (elapsed < duration(Pattern::Defeat) &&
-        elapsed % (DEFEAT_PULSE_MS + DEFEAT_REST_MS) >= DEFEAT_PULSE_MS && frame.duty) return false;
-    if (elapsed == 400 && motor.start(Pattern::Shot, 1400)) return false;
-  }
-  const uint32_t end = 1000 + duration(Pattern::Defeat);
-  if (pulses != 3 || motor.active() || motor.ready(end + RECOVERY_MS - 1)) return false;
-  if (!motor.start(Pattern::Revive, end + RECOVERY_MS)) return false;
-  return motor.update(end + RECOVERY_MS + REVIVE_MS).finished && !motor.active();
+constexpr bool startupHeldBounceAndWrap() {
+  Trigger t; t.initialize(true, 0xffffffe0u);
+  if(t.update(true, 0xffffffe5u, true) != TriggerEvent::None) return false;
+  t.update(false, 0xffffffe5u, true); t.update(false, 0xfffffffeu, true);
+  t.update(true, 0xffffffffu, true);
+  if(t.update(true, 24u, true) != TriggerEvent::Shot) return false;
+  t.update(false, 100, true); t.update(false, 125, true);
+  t.update(true, 999, true);
+  if(t.update(true, 1024, true) != TriggerEvent::Shot) return false;
+  Trigger bounce; bounce.initialize(false, 0);
+  bounce.update(true, 10, true); bounce.update(false, 20, true);
+  return bounce.update(false, 100, true) == TriggerEvent::None;
 }
-constexpr bool timerDelayCancelAndWrap() {
-  Controller motor;
-  if (!motor.start(Pattern::Revive, 0xfffffff0u)) return false;
-  if (motor.update(4u).duty != reviveDuty(20)) return false;
-  motor.cancel(4u);
-  if (motor.update(10u).duty != 0 || motor.ready(253u)) return false;
-  if (!motor.start(Pattern::Hit, 254u)) return false;
-  // A delayed update still ends the effect instead of extending its pulse.
-  const auto frame = motor.update(2000u);
-  return frame.finished && frame.duty == 0 && motor.ready(2000u);
-}
-static_assert(ceilingsAndEnvelopes(), "All effects must stay under the PWM ceiling, fade out and grow as intended");
-static_assert(startupThenBoundedRunning(), "Every pulse needs its startup kick, then must stay below the running-duty ceiling");
-static_assert(completeTriplePulseAndRecovery(), "Death must finish three separate pulses and enforce recovery before the next effect");
-static_assert(timerDelayCancelAndWrap(), "Effects must stop on cancellation, timer delay and millis rollover");
+static_assert(SHOT_DUTY == 220 && SHOT_MS == 310 && HIT_DUTY == 255 && HIT_MS == 420, "Restore the working v3 shot and hit profile");
+static_assert(LED_COUNT == 8 && LED_WHITE == 51, "Eight RGB pixels at 20 percent");
+static_assert(rapidPressesNeverReplay(), "Discard rapid presses and never replay a held press");
+static_assert(exactCooldownAndBusyRejection(), "Ignored presses cannot extend the cooldown or wait for the motor");
+static_assert(startupHeldBounceAndWrap(), "Require release after held boot, filter bounce and support uptime rollover");
+static_assert(reviveDuty(0) == 120 && reviveDuty(499) == 254 && reviveDuty(500) == 0, "Revive must end after 500 ms");

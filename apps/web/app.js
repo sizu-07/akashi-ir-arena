@@ -242,8 +242,14 @@ function render() {
   $('motorDemoStatus').textContent = motorTarget?.firmwareVersion?.startsWith('legacy-motor-demo-')
     ? `${motorTarget.connected ? '接続中' : '切断'} ／ 射撃 ${motorTarget.demoShots ?? 0}回 ／ 被弾 ${motorTarget.demoHits ?? 0}回 ／ カウントダウン ${motorTarget.demoCountdownBeats ?? 0}拍 ／ HP 0 ${motorTarget.demoDefeats ?? 0}回（${motorTarget.demoDefeatPulses ?? 0}拍）／ 復活 ${motorTarget.demoRevives ?? 0}回 ／ 投影音声 ${state.displayReady ? '準備完了' : '未準備'}`
     : '実機モーターデモの端末を選択してください。';
+  const restoredMotor = motorTarget?.firmwareVersion === 'legacy-motor-demo-6';
+  const driveProfile = restoredMotor
+    ? `旧版モーター制御 ／ 射撃間隔 ${motorTarget.shotCooldownMs ?? 1000} ms ／ 無視した押下 ${motorTarget.ignoredShots ?? 0}回 ／ LED ${motorTarget.ledReady === true ? (motorTarget.ledWhite20 ? '白20%の点灯データ送信済み' : '消灯データ送信済み') : '初期化未完了'}`
+    : motorTarget?.motorRunLimit != null
+      ? `持続PWM上限 ${motorTarget.motorRunLimit}/255 ／ 始動 ${motorTarget.motorPwmLimit}/255・${motorTarget.motorStartupMs} ms`
+      : `PWM上限 ${motorTarget?.motorPwmLimit}/255`;
   $('motorDemoDrive').textContent = motorTarget?.motorPwmLimit != null
-    ? `${motorTarget.motorRunLimit != null ? `持続PWM上限 ${motorTarget.motorRunLimit}/255 ／ 始動 ${motorTarget.motorPwmLimit}/255・${motorTarget.motorStartupMs} ms` : `PWM上限 ${motorTarget.motorPwmLimit}/255`} ／ 現在 ${motorTarget.motorPattern ?? 'OFF'}・PWM ${motorTarget.motorDuty ?? 0}${motorTarget.motorHwDuty != null ? `（読み戻し ${motorTarget.motorHwDuty}）` : ''} ／ 待機 ${motorTarget.motorQueueDepth ?? 0}件 ／ 破棄 ${motorTarget.motorDroppedCommands ?? 0}件 ／ カウントダウン未実行 ${motorTarget.demoCountdownMissed ?? 0}拍${motorTarget.resetReason === 9 ? ' ／ 前回の再起動原因：電圧低下検出' : ''}`
+    ? `${driveProfile} ／ 現在 ${motorTarget.motorPattern ?? 'OFF'}・PWM ${motorTarget.motorDuty ?? 0}${motorTarget.motorHwDuty != null ? `（読み戻し ${motorTarget.motorHwDuty}）` : ''} ／ 待機 ${motorTarget.motorQueueDepth ?? 0}件 ／ 破棄 ${motorTarget.motorDroppedCommands ?? 0}件${motorTarget.resetReason === 9 ? ' ／ 前回の再起動原因：電圧低下検出' : ''}`
     : 'PWM状態は端末の更新・接続後に表示されます。';
 
   if (first) {

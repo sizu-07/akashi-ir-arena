@@ -5,8 +5,9 @@
 #include <mqtt_client.h>
 #include <esp_timer.h>
 #include <esp_system.h>
-#include "hardware_profile.h"
+#include <driver/rmt.h>
 #include "../include/motor_feedback.h"
+#include "hardware_profile.h"
 
 #if !CONFIG_IDF_TARGET_ESP32S3
 #error "Wi-Fi game diagnostic requires XIAO ESP32-S3 Plus"
@@ -16,37 +17,37 @@
 constexpr int LEGACY_MOTOR_GPIO = 9;
 constexpr int LEGACY_IR_GPIO = 6;
 constexpr int LEGACY_SW1_GPIO = 2;
-constexpr uint32_t SWITCH_DEBOUNCE_MS = 25;
+constexpr int LEGACY_LED_GPIO = 43;
+constexpr rmt_channel_t LED_RMT_CHANNEL = RMT_CHANNEL_1;
+constexpr char DEMO_FIRMWARE_VERSION[] = "legacy-motor-demo-6";
 constexpr uint32_t STATUS_INTERVAL_MS = 2000;
 constexpr uint32_t WIFI_RETRY_MS = 30000;
+constexpr uint32_t DEMO_SHOT_PULSE_MS = legacy_feedback::SHOT_MS;
+constexpr uint32_t DEMO_HIT_PULSE_MS = legacy_feedback::HIT_MS;
+constexpr uint32_t DEMO_COUNTDOWN_PULSE_MS = legacy_feedback::COUNTDOWN_MS;
+constexpr uint32_t DEMO_DEFEAT_PULSE_MS = legacy_feedback::DEFEAT_MS;
+constexpr uint32_t DEMO_REVIVE_PULSE_MS = legacy_feedback::REVIVE_MS;
+constexpr uint32_t DEMO_MIN_OFF_MS = 100;
 constexpr uint8_t MOTOR_CHANNEL = 2;
-constexpr char DEMO_FIRMWARE_VERSION[] = "legacy-motor-demo-5";
-using MotorPattern = legacy_feedback::Pattern;
+constexpr uint8_t SHOT_DUTY = legacy_feedback::SHOT_DUTY;
+constexpr auto& COUNTDOWN_DUTIES = legacy_feedback::COUNTDOWN_DUTIES;
 
 Preferences prefs;
 esp_mqtt_client_handle_t mqtt = nullptr;
 esp_timer_handle_t motorTimer = nullptr;
-portMUX_TYPE motorMux = portMUX_INITIALIZER_UNLOCKED;
-legacy_feedback::Controller motorController;
-struct MotorCommand {
-  char commandId[81];
-  MotorPattern pattern;
-  uint32_t queuedAt;
-};
+struct MotorCommand { char commandId[81]; char type[24]; };
 struct DesiredState {
   char phase[16];
   char commandId[81];
   bool startCommitted;
   int hp;
   int64_t startDeltaMs;
-  uint32_t receivedAt;
 };
 QueueHandle_t motorCommands = nullptr;
 QueueHandle_t desiredStates = nullptr;
 String ssid, password, host, id, key, bootId, serialLine;
 String staticIp, staticGateway, staticSubnet;
-String recentMotorCommands[8], lastCountdownCommand;
-uint8_t recentCommandIndex = 0;
+String lastMotorCommand, lastCountdownCommand;
 uint16_t port = 1883;
 volatile bool mqttConnected = false;
 volatile bool sendHello = false;
@@ -57,25 +58,27 @@ uint32_t lastStatus = 0, lastWifiAttempt = 0, lastTelemetry = 0;
 bool mqttStarted = false;
 bool scanRequested = false;
 volatile bool motorActive = false;
-volatile uint8_t motorDuty = 0;
-volatile MotorPattern currentMotorPattern = MotorPattern::None;
+volatile uint32_t lastMotorStop = 0;
+uint32_t lastMotorStart = 0, activeMotorStart = 0;
 uint32_t demoShots = 0, demoHits = 0, demoDefeats = 0, demoRevives = 0;
-volatile uint32_t demoCountdownBeats = 0, demoDefeatPulses = 0;
+uint32_t demoCountdownBeats = 0, demoDefeatPulses = 0;
+uint32_t ignoredShots = 0;
 volatile uint32_t droppedMotorCommands = 0;
-uint32_t missedCountdownBeats = 0, triggerPresses = 0;
-uint8_t countdownIndex = 0;
-uint32_t countdownStartAt = 0;
+volatile uint8_t motorDuty = 0;
+portMUX_TYPE motorMux = portMUX_INITIALIZER_UNLOCKED;
+bool ledReady = false, ledsOn = false;
+uint8_t defeatPulsesRemaining = 0, countdownIndex = 0;
+uint32_t nextDefeatAt = 0, countdownStartAt = 0;
 bool countdownPending = false, hpSeen = false;
 int lastHp = 0;
+enum class MotorPattern { None, Shot, Hit, Countdown, Defeat, Revive };
+MotorPattern activePattern = MotorPattern::None;
 MotorPattern pendingHpPattern = MotorPattern::None;
-int triggerRaw = HIGH, triggerStable = HIGH;
-uint32_t triggerChangedAt = 0;
-bool triggerArmed = false;
+legacy_feedback::Trigger trigger;
 
-void publishDemoEvent(const char* type, uint32_t count);
-
-const char* patternName(MotorPattern pattern) {
-  switch (pattern) {
+const char* motorPatternName() {
+  if (!motorActive) return "OFF";
+  switch (activePattern) {
     case MotorPattern::Shot: return "SHOT";
     case MotorPattern::Hit: return "HIT";
     case MotorPattern::Countdown: return "COUNTDOWN";
@@ -85,97 +88,117 @@ const char* patternName(MotorPattern pattern) {
   }
 }
 
-// All runtime PWM writes and multi-pulse timing run on this timer task.
-// Network operations or serial scans cannot freeze an effect at its last duty.
-void motorTick(void*) {
+void publishDemoEvent(const char* type, uint32_t count);
+
+void stopMotor(void* = nullptr) {
   portENTER_CRITICAL(&motorMux);
-  const auto frame = motorController.update(millis());
-  const bool changed = motorDuty != frame.duty;
-  motorDuty = frame.duty;
-  motorActive = frame.duty > 0;
-  currentMotorPattern = motorController.pattern();
-  if (frame.pulseStarted && frame.pattern == MotorPattern::Defeat) ++demoDefeatPulses;
-  if (frame.pulseStarted && frame.pattern == MotorPattern::Countdown) ++demoCountdownBeats;
+  ledcWrite(MOTOR_CHANNEL, 0);
+  motorDuty = 0;
+  motorActive = false;
+  lastMotorStop = millis();
   portEXIT_CRITICAL(&motorMux);
-  if (changed) ledcWrite(MOTOR_CHANNEL, legacy_feedback::clampDuty(frame.duty));
 }
 
-bool motorReady() {
-  portENTER_CRITICAL(&motorMux);
-  const bool ready = motorTimer && motorController.ready(millis());
-  portEXIT_CRITICAL(&motorMux);
-  return ready;
-}
-
-bool startMotor(MotorPattern pattern, uint8_t beat = 0) {
-  portENTER_CRITICAL(&motorMux);
-  const bool started = motorTimer && motorController.start(pattern, millis(), beat);
-  portEXIT_CRITICAL(&motorMux);
-  if (!started) return false;
-  Serial.printf("MOTOR %s START duration_ms=%lu ceiling=%u/255\n", patternName(pattern),
-                static_cast<unsigned long>(legacy_feedback::duration(pattern)),
-                legacy_feedback::MAX_DUTY);
-  if (pattern == MotorPattern::Shot) publishDemoEvent("motor_demo_shot", ++demoShots);
-  else if (pattern == MotorPattern::Hit) publishDemoEvent("motor_demo_hit", ++demoHits);
-  else if (pattern == MotorPattern::Defeat) publishDemoEvent("motor_demo_defeat", ++demoDefeats);
-  else if (pattern == MotorPattern::Revive) publishDemoEvent("motor_demo_revive", ++demoRevives);
+bool pulseMotor(const char* kind, uint32_t durationMs, uint8_t duty,
+                MotorPattern pattern, bool continuation = false) {
+  const uint32_t now = millis();
+  if (!motorTimer || motorActive || (defeatPulsesRemaining && !continuation) ||
+      (lastMotorStop && now - lastMotorStop < DEMO_MIN_OFF_MS) ||
+      (!continuation && lastMotorStart && now - lastMotorStart < MOTOR_MIN_INTERVAL_MS)) {
+    Serial.printf("MOTOR %s SKIPPED cooldown\n", kind);
+    ++droppedMotorCommands;
+    return false;
+  }
+  lastMotorStart = now;
+  activeMotorStart = now;
+  activePattern = pattern;
+  ledcWrite(MOTOR_CHANNEL, duty);
+  motorDuty = duty;
+  motorActive = true;
+  if (esp_timer_start_once(motorTimer, uint64_t(durationMs) * 1000) != ESP_OK) {
+    stopMotor();
+    Serial.printf("MOTOR %s FAILED timer\n", kind);
+    return false;
+  }
+  Serial.printf("MOTOR %s ON duration_ms=%lu duty=%u/255\n", kind,
+                static_cast<unsigned long>(durationMs), duty);
   return true;
 }
 
-void cancelMotor(MotorPattern pattern) {
-  portENTER_CRITICAL(&motorMux);
-  if (motorController.pattern() == pattern) motorController.cancel(millis());
-  portEXIT_CRITICAL(&motorMux);
-}
-
-void dropMotorCommand() {
-  portENTER_CRITICAL(&motorMux);
-  ++droppedMotorCommands;
-  portEXIT_CRITICAL(&motorMux);
-}
-
-void enqueueMotor(const MotorCommand& command) {
-  if (!motorCommands || xQueueSend(motorCommands, &command, 0) != pdTRUE) {
-    dropMotorCommand();
-    Serial.println("MOTOR COMMAND REJECTED queue full");
+bool writeLeds(bool on) {
+  if (!ledReady) return false;
+  rmt_item32_t items[legacy_feedback::LED_COUNT * 24]{};
+  const uint8_t value = on ? legacy_feedback::LED_WHITE : 0;
+  for (size_t i = 0; i < legacy_feedback::LED_COUNT * 24; ++i) {
+    const bool one = value & (1u << (7 - (i % 8)));
+    items[i].level0 = 1; items[i].duration0 = one ? 26 : 13;
+    items[i].level1 = 0; items[i].duration1 = one ? 24 : 37;
   }
+  const auto result = rmt_write_items(LED_RMT_CHANNEL, items, legacy_feedback::LED_COUNT * 24, true);
+  delayMicroseconds(300);
+  if (result != ESP_OK) { Serial.printf("LED transfer failed code=%d\n", result); return false; }
+  ledsOn = on;
+  return true;
+}
+
+void initializeLeds() {
+  digitalWrite(LEGACY_LED_GPIO, LOW); pinMode(LEGACY_LED_GPIO, OUTPUT);
+  rmt_config_t config = RMT_DEFAULT_CONFIG_TX(static_cast<gpio_num_t>(LEGACY_LED_GPIO), LED_RMT_CHANNEL);
+  config.clk_div = 2;
+  config.tx_config.idle_output_en = true;
+  config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
+  auto result = rmt_config(&config);
+  if (result == ESP_OK) result = rmt_driver_install(LED_RMT_CHANNEL, 0, 0);
+  ledReady = result == ESP_OK;
+  if (ledReady) writeLeds(false);
+  else Serial.printf("LED init failed code=%d; motor test remains available\n", result);
 }
 
 void handleTrigger(uint32_t now) {
-  const int level = digitalRead(LEGACY_SW1_GPIO);
-  if (level != triggerRaw) { triggerRaw = level; triggerChangedAt = now; }
-  if (level == triggerStable || now - triggerChangedAt < SWITCH_DEBOUNCE_MS) return;
-  triggerStable = level;
-  if (level == HIGH) { triggerArmed = true; Serial.println("SW1 RELEASED"); }
-  else if (triggerArmed) {
-    triggerArmed = false;
-    MotorCommand command{};
-    snprintf(command.commandId, sizeof(command.commandId), "SW1-%lu",
-             static_cast<unsigned long>(++triggerPresses));
-    command.pattern = MotorPattern::Shot;
-    command.queuedAt = now;
-    enqueueMotor(command);
-    Serial.println("SW1 PRESSED: shot queued");
+  const bool ready = motorTimer && !motorActive && !defeatPulsesRemaining &&
+      pendingHpPattern == MotorPattern::None &&
+      (!lastMotorStop || uint32_t(now - lastMotorStop) >= DEMO_MIN_OFF_MS) &&
+      (!lastMotorStart || uint32_t(now - lastMotorStart) >= MOTOR_MIN_INTERVAL_MS);
+  const auto event = trigger.update(digitalRead(LEGACY_SW1_GPIO) == LOW, now, ready);
+  if (event == legacy_feedback::TriggerEvent::Released) Serial.println("SW1 RELEASED");
+  else if (event == legacy_feedback::TriggerEvent::Ignored) {
+    ++ignoredShots;
+    Serial.println("SW1 PRESSED: ignored (1-second cooldown or motor busy); not queued");
+  } else if (event == legacy_feedback::TriggerEvent::Shot) {
+    if (pulseMotor("SHOT", DEMO_SHOT_PULSE_MS, SHOT_DUTY, MotorPattern::Shot)) {
+      writeLeds(true);
+      publishDemoEvent("motor_demo_shot", ++demoShots);
+    } else ++ignoredShots;
   }
 }
 
+void startDefeat() {
+  if (!pulseMotor("DEFEAT_1", DEMO_DEFEAT_PULSE_MS, legacy_feedback::DEFEAT_DUTY, MotorPattern::Defeat)) return;
+  defeatPulsesRemaining = 2;
+  nextDefeatAt = millis() + DEMO_DEFEAT_PULSE_MS + 300;
+  ++demoDefeatPulses;
+  publishDemoEvent("motor_demo_defeat", ++demoDefeats);
+}
+
+void startRevive() {
+  if (pulseMotor("REVIVE", DEMO_REVIVE_PULSE_MS, 120, MotorPattern::Revive))
+    publishDemoEvent("motor_demo_revive", ++demoRevives);
+}
+
 void handleMotorCommands() {
-  if (!motorCommands || pendingHpPattern != MotorPattern::None) return;
+  if (!motorCommands) return;
   MotorCommand command{};
-  while (xQueuePeek(motorCommands, &command, 0) == pdTRUE) {
-    bool duplicate = false;
-    for (const auto& seen : recentMotorCommands) if (seen == command.commandId) duplicate = true;
-    const bool expired = uint32_t(millis() - command.queuedAt) > 5000;
-    if (duplicate || expired) {
-      xQueueReceive(motorCommands, &command, 0);
-      if (expired && !duplicate) { dropMotorCommand(); Serial.println("MOTOR COMMAND EXPIRED"); }
-      continue;
+  while (xQueueReceive(motorCommands, &command, 0) == pdTRUE) {
+    if (lastMotorCommand == command.commandId) continue;
+    lastMotorCommand = command.commandId;
+    if (strcmp(command.type, "motor_demo_hit") == 0) {
+      if (pulseMotor("HIT", DEMO_HIT_PULSE_MS, legacy_feedback::HIT_DUTY, MotorPattern::Hit))
+        publishDemoEvent("motor_demo_hit", ++demoHits);
+    } else if (strcmp(command.type, "motor_demo_defeat") == 0) {
+      startDefeat();
+    } else if (strcmp(command.type, "motor_demo_revive") == 0) {
+      startRevive();
     }
-    if (!motorReady()) return;  // Keep the instruction until the recovery gap ends.
-    if (!startMotor(command.pattern)) return;
-    xQueueReceive(motorCommands, &command, 0);
-    recentMotorCommands[recentCommandIndex++ % 8] = command.commandId;
-    return;
   }
 }
 
@@ -186,18 +209,25 @@ void handleDesired() {
     if (hpSeen) {
       if (lastHp > 0 && desired.hp <= 0) pendingHpPattern = MotorPattern::Defeat;
       else if (lastHp <= 0 && desired.hp > 0) {
-        cancelMotor(MotorPattern::Defeat);
+        defeatPulsesRemaining = 0;
         pendingHpPattern = MotorPattern::Revive;
       }
     }
-    lastHp = desired.hp; hpSeen = true;
+    lastHp = desired.hp;
+    hpSeen = true;
     const bool counting = strcmp(desired.phase, "COUNTDOWN") == 0 && desired.startCommitted &&
                           desired.commandId[0] && desired.startDeltaMs > 0 && desired.startDeltaMs <= 10000;
-    if (!counting) { countdownPending = false; cancelMotor(MotorPattern::Countdown); }
-    else if (lastCountdownCommand != desired.commandId) {
+    if (!counting) {
+      countdownPending = false;
+      if (activePattern == MotorPattern::Countdown && motorActive) {
+        esp_timer_stop(motorTimer);
+        stopMotor();
+      }
+    } else if (lastCountdownCommand != desired.commandId) {
       lastCountdownCommand = desired.commandId;
-      countdownStartAt = desired.receivedAt + static_cast<uint32_t>(desired.startDeltaMs);
-      countdownIndex = 0; countdownPending = true;
+      countdownStartAt = millis() + static_cast<uint32_t>(desired.startDeltaMs);
+      countdownIndex = 0;
+      countdownPending = true;
       Serial.printf("COUNTDOWN vibration scheduled start_in_ms=%lld\n",
                     static_cast<long long>(desired.startDeltaMs));
     }
@@ -205,16 +235,39 @@ void handleDesired() {
 }
 
 void handleMotorSequence(uint32_t now) {
-  if (pendingHpPattern != MotorPattern::None && motorReady()) {
-    if (startMotor(pendingHpPattern)) pendingHpPattern = MotorPattern::None;
+  if (pendingHpPattern != MotorPattern::None && !motorActive && !defeatPulsesRemaining &&
+      (!lastMotorStop || now - lastMotorStop >= DEMO_MIN_OFF_MS) &&
+      (!lastMotorStart || now - lastMotorStart >= MOTOR_MIN_INTERVAL_MS)) {
+    MotorPattern pending = pendingHpPattern;
+    pendingHpPattern = MotorPattern::None;
+    if (pending == MotorPattern::Defeat) startDefeat();
+    else startRevive();
+  }
+  if (motorActive && activePattern == MotorPattern::Revive) {
+    portENTER_CRITICAL(&motorMux);
+    const uint32_t elapsed = now - activeMotorStart;
+    if (motorActive && elapsed < DEMO_REVIVE_PULSE_MS) {
+      motorDuty = legacy_feedback::reviveDuty(elapsed);
+      ledcWrite(MOTOR_CHANNEL, motorDuty);
+    }
+    portEXIT_CRITICAL(&motorMux);
+  }
+  if (defeatPulsesRemaining && static_cast<int32_t>(now - nextDefeatAt) >= 0) {
+    if (pulseMotor("DEFEAT", DEMO_DEFEAT_PULSE_MS, legacy_feedback::DEFEAT_DUTY, MotorPattern::Defeat, true)) {
+      --defeatPulsesRemaining;
+      nextDefeatAt = now + DEMO_DEFEAT_PULSE_MS + 300;
+      ++demoDefeatPulses;
+    }
   }
   if (countdownPending && countdownIndex < 5) {
     const uint32_t mark = countdownStartAt - (5 - countdownIndex) * 1000;
     if (static_cast<int32_t>(now - mark) >= 0) {
-      if (static_cast<int32_t>(now - mark) <= 150 && motorReady() &&
-          startMotor(MotorPattern::Countdown, countdownIndex))
+      if (static_cast<int32_t>(now - mark) <= 150 &&
+          pulseMotor("COUNTDOWN", DEMO_COUNTDOWN_PULSE_MS,
+                     COUNTDOWN_DUTIES[countdownIndex], MotorPattern::Countdown)) {
+        ++demoCountdownBeats;
         Serial.printf("COUNTDOWN beat=%u/5\n", countdownIndex + 1);
-      else ++missedCountdownBeats;
+      }
       ++countdownIndex;
       if (countdownIndex == 5) countdownPending = false;
     }
@@ -284,7 +337,6 @@ void mqttEvent(void*, esp_event_base_t, int32_t eventId, void* eventData) {
           state.startCommitted = doc["start_committed"] | false;
           state.hp = doc["hp"] | 0;
           state.startDeltaMs = doc["start_at"].as<int64_t>() - doc["server_time_ms"].as<int64_t>();
-          state.receivedAt = millis();
           xQueueOverwrite(desiredStates, &state);
         }
       }
@@ -306,10 +358,8 @@ void mqttEvent(void*, esp_event_base_t, int32_t eventId, void* eventData) {
           if (length > 0 && length <= 80 && motorCommands) {
             MotorCommand command{};
             memcpy(command.commandId, commandId, length);
-            command.pattern = strcmp(type, "motor_demo_hit") == 0 ? MotorPattern::Hit :
-                              strcmp(type, "motor_demo_defeat") == 0 ? MotorPattern::Defeat : MotorPattern::Revive;
-            command.queuedAt = millis();
-            enqueueMotor(command);
+            strlcpy(command.type, type, sizeof(command.type));
+            if (xQueueSend(motorCommands, &command, 0) != pdTRUE) ++droppedMotorCommands;
           }
         }
       }
@@ -420,23 +470,18 @@ void setup() {
   Serial.begin(115200);
   delay(800);
   esp_timer_create_args_t timerArgs{};
-  timerArgs.callback = motorTick;
-  timerArgs.name = "motor-envelope";
-  timerArgs.skip_unhandled_events = true;
+  timerArgs.callback = stopMotor;
+  timerArgs.name = "motor-off";
   ESP_ERROR_CHECK(esp_timer_create(&timerArgs, &motorTimer));
-  motorCommands = xQueueCreate(8, sizeof(MotorCommand));
+  motorCommands = xQueueCreate(4, sizeof(MotorCommand));
   desiredStates = xQueueCreate(1, sizeof(DesiredState));
   configASSERT(motorCommands && desiredStates);
-  ESP_ERROR_CHECK(esp_timer_start_periodic(motorTimer, legacy_feedback::TICK_US));
-  triggerRaw = triggerStable = digitalRead(LEGACY_SW1_GPIO);
-  triggerChangedAt = millis();
-  triggerArmed = triggerStable == HIGH;
+  trigger.initialize(digitalRead(LEGACY_SW1_GPIO) == LOW, millis());
+  initializeLeds();
   prefs.begin("ir-arena", false);
   loadConfig();
   bootId = String(esp_random(), HEX) + String(esp_random(), HEX);
-  Serial.printf("LEGACY MOTOR DEMO 5: startup=%u/255 for %lu ms; run_ceiling=%u/255; shot=310ms PWM150; reset_reason=%d; IR/LED OFF\n",
-                legacy_feedback::STARTUP_DUTY, static_cast<unsigned long>(legacy_feedback::STARTUP_MS),
-                legacy_feedback::RUN_MAX_DUTY, esp_reset_reason());
+  Serial.println("LEGACY MOTOR DEMO 6: restored v3 motor drive; shot=310ms PWM220; hit=420ms PWM255; SW1 cooldown=1000ms, ignored presses never queued; LED8 white20 on GPIO43; IR OFF");
   if (ssid.isEmpty() || host.isEmpty() || id.isEmpty() || key.isEmpty()) {
     Serial.println("CONFIG REQUIRED: send one game provisioning JSON line over USB");
     return;
@@ -465,6 +510,7 @@ void loop() {
   handleDesired();
   handleMotorCommands();
   handleMotorSequence(millis());
+  if (ledsOn && (!motorActive || activePattern != MotorPattern::Shot)) writeLeds(false);
   if (scanRequested) {
     scanRequested = false;
     WiFi.mode(WIFI_STA);
@@ -503,7 +549,7 @@ void loop() {
     }
     if (mqttConnected && now - lastTelemetry >= 250) {
       lastTelemetry = now;
-      StaticJsonDocument<1024> doc;
+      StaticJsonDocument<1536> doc;
       doc["boot_id"] = bootId;
       doc["hardware_profile"] = HARDWARE_PROFILE;
       doc["firmware_version"] = DEMO_FIRMWARE_VERSION;
@@ -511,20 +557,21 @@ void loop() {
       doc["bench"] = true;
       doc["motor_active"] = motorActive;
       doc["motor_duty"] = motorDuty;
-      doc["motor_pwm_limit"] = legacy_feedback::MAX_DUTY;
-      doc["motor_run_limit"] = legacy_feedback::RUN_MAX_DUTY;
-      doc["motor_startup_ms"] = legacy_feedback::STARTUP_MS;
+      doc["motor_pattern"] = motorPatternName();
+      doc["motor_pwm_limit"] = 255;
       doc["motor_hw_duty"] = ledcRead(MOTOR_CHANNEL);
-      doc["motor_pattern"] = patternName(currentMotorPattern);
-      doc["motor_queue_depth"] = motorCommands ? uxQueueMessagesWaiting(motorCommands) : 0;
+      doc["motor_queue_depth"] = uxQueueMessagesWaiting(motorCommands);
       doc["motor_dropped_commands"] = droppedMotorCommands;
       doc["reset_reason"] = static_cast<int>(esp_reset_reason());
+      doc["shot_cooldown_ms"] = legacy_feedback::SHOT_COOLDOWN_MS;
+      doc["ignored_shots"] = ignoredShots;
+      doc["led_ready"] = ledReady;
+      doc["led_white20"] = ledsOn;
       doc["demo_shots"] = demoShots;
       doc["demo_hits"] = demoHits;
       doc["demo_defeats"] = demoDefeats;
       doc["demo_revives"] = demoRevives;
       doc["demo_countdown_beats"] = demoCountdownBeats;
-      doc["demo_countdown_missed"] = missedCountdownBeats;
       doc["demo_defeat_pulses"] = demoDefeatPulses;
       doc.createNestedObject("rx_frames");
       doc["device_time_ms"] = now;
@@ -536,7 +583,7 @@ void loop() {
   }
   if (now - lastStatus >= STATUS_INTERVAL_MS) {
     lastStatus = now;
-    Serial.printf("STATUS configured=%s wifi=%s status_code=%d ip=%s rssi=%d mqtt=%s desired=%lu time_sync=%lu rtt_ms=%d motor=%s duty=%u/%u shots=%lu hits=%lu defeats=%lu defeat_pulses=%lu revives=%lu countdown_beats=%lu queued=%u dropped=%lu\n",
+    Serial.printf("STATUS configured=%s wifi=%s status_code=%d ip=%s rssi=%d mqtt=%s desired=%lu time_sync=%lu rtt_ms=%d motor=%s shots=%lu hits=%lu defeat_pulses=%lu revives=%lu countdown_beats=%lu\n",
                   ssid.isEmpty() || host.isEmpty() || id.isEmpty() || key.isEmpty() ? "NO" : "YES",
                   WiFi.status() == WL_CONNECTED ? "CONNECTED" : "OFFLINE",
                   WiFi.status(),
@@ -546,15 +593,12 @@ void loop() {
                   static_cast<unsigned long>(desiredCount),
                   static_cast<unsigned long>(syncCount), syncRtt,
                   motorActive ? "ON" : "OFF",
-                  motorDuty, legacy_feedback::MAX_DUTY,
                   static_cast<unsigned long>(demoShots),
                   static_cast<unsigned long>(demoHits),
                   static_cast<unsigned long>(demoDefeats),
                   static_cast<unsigned long>(demoDefeatPulses),
                   static_cast<unsigned long>(demoRevives),
-                  static_cast<unsigned long>(demoCountdownBeats),
-                  motorCommands ? static_cast<unsigned>(uxQueueMessagesWaiting(motorCommands)) : 0,
-                  static_cast<unsigned long>(droppedMotorCommands));
+                  static_cast<unsigned long>(demoCountdownBeats));
   }
   delay(10);
 }

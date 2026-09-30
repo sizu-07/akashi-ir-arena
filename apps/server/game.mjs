@@ -24,7 +24,7 @@ export class Game {
       this.s.participantIds=Array.isArray(saved.participantIds)?saved.participantIds:devices.map(d=>d.id);
       this.record('recovery',{phase:this.s.phase});
     }
-    for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,motorDuty:null,motorPwmLimit:null,motorRunLimit:null,motorStartupMs:null,motorHwDuty:null,motorPattern:null,motorQueueDepth:null,motorDroppedCommands:null,resetReason:null,demoShots:null,demoHits:null,demoDefeats:null,demoRevives:null,demoCountdownBeats:null,demoCountdownMissed:null,demoDefeatPulses:null,rxFrames:{},lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
+    for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,motorDuty:null,motorPwmLimit:null,motorRunLimit:null,motorStartupMs:null,motorHwDuty:null,shotCooldownMs:null,ignoredShots:null,ledReady:null,ledWhite20:null,motorPattern:null,motorQueueDepth:null,motorDroppedCommands:null,resetReason:null,demoShots:null,demoHits:null,demoDefeats:null,demoRevives:null,demoCountdownBeats:null,demoCountdownMissed:null,demoDefeatPulses:null,rxFrames:{},lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
   }
   record(type,payload){const at=this.now();this.s.eventNo=++this.events;this.log({n:this.events,at,gameId:this.s.id,type,...payload});
     const kind=['shot','motor_demo_shot'].includes(type)?'shot':type==='motor_demo_hit'?'hit':type==='motor_demo_defeat'?'defeat':type==='motor_demo_revive'?'revive':type==='hit'?(payload.hp===0?'defeat':'hit'):type==='revive'?'revive':type==='finish'?'match-end':null;
@@ -92,6 +92,10 @@ export class Game {
     p.motorStartupMs=Number.isInteger(data.motor_startup_ms)&&data.motor_startup_ms>0&&data.motor_startup_ms<=100?data.motor_startup_ms:null;
     p.motorHwDuty=Number.isInteger(data.motor_hw_duty)&&data.motor_hw_duty>=0&&data.motor_hw_duty<=256?data.motor_hw_duty:null;
     p.motorDuty=Number.isInteger(data.motor_duty)&&data.motor_duty>=0&&data.motor_duty<=255?data.motor_duty:null;
+    p.shotCooldownMs=Number.isInteger(data.shot_cooldown_ms)&&data.shot_cooldown_ms>=0&&data.shot_cooldown_ms<=10000?data.shot_cooldown_ms:null;
+    p.ignoredShots=Number.isInteger(data.ignored_shots)&&data.ignored_shots>=0?data.ignored_shots:null;
+    p.ledReady=typeof data.led_ready==='boolean'?data.led_ready:null;
+    p.ledWhite20=typeof data.led_white20==='boolean'?data.led_white20:null;
     p.motorPattern=['OFF','SHOT','HIT','COUNTDOWN','DEFEAT','REVIVE'].includes(data.motor_pattern)?data.motor_pattern:null;
     p.motorQueueDepth=Number.isInteger(data.motor_queue_depth)&&data.motor_queue_depth>=0&&data.motor_queue_depth<=8?data.motor_queue_depth:null;
     p.motorDroppedCommands=Number.isSafeInteger(data.motor_dropped_commands)&&data.motor_dropped_commands>=0?data.motor_dropped_commands:null;

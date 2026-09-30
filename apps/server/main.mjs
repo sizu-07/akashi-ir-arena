@@ -156,7 +156,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
             const player=game.player(b.id);
             if(!player.connected||!legacyMotorDemo(player))
               throw Error('対象端末は実機モーターデモに接続していません');
-            if(b.action!=='motor_demo_hit'&&!['legacy-motor-demo-3','legacy-motor-demo-4','legacy-motor-demo-5'].includes(player.firmwareVersion))
+            if(b.action!=='motor_demo_hit'&&!['legacy-motor-demo-3','legacy-motor-demo-4','legacy-motor-demo-5','legacy-motor-demo-6'].includes(player.firmwareVersion))
               throw Error('この振動は端末の更新後に使用できます');
             publish(player.id,'command',{type:b.action,command_id:b.commandId,server_time_ms:Date.now()});
             const name={motor_demo_hit:'被弾',motor_demo_defeat:'HP 0',motor_demo_revive:'復活'}[b.action];
