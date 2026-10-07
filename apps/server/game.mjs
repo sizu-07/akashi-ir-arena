@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import {hardware,receiverIds,deviceReady,legacyMotorDemo} from './hardware.mjs';
+import {hardware,receiverIds,deviceReady,legacyMotorDemo,receiverOnlyGame} from './hardware.mjs';
+import {decodeGameFrame} from './ir-frame.mjs';
 export const countdownDurationMs = 7010;
 export const defaults = Object.freeze({hp:100, damage:5, durationSec:300, fireMs:1000, invulnerableMs:300, reviveMs:3000, reviveHp:50, friendlyFire:false});
 export function rulesOf(input={}) {
@@ -24,7 +25,7 @@ export class Game {
       this.s.participantIds=Array.isArray(saved.participantIds)?saved.participantIds:devices.map(d=>d.id);
       this.record('recovery',{phase:this.s.phase});
     }
-    for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,motorDuty:null,motorPwmLimit:null,motorRunLimit:null,motorStartupMs:null,motorHwDuty:null,shotCooldownMs:null,ignoredShots:null,ledReady:null,ledWhite20:null,motorPattern:null,motorQueueDepth:null,motorDroppedCommands:null,resetReason:null,demoShots:null,demoHits:null,demoDefeats:null,demoRevives:null,demoCountdownBeats:null,demoCountdownMissed:null,demoDefeatPulses:null,rxFrames:{},lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
+    for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,motorDuty:null,motorPwmLimit:null,motorRunLimit:null,motorStartupMs:null,motorHwDuty:null,shotCooldownMs:null,ignoredShots:null,ledReady:null,ledWhite20:null,motorPattern:null,motorQueueDepth:null,motorDroppedCommands:null,resetReason:null,demoShots:null,demoHits:null,demoDefeats:null,demoRevives:null,demoCountdownBeats:null,demoCountdownMissed:null,demoDefeatPulses:null,rxFrames:{},lastIr:null,lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
   }
   record(type,payload){const at=this.now();this.s.eventNo=++this.events;this.log({n:this.events,at,gameId:this.s.id,type,...payload});
     const kind=['shot','motor_demo_shot'].includes(type)?'shot':type==='motor_demo_hit'?'hit':type==='motor_demo_defeat'?'defeat':type==='motor_demo_revive'?'revive':type==='hit'?(payload.hp===0?'defeat':'hit'):type==='revive'?'revive':type==='finish'?'match-end':null;
@@ -68,6 +69,7 @@ export class Game {
     const mode=resuming?this.s.testMode:testMode===true;
     const selected=resuming?this.participants():mode?this.s.players.filter(p=>p.connected):this.s.players;
     if(!selected.length)throw Error('接続・時刻同期した端末が1台以上必要です');
+    if(!mode&&selected.some(receiverOnlyGame))throw Error('受信専用端末は「接続済み端末だけで動作確認」で使用してください');
     if(!mode&&selected.length!==4)throw Error('通常試合は4台必要です');
     if(selected.some(p=>!this.current(p)))throw Error('参加端末の接続・時刻同期を確認してください');
     if(selected.some(p=>mode?!this.testReady(p):!deviceReady(p)))throw Error(mode?'参加端末の構成・電池状態を確認してください':'4台のv0.7対応・通常モード・電池状態を確認してください');
@@ -81,7 +83,7 @@ export class Game {
   correct(id,hp,reason){if(!reason?.trim()||!Number.isInteger(hp)||hp<0||hp>this.s.rules.hp)throw Error('補正理由と範囲内のHPが必要です');
     if(this.s.phase!=='PAUSED'&&this.s.phase!=='LOBBY')throw Error('HP補正は待機・一時停止中のみ可能です');const p=this.player(id);const before=p.hp;p.hp=hp;p.reviveProgressMs=0;this.revives.delete(id);this.record('hp_correction',{deviceId:id,before,after:hp,reason});}
   hello(id,bootId){const p=this.player(id);if(typeof bootId!=='string'||bootId.length>80)throw Error('boot_id不正');
-    if(p.bootId!==bootId){p.armed=false;p.syncRtt=null;p.hardwareReady=false;p.hardwareProfile=null;p.damageFeedback=null;if(this.isParticipant(id)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause('端末再起動');}p.bootId=bootId;p.connected=true;p.lastSeen=this.now();}
+    if(p.bootId!==bootId){p.armed=false;p.syncRtt=null;p.hardwareReady=false;p.hardwareProfile=null;p.lastIr=null;p.damageFeedback=null;if(this.isParticipant(id)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause('端末再起動');}p.bootId=bootId;p.connected=true;p.lastSeen=this.now();}
   heartbeat(id,data){const p=this.player(id);p.connected=true;p.lastSeen=this.now();p.battery=Number.isFinite(data.battery)?data.battery:null;p.rssi=data.rssi??null;
     p.syncRtt=Number.isFinite(data.syncRtt)&&data.syncRtt>=0?data.syncRtt:null;
     p.hardwareProfile=typeof data.hardware_profile==='string'?data.hardware_profile.slice(0,80):null;
@@ -108,6 +110,8 @@ export class Game {
     p.demoCountdownMissed=Number.isSafeInteger(data.demo_countdown_missed)&&data.demo_countdown_missed>=0?data.demo_countdown_missed:null;
     p.demoDefeatPulses=Number.isSafeInteger(data.demo_defeat_pulses)&&data.demo_defeat_pulses>=0?data.demo_defeat_pulses:null;
     p.rxFrames=Object.fromEntries(receiverIds.map(k=>[k,Number.isSafeInteger(data.rx_frames?.[k])&&data.rx_frames[k]>=0?data.rx_frames[k]:null]));
+    const decoded=decodeGameFrame(data.last_ir?.frame),source=decoded?this.s.players.find(x=>x.shooterId===decoded.shooterId):null;
+    p.lastIr=decoded&&receiverIds.includes(data.last_ir?.receiver_id)?{...decoded,frame:data.last_ir.frame,receiverId:data.last_ir.receiver_id,sourceName:source?.name??null,sourceTeam:source?.team??null,relation:!source?'UNKNOWN':source.id===id?'SELF':source.team===p.team?'ALLY':'ENEMY'}:null;
     if(this.isParticipant(id)&&!this.readyForMatch(p)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause(p.lowBattery?'電池低下':'端末構成・机上モードを確認');}
   ack(id,payload){const p=this.player(id);if(this.s.phase==='COUNTDOWN'&&this.isParticipant(id)&&deviceReady(p)&&payload.command_id===this.s.commandId&&payload.result==='ok'){p.ack=this.s.commandId;this.s.startCommitted=this.participants().every(p=>!deviceReady(p)||p.ack===this.s.commandId);}}
   event(id,m){this.tick();const p=this.player(id),t=this.now();
@@ -120,6 +124,7 @@ export class Game {
     // Bound device time to reception time. Device clock cannot extend the game deadline.
     const at=Number.isFinite(m.server_time_ms)?m.server_time_ms:t;
     if(Math.abs(t-at)>500||at<this.s.startAt||t>=this.s.endAt)return {ok:false,reason:'time_window'};
+    if(receiverOnlyGame(p)&&['shot_fired','shot_hold','shot_released'].includes(m.type))return {ok:false,reason:'receiver_only'};
     if(m.type==='shot_fired'){
       // Allow a shot already in flight just before an opposing lethal hit (bounded 150 ms).
       if(p.hp<=0&&!(p.deadAt&&at<=p.deadAt&&t-p.deadAt<=150))return {ok:false,reason:'dead'};

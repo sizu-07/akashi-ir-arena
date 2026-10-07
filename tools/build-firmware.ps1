@@ -1,4 +1,4 @@
-param([string]$Python = 'python',[ValidateSet('xiao_s3_plus','board_diagnostics','limit_diagnostics','trigger_output_diagnostics','led_line_diagnostics','gpio43_low_diagnostics','wifi_game_diagnostics')][string]$Environment = 'xiao_s3_plus',[switch]$Upload,[string]$Port)
+param([string]$Python = 'python',[ValidateSet('xiao_s3_plus','legacy_4e_game','player1_game','player2_game','player3_game','player4_game','receiver_only_game','transmitter_diagnostics','receiver_diagnostics','standalone_diagnostics','board_diagnostics','limit_diagnostics','trigger_output_diagnostics','led_line_diagnostics','gpio43_low_diagnostics','wifi_game_diagnostics')][string]$Environment = 'xiao_s3_plus',[switch]$Upload,[string]$Port)
 $ErrorActionPreference='Stop'
 $projectPath = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location $projectPath
@@ -14,6 +14,9 @@ try {
   if (Test-Path "$drive/.tools/python") { $env:PYTHONPATH="$drive/.tools/python" }
   $env:PLATFORMIO_CORE_DIR="$drive/.tools/platformio"
   $firmwareDir = switch ($Environment) {
+    'transmitter_diagnostics' { "$drive/firmware/transmitter-diagnostic" }
+    'receiver_diagnostics' { "$drive/firmware/receiver-diagnostic" }
+    'standalone_diagnostics' { "$drive/firmware/standalone-diagnostic" }
     'board_diagnostics' { "$drive/firmware/diagnostic" }
     'limit_diagnostics' { "$drive/firmware/limit-diagnostic" }
     'trigger_output_diagnostics' { "$drive/firmware/trigger-output-diagnostic" }

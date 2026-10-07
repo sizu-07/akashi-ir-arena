@@ -217,11 +217,12 @@ function render() {
       `構成 ${
         player.hardwareProfile === 'xiao-s3-plus-3rx-6led-motor-trigger' && player.hardwareReady
           ? 'v0.7対応'
-          : '未確認・旧版'
+          : player.firmwareVersion === '0.7.1-rx44' && player.hardwareReady ? 'ゲーム用・受信専用（GPIO44）' : '未確認・旧版'
       }${player.bench ? ' / 机上モード' : ''}${player.lowBattery ? ' / 電池低下' : ''}\n` +
       `受信数 前:${player.rxFrames?.rx1 ?? '—'} ` +
       `左:${player.rxFrames?.rx2 ?? '—'} ` +
       `右:${player.rxFrames?.rx3 ?? '—'}\n` +
+      (player.lastIr ? `直近の赤外線 ${player.lastIr.sourceName ?? '未登録'}（銃ID ${player.lastIr.shooterId} / チーム${player.lastIr.sourceTeam ?? '—'}）→ ${player.name} / ${player.lastIr.relation === 'ENEMY' ? '敵チーム' : player.lastIr.relation === 'ALLY' ? '同じチーム' : player.lastIr.relation === 'SELF' ? '自分' : '未登録'} / 連番${player.lastIr.seq} / ${player.lastIr.flags === 1 ? '救助' : '射撃'}\n` : '直近の赤外線 —\n') +
       `最終命中 ${player.lastReceiver ?? '—'} / ` +
       `振動出力 ${player.motorActive ? 'ON' : 'OFF'}（自己申告）`;
     meta.style.whiteSpace = 'pre-line';

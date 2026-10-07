@@ -10,7 +10,7 @@ import aedesFactory from 'aedes';
 import {WebSocketServer,WebSocket} from 'ws';
 import QRCode from 'qrcode';
 import {Game} from './game.mjs';
-import {hardware,legacyMotorDemo} from './hardware.mjs';
+import {hardware,legacyMotorDemo,receiverOnlyGame,receiverOnlyProfile} from './hardware.mjs';
 import {storage} from './store.mjs';
 import {createTicketBridge} from './ticket-bridge.mjs';
 import {availableEffects,effectNames} from './sounds.mjs';
@@ -54,7 +54,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
    cb(!packet.retain&&packet.payload.length<=4096&&allowed.includes(packet.topic)?null:Error('publish denied'));};
  broker.authorizeSubscribe=(client,sub,cb)=>{cb(null,[`irgame/v1/device/${client.deviceId}/desired`,`irgame/v1/device/${client.deviceId}/command`].includes(sub.topic)?sub:null);};
  const publish=(id,suffix,payload,retain=false)=>broker.publish({topic:`irgame/v1/device/${id}/${suffix}`,payload:Buffer.from(JSON.stringify(payload)),qos:1,retain},err=>{if(err)console.error('MQTT publish:',err.message);});
- function desired(p){publish(p.id,'desired',{schema_version:1,hardware_profile:hardware.profile,damage_feedback:p.damageFeedback,game_id:game.s.id,game_generation:game.s.generation,server_time_ms:Date.now(),lease_ms:3000,phase:game.s.phase,armed:p.armed,hp:p.hp,revive_progress_ms:p.reviveProgressMs,team:p.team,shooter_id:p.shooterId,rules:game.s.rules,start_at:game.s.startAt??0,start_committed:!!game.s.startCommitted,command_id:game.s.commandId??'',media:game.s.media},true);}
+ function desired(p){publish(p.id,'desired',{schema_version:1,hardware_profile:receiverOnlyGame(p)?receiverOnlyProfile:hardware.profile,damage_feedback:p.damageFeedback,game_id:game.s.id,game_generation:game.s.generation,server_time_ms:Date.now(),lease_ms:3000,phase:game.s.phase,armed:p.armed,hp:p.hp,revive_progress_ms:p.reviveProgressMs,team:p.team,shooter_id:p.shooterId,rules:game.s.rules,start_at:game.s.startAt??0,start_committed:!!game.s.startCommitted,command_id:game.s.commandId??'',media:game.s.media},true);}
  function sync(){for(const p of game.s.players)desired(p);}
  broker.on('publish',(packet,client)=>{if(!client)return;try{const id=client.deviceId,m=JSON.parse(packet.payload.toString()),suffix=packet.topic.split('/').at(-1);
    if(suffix==='hello'){game.hello(id,m.boot_id);desired(game.player(id));}

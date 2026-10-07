@@ -1,0 +1,44 @@
+{
+  "firmwareVersion": "0.7.2-4e42",
+  "player": 3,
+  "deviceId": "gun-003",
+  "shooterId": 3,
+  "defaultTeam": "B",
+  "environment": "player3_game",
+  "hardwareProfile": "xiao-s3-plus-3rx-6led-motor-trigger",
+  "physicalBoard": "assembled-4e-led42",
+  "chip": "esp32s3",
+  "flashMB": 16,
+  "platform": "espressif32@6.9.0",
+  "arduino": "2.0.17",
+  "pins": {
+    "trigger": 2,
+    "irTx": 6,
+    "irRx": [
+      44,
+      7,
+      8
+    ],
+    "motor": 9,
+    "led": 42,
+    "battery": 1
+  },
+  "ledPixels": 8,
+  "builtAt": "2026-10-07T00:06:49.094Z",
+  "physicalTests": "4-player match NOT PERFORMED; build and protocol tests only",
+  "offsets": {
+    "bootloader.bin": "0x0",
+    "partitions.bin": "0x8000",
+    "boot_app0.bin": "0xe000",
+    "firmware.bin": "0x10000"
+  },
+  "sourceHashes": {
+    "firmware/src/main.cpp": "d374645fb924ebfcdd3122af2cf2348103fd74e581cf76b7c0017e3677d7134d",
+    "firmware/include/ir_protocol.h": "ffe80912667b419d9da5039bc3c7240a22da600fb34c0be52bb2f4207b41f69a",
+    "firmware/include/feedback.h": "0d0e33cb1408ca7a84a8100bb547dc19cbdef33b9514e8ae23477e154b23978d",
+    "firmware/include/legacy_4e_profile.h": "6a8751a6765fe0ce55ddb3b57f53bd6f187be1c7a7d095cfad8554686ad749a7",
+    "firmware/include/player_identity.h": "aa6bb73ded48cb49c82a024530d4f5c20755a3890141716f8de99969afe1c5c7",
+    "firmware/include/serial_rx_gate.h": "46a492cae0b5178a894ddb74f081390344920bf445094536415bdcbf05091d84",
+    "firmware/platformio.ini": "eba56bb8d23d40d5aa8c5e0b42c8e59577517f981b176721cfca3ebe6769c2cd"
+  }
+}

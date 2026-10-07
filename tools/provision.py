@@ -7,7 +7,7 @@ p.add_argument('--file', required=True, help='config/provision/gun-001.json')
 args = p.parse_args()
 with open(args.file, encoding='utf-8-sig') as f:
     config = json.load(f)
-if config.get('hardwareProfile') != 'xiao-s3-plus-3rx-6led-motor-trigger':
+if config.get('hardwareProfile') not in ('xiao-s3-plus-3rx-6led-motor-trigger', 'xiao-s3-plus-rx44-only'):
     raise SystemExit('v0.7のhardwareProfileが必要です。PC画面でWi-Fi設定を再作成してください。')
 with serial.Serial(args.port, 115200, timeout=1) as device:
     time.sleep(3)
