@@ -11,6 +11,7 @@ const token = () => randomBytes(24).toString('base64url');
 const clone = (value) => structuredClone(value);
 const SLOT_MINUTES = 15;
 const SLOT_MS = SLOT_MINUTES * 60_000;
+const PUBLIC_SLOT_LIMIT = 12;
 const nextSlotBoundary = (value) => (Math.floor(value / SLOT_MS) + 1) * SLOT_MS;
 const floorSlotBoundary = (value) => Math.floor(value / SLOT_MS) * SLOT_MS;
 const isSlotBoundary = (value) => Number.isFinite(value) && value % SLOT_MS === 0;
@@ -161,7 +162,45 @@ export class TicketQueue {
     return event;
   }
 
-  register({nickname, nicknames, playerTeams, partySize, consent, requestId}) {
+  availableRegistrationSlots(partySize, {limit = PUBLIC_SLOT_LIMIT} = {}) {
+    if (!this.state.registrationOpen) throw Error('現在、整理券の受付を停止しています');
+    const size = Number(partySize);
+    if (!Number.isInteger(size) || size < 1 || size > 4) throw Error('人数は1〜4人で入力してください');
+    const safeLimit = Math.min(PUBLIC_SLOT_LIMIT, Math.max(1, Number(limit) || PUBLIC_SLOT_LIMIT));
+    this.scheduleRounds();
+    const now = this.now();
+    const rounds = this.state.rounds
+      .filter((round) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status) && Number.isFinite(round.scheduledAt) && round.scheduledAt >= nextSlotBoundary(now))
+      .sort((a, b) => a.scheduledAt - b.scheduledAt || a.number - b.number);
+    const slots = [];
+    for (const round of rounds) {
+      const assignedPeople = round.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.partySize ?? 0), 0);
+      const remainingSeats = 4 - assignedPeople;
+      if (remainingSeats < size) continue;
+      slots.push({
+        startAt: round.scheduledAt,
+        endAt: round.scheduledAt + SLOT_MS,
+        remainingSeats,
+        roundId: round.id,
+      });
+      if (slots.length >= safeLimit) break;
+    }
+    const activeEnds = this.state.rounds
+      .filter((round) => ['PLAYING', 'CALLED', 'SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status) && Number.isFinite(round.scheduledAt))
+      .map((round) => round.scheduledAt + SLOT_MS);
+    let emptyStart = Math.max(
+      nextSlotBoundary(now) + this.state.settings.globalDelayMinutes * 60_000,
+      activeEnds.length ? Math.max(...activeEnds) : 0,
+    );
+    while (slots.length < safeLimit) {
+      slots.push({startAt: emptyStart, endAt: emptyStart + SLOT_MS, remainingSeats: 4, roundId: null});
+      emptyStart += SLOT_MS;
+    }
+    slots.sort((a, b) => a.startAt - b.startAt);
+    return slots.slice(0, safeLimit).map((slot, index) => ({...slot, recommended: index === 0}));
+  }
+
+  register({nickname, nicknames, playerTeams, partySize, consent, requestId, preferredSlotStartAt}) {
     if (typeof requestId !== 'string' || requestId.length < 8 || requestId.length > 100) throw Error('登録要求IDが必要です');
     const existing = this.state.tickets.find((item) => item.registrationRequestId === requestId);
     if (existing) { this.save(this.state); return this.publicTicket(existing); }
@@ -181,6 +220,12 @@ export class TicketQueue {
     if (consent !== true) throw Error('注意事項への同意が必要です');
     const waiting = this.state.tickets.filter((item) => !terminalStates.has(item.status) && item.status !== 'PLAYING').length;
     if (waiting >= this.state.settings.maxWaitingGroups) throw Error('受付上限に達しました');
+    const requestedSlot = preferredSlotStartAt === undefined || preferredSlotStartAt === null
+      ? null
+      : this.availableRegistrationSlots(size).find((slot) => slot.startAt === Number(preferredSlotStartAt));
+    if (preferredSlotStartAt !== undefined && preferredSlotStartAt !== null && !requestedSlot) {
+      throw Error('選択した時間は満席または受付対象外になりました。時間を選び直してください');
+    }
     const now = this.now();
     const queueWasDrained = this.state.rounds.some((round) => ['COMPLETED', 'SKIPPED'].includes(round.status))
       && !this.state.rounds.some((round) => ['CALLED', 'PLAYING', 'SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status));
@@ -201,12 +246,33 @@ export class TicketQueue {
       registeredAt: now,
       calledAt: null,
       checkedInAt: null,
+      requestedSlotStartAt: requestedSlot?.startAt ?? null,
       updatedAt: now,
     };
     this.state.tickets.push(ticket);
+    if (requestedSlot) {
+      let round = requestedSlot.roundId ? this.round(requestedSlot.roundId) : null;
+      if (round) {
+        const assignedPeople = round.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.partySize ?? 0), 0);
+        if (!['SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status) || assignedPeople + size > 4) throw Error('選択した時間は満席になりました。時間を選び直してください');
+        round.status = 'LOCKED_SCHEDULED';
+        round.manualSlotStartAt ??= round.slotStartAt;
+      } else {
+        const nominalStart = requestedSlot.startAt - this.state.settings.globalDelayMinutes * 60_000;
+        round = {
+          id: randomUUID(), number: this.state.nextRoundNumber++, status: 'LOCKED_SCHEDULED',
+          ticketIds: [], skippedTicketIds: [], slotStartAt: nominalStart, scheduledAt: requestedSlot.startAt,
+          manualSlotStartAt: nominalStart, calledAt: null, startedAt: null, completedAt: null, delayMinutes: 0,
+        };
+        this.state.rounds.push(round);
+      }
+      round.ticketIds.push(ticket.id);
+      ticket.status = 'ASSIGNED';
+      ticket.roundId = round.id;
+    }
     this.recalculate(false);
-    const filledCalledRound = this.fillCalledRound();
-    this.persist('ticket_registered', {ticketId: ticket.id, details: {ticketNumber: ticket.ticketNumber, partySize: size, receptionNumber: ticket.receptionNumber}});
+    const filledCalledRound = requestedSlot ? [] : this.fillCalledRound();
+    this.persist('ticket_registered', {ticketId: ticket.id, details: {ticketNumber: ticket.ticketNumber, partySize: size, receptionNumber: ticket.receptionNumber, requestedSlotStartAt: requestedSlot?.startAt ?? null}});
     const shouldCallDuringPlaying = this.state.rounds.some((round) => round.status === 'PLAYING');
     if (queueWasDrained || shouldCallDuringPlaying) this.callDueRound('automatic-registration');
     else if (filledCalledRound.length) this.persist('called_round_filled', {

@@ -48,6 +48,45 @@ test('1枠15分で参加者ごとのニックネームを保存する', () => {
   assert.throws(() => queue.register({requestId: 'missing-name-request', nicknames: ['1人だけ'], partySize: 2, consent: true}), /一致/);
 });
 
+test('参加人数が入れる時間だけを提示し、選択した15分枠へ登録する', () => {
+  const now = new Date('2026-10-08T10:02:00+09:00').getTime();
+  const queue = new TicketQueue({now: () => now});
+  queue.register({requestId: 'availability-existing-three', nicknames: ['A', 'B', 'C'], partySize: 3, consent: true});
+
+  const twoPersonSlots = queue.availableRegistrationSlots(2);
+  assert.equal(twoPersonSlots.length, 12);
+  assert.equal(twoPersonSlots[0].remainingSeats, 4);
+  assert.equal(twoPersonSlots[0].startAt, new Date('2026-10-08T10:30:00+09:00').getTime());
+  assert.equal(twoPersonSlots[0].recommended, true);
+
+  const selected = queue.register({
+    requestId: 'availability-selected-two', nicknames: ['D', 'E'], partySize: 2, consent: true,
+    preferredSlotStartAt: twoPersonSlots[0].startAt,
+  });
+  assert.equal(selected.slotStartAt, twoPersonSlots[0].startAt);
+  assert.equal(queue.round(queue.state.tickets.find((ticket) => ticket.accessToken === selected.accessToken).roundId).status, 'LOCKED_SCHEDULED');
+
+  const onePersonSlot = queue.availableRegistrationSlots(1)[0];
+  assert.equal(onePersonSlot.startAt, new Date('2026-10-08T10:15:00+09:00').getTime());
+  assert.equal(onePersonSlot.remainingSeats, 1);
+  const filler = queue.register({
+    requestId: 'availability-fill-one', nicknames: ['F'], partySize: 1, consent: true,
+    preferredSlotStartAt: onePersonSlot.startAt,
+  });
+  assert.equal(filler.slotStartAt, onePersonSlot.startAt);
+  assert.equal(queue.operatorView().rounds.find((round) => round.effectiveSlotStartAt === onePersonSlot.startAt).assignedPeople, 4);
+});
+
+test('時間選択後に満席になった場合は4名を超えて登録しない', () => {
+  const queue = new TicketQueue();
+  const selectedTime = queue.availableRegistrationSlots(4)[0].startAt;
+  queue.register({requestId: 'selected-slot-winner', nicknames: ['1', '2', '3', '4'], partySize: 4, consent: true, preferredSlotStartAt: selectedTime});
+  assert.throws(() => queue.register({
+    requestId: 'selected-slot-loser', nicknames: ['5', '6', '7', '8'], partySize: 4, consent: true, preferredSlotStartAt: selectedTime,
+  }), /満席|選び直して/);
+  assert.equal(queue.state.tickets.length, 1);
+});
+
 test('3人以上のチーム選択を保存し、ゲームのA/B席へ配置する', () => {
   const queue = new TicketQueue();
   const group = queue.register({requestId: 'team-group-request', nicknames: ['甲', '乙', '丙'], playerTeams: ['B', 'A', 'B'], partySize: 3, consent: true});
@@ -545,6 +584,12 @@ test('HTTP同時登録、運営認証、操作冪等性、閲覧分離', async (
   const app = await createTicketApp({dataDir: dir, operatorPassword: password, gameApiKey: apiKey});
   const base = `http://127.0.0.1:${app.server.address().port}`;
   try {
+    const availabilityResponse = await fetch(`${base}/api/public/available-slots?partySize=2`);
+    assert.equal(availabilityResponse.status, 200);
+    const availability = await availabilityResponse.json();
+    assert.equal(availability.partySize, 2);
+    assert.equal(availability.slots.length, 12);
+    assert.ok(availability.slots.every((slot) => slot.remainingSeats >= 2 && !('roundId' in slot)));
     const registrations = await Promise.all(Array.from({length: 20}, (_, index) => fetch(`${base}/api/public/register`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({requestId: `http-request-${index}`, nickname: `組${index}`, partySize: index % 4 + 1, consent: true})})));
     assert.ok(registrations.every((response) => response.status === 201));
     assert.equal(new Set(app.queue.state.tickets.map((ticket) => ticket.receptionNumber)).size, 20);

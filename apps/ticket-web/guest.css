@@ -2,6 +2,110 @@
 .guest-page {
   font-size: 16px;
 }
+.notice-dialog {
+  width: min(620px, calc(100% - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 0;
+  border: 0;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 24px 80px #14090a55;
+  overflow: auto;
+}
+.notice-dialog::backdrop {
+  background: rgb(25 13 14 / 78%);
+  backdrop-filter: blur(4px);
+}
+.notice-dialog-head {
+  padding: 26px 28px 20px;
+  border-top: 8px solid var(--accent);
+  background: var(--accent-soft);
+  text-align: center;
+}
+.notice-dialog-head h2 {
+  margin: 6px 0 8px;
+  color: var(--accent-hover);
+  font-size: clamp(25px, 6vw, 34px);
+}
+.notice-dialog-head p {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
+.notice-label {
+  display: inline-flex;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+.mandatory-notice-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 22px 28px 16px;
+  list-style: none;
+  counter-reset: notice;
+}
+.mandatory-notice-list li {
+  position: relative;
+  min-height: 58px;
+  padding: 10px 12px 10px 54px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  counter-increment: notice;
+}
+.mandatory-notice-list li::before {
+  content: counter(notice);
+  position: absolute;
+  top: 12px;
+  left: 13px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-weight: 800;
+}
+.mandatory-notice-list strong,
+.mandatory-notice-list span {
+  display: block;
+}
+.mandatory-notice-list strong {
+  margin-bottom: 2px;
+  color: var(--ink);
+  font-size: 15px;
+}
+.mandatory-notice-list span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.notice-confirm-check {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: start;
+  gap: 12px;
+  margin: 0 28px 14px;
+  padding: 15px;
+  border: 2px solid #d7b66d;
+  border-radius: 10px;
+  background: var(--amber-soft);
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.notice-continue {
+  width: calc(100% - 56px);
+  min-height: 56px;
+  margin: 0 28px 28px;
+  font-size: 17px;
+}
 .guest-layout {
   width: min(680px, calc(100% - 32px));
   margin: 28px auto 48px;
@@ -89,6 +193,69 @@
 }
 #registerForm > button {
   min-height: 52px;
+}
+.time-selection {
+  padding-top: 4px;
+}
+.time-selection .section-index {
+  display: block;
+  margin-bottom: 4px;
+}
+.recommended-time {
+  display: grid;
+  gap: 5px;
+  margin: 18px 0;
+  padding: 18px;
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+.recommended-time > span:first-child {
+  width: max-content;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+}
+.recommended-time strong {
+  color: var(--accent-hover);
+  font-size: clamp(19px, 5vw, 24px);
+}
+.recommended-time > span:last-child {
+  color: var(--ink);
+  font-size: 14px;
+}
+.available-slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+.slot-choice {
+  display: grid;
+  justify-items: start;
+  min-height: 76px;
+  padding: 13px 15px;
+  text-align: left;
+}
+.slot-choice strong,
+.slot-choice span {
+  display: block;
+}
+.slot-choice strong {
+  font-size: 15px;
+}
+.slot-choice span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.slot-choice.recommended {
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
 }
 .saved-ticket {
   display: flex;
@@ -280,6 +447,19 @@
   margin-top: 24px;
 }
 @media (max-width: 600px) {
+  .notice-dialog-head {
+    padding: 20px 18px 16px;
+  }
+  .mandatory-notice-list {
+    padding: 16px 14px 12px;
+  }
+  .notice-confirm-check {
+    margin: 0 14px 12px;
+  }
+  .notice-continue {
+    width: calc(100% - 28px);
+    margin: 0 14px 18px;
+  }
   .guest-page > header {
     align-items: center;
   }
@@ -299,6 +479,9 @@
   }
   .guest-page .card {
     padding: 22px 18px;
+  }
+  .available-slots {
+    grid-template-columns: 1fr;
   }
   .guest-time + .guest-time {
     padding-left: 14px;

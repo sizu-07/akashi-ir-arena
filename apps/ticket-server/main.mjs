@@ -94,6 +94,12 @@ export async function createTicketApp({
       if (url.pathname === '/health') return json(res, 200, {ok: true, updatedAt: queue.state.updatedAt});
       if (url.pathname === '/') { res.writeHead(302, {Location: '/register'}); return res.end(); }
 
+      if (url.pathname === '/api/public/available-slots' && req.method === 'GET') {
+        const partySize = Number(url.searchParams.get('partySize'));
+        const slots = queue.availableRegistrationSlots(partySize).map(({roundId, ...slot}) => slot);
+        return json(res, 200, {partySize, slots, updatedAt: queue.state.updatedAt});
+      }
+
       if (url.pathname === '/api/public/register' && req.method === 'POST') {
         const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
         const rate = attempts.get(`register:${ip}`) ?? {count: 0, resetAt: Date.now() + 60_000};
