@@ -14,20 +14,38 @@ const base = `http://127.0.0.1:${app.server.address().port}`;
 let browser;
 
 try {
-  const registration = await fetch(`${base}/api/public/register`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({requestId: 'ticket-browser-registration', nicknames: ['テスト'], partySize: 1, consent: true}),
-  });
-  assert.equal(registration.status, 201);
-  const ticket = await registration.json();
-
   browser = await chromium.launch({channel: 'msedge', headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']});
   const context = await browser.newContext({viewport: {width: 390, height: 844}});
   const page = await context.newPage();
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   page.on('dialog', (dialog) => dialog.accept());
+  await page.goto(`${base}/register`);
+  await page.locator('#mandatoryNotice').waitFor({state: 'visible'});
+  mkdirSync('artifacts/operator-ui', {recursive: true});
+  await page.screenshot({path: 'artifacts/operator-ui/registration-notice-mobile.png', fullPage: true});
+  assert.equal(await page.locator('.mandatory-notice-list li').count(), 5);
+  assert.equal(await page.locator('#noticeContinue').isDisabled(), true);
+  assert.match(await page.locator('#mandatoryNotice').innerText(), /時間通り.*キャンセル/s);
+  assert.match(await page.locator('#mandatoryNotice').innerText(), /スクリーンショット/);
+  assert.match(await page.locator('#mandatoryNotice').innerText(), /名前やチーム.*変更できません/s);
+  await page.locator('#noticeConfirmed').check();
+  await page.locator('#noticeContinue').click();
+  await page.locator('input[name="nickname"]').fill('テスト');
+  await page.locator('input[name="consent"]').check();
+  await page.getByRole('button', {name: '登録内容と時間を確認する'}).click();
+  await page.locator('#timeSelection').waitFor({state: 'visible'});
+  await page.screenshot({path: 'artifacts/operator-ui/registration-times-mobile.png', fullPage: true});
+  assert.match(await page.locator('#recommendedTime').innerText(), /ゲーム時間は.*です/s);
+  assert.equal(await page.locator('.slot-choice').count(), 12);
+  await page.locator('.slot-choice').first().click();
+  await page.waitForURL(/\/ticket#/);
+  const accessToken = await page.evaluate(() => location.hash.slice(1));
+  const ticket = app.queue.publicTicket(accessToken);
+  assert.ok(ticket);
+  assert.equal(ticket.playerNicknames[0], 'テスト');
+  assert.equal(ticket.slotStartAt % (15 * 60_000), 0);
+
   await page.goto(`${base}/scanner`);
   await page.locator('#loginRequired').waitFor({state: 'visible'});
   assert.equal(await page.locator('#connection').innerText(), '未ログイン');
@@ -50,7 +68,7 @@ try {
   const secondRegistration = await fetch(`${base}/api/public/register`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({requestId: 'ticket-browser-second-registration', nicknames: ['追加'], partySize: 1, consent: true}),
+    body: JSON.stringify({requestId: 'ticket-browser-second-registration', nicknames: ['追加'], partySize: 1, consent: true, preferredSlotStartAt: ticket.slotStartAt}),
   });
   const secondTicket = await secondRegistration.json();
   await page.waitForTimeout(300);
@@ -58,7 +76,6 @@ try {
   const callNext = page.getByRole('button', {name: /次の.*呼び出/});
   if (await callNext.isEnabled()) await callNext.click();
   await page.locator('#queueTimeline .timeline-round.called').waitFor();
-  mkdirSync('artifacts/operator-ui', {recursive: true});
   await page.screenshot({path: 'artifacts/operator-ui/ticket-mobile.png', fullPage: true});
   await page.setViewportSize({width: 1440, height: 1000});
   await page.screenshot({path: 'artifacts/operator-ui/ticket-desktop.png', fullPage: true});
@@ -66,7 +83,7 @@ try {
   await page.getByRole('button', {name: '調整枠を1枠追加'}).click();
   await page.locator('#delaySummary').getByText('調整中：残り1枠（15分）', {exact: true}).waitFor();
   await page.locator('#queueTimeline').getByText('調整・使用なし', {exact: true}).waitFor();
-  await page.locator('#queueTimeline .timeline-round.scheduled').waitFor();
+  await page.locator('#queueTimeline .timeline-round.scheduled, #queueTimeline .timeline-round.locked_scheduled').first().waitFor();
   assert.equal(await page.locator('#queueTimeline .timeline-round.called').count(), 0);
   const timelineStates = await page.locator('#queueTimeline .timeline-round').evaluateAll((nodes) => nodes.map((node) => node.className));
   assert.match(timelineStates[0], /delayed_empty/);

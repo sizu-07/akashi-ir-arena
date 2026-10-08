@@ -8,6 +8,25 @@
     <link rel="stylesheet" href="/guest.css" />
   </head>
   <body class="guest-page">
+    <dialog id="mandatoryNotice" class="notice-dialog" aria-labelledby="noticeTitle" aria-describedby="noticeLead">
+      <div class="notice-dialog-head">
+        <span class="notice-label">登録前に必ず確認</span>
+        <h2 id="noticeTitle">大切な5つの注意</h2>
+        <p id="noticeLead">整理券を登録すると、以下の内容すべてに同意したものとして扱います。</p>
+      </div>
+      <ol class="mandatory-notice-list">
+        <li><strong>時間通りに来てください</strong><span>指定時間までに来られない場合、整理券はキャンセルされます。</span></li>
+        <li><strong>QRコードを保存してください</strong><span>発行後のQRコードは、必ずスクリーンショットで保存してください。</span></li>
+        <li><strong>登録後は変更できません</strong><span>名前やチームは、整理券の登録後に変更できません。</span></li>
+        <li><strong>基本的に1人でプレイします</strong><span>保護者と一緒にはプレイできません。小さいお子さまには難しい場合があります。</span></li>
+        <li><strong>時間が変わる場合があります</strong><span>運営の都合により、登録後でも時間が変更される可能性があります。</span></li>
+      </ol>
+      <label class="notice-confirm-check">
+        <input id="noticeConfirmed" type="checkbox" />
+        <span>上の5項目をすべて読み、内容を確認しました</span>
+      </label>
+      <button id="noticeContinue" class="primary notice-continue" type="button" disabled>同意して登録へ進む</button>
+    </dialog>
     <header>
       <div>
         <small>明石光線 / 来場者受付</small>
@@ -49,8 +68,16 @@
               >画面に表示される案内を確認し、呼び出し時に入口へ向かうことに同意します。本名や連絡先は入力しません。</span
             ></label
           >
-          <button class="primary">整理券を取得する</button>
+          <button class="primary">登録内容と時間を確認する</button>
         </form>
+        <section id="timeSelection" class="time-selection" hidden aria-labelledby="timeSelectionTitle">
+          <span class="section-index">04</span>
+          <h2 id="timeSelectionTitle">ゲーム時間を選んで確定</h2>
+          <p id="recommendedTime" class="recommended-time"></p>
+          <p class="hint">この人数で登録できる時間だけを表示しています。希望する時間をタップすると登録が確定します。</p>
+          <div id="availableSlots" class="available-slots"></div>
+          <button id="backToForm" type="button">入力内容を変更する</button>
+        </section>
         <p id="message" class="error" role="alert"></p>
       </section>
       <p class="hint">
