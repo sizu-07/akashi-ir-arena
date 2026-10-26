@@ -1,4 +1,4 @@
-const firmwareOk = (player) => ['0.8.0-4e42', '0.8.0-sim'].includes(player.firmwareVersion);
+const firmwareOk = (player) => ['0.8.0-4e42', '0.8.1-4e42', '0.8.0-sim'].includes(player.firmwareVersion);
 
 export function pauseExplanation(reason) {
   const known = {
@@ -11,6 +11,7 @@ export function pauseExplanation(reason) {
     '投影画面切断': ['投影画面との接続が切れました', '投影画面を開き直して「表示を準備」を押し、接続を確認してから再開してください。'],
     server_restart: ['ゲームサーバーが再起動したため停止しました', '投影画面と4台の端末を確認してから「ゲームを再開」を押してください。'],
     server_shutdown: ['ゲームサーバーの停止により中断しました', 'サーバーを起動し、投影画面と端末を確認してから再開してください。'],
+    '一時診断中': ['一時診断のためゲームを停止しました', '診断を終了し、端末と投影画面を確認してから「ゲームを再開」を押してください。'],
   };
   return known[reason] ?? [reason ? `ゲームが停止しました：${reason}` : 'ゲームが一時停止しています', '投影画面と参加端末を確認してから「ゲームを再開」を押してください。'];
 }
@@ -40,6 +41,8 @@ export function operationStatus(state, {connected, isOwner, testRequested}) {
     {ok:!ticketRequired || !!state.ticketBridge?.membersLoaded, label:'参加者名', detail:ticketRequired ? state.ticketBridge.membersLoaded ? '整理券メンバー反映済み' : '「整理券メンバーを反映」を押し、4人の名前を確認' : state.ticketBridge?.enabled ? '動作確認では整理券の反映は不要' : '手動設定の名前を確認'},
     {ok:devicesReady, label:'参加端末', detail:deviceIssues.length ? deviceIssues.join('／') : `${connectedPlayers}/4台接続${testing ? '（動作確認は1台以上）' : ''}${devicesReady ? state.phase === 'LOBBY' ? '・開始可能' : '・通信正常' : '・不足'}`},
   ];
+
+  if(state.diagnostics?.enabled)return {tone:'warning',title:'一時診断中・戦績には加算されません',detail:state.diagnostics.intermissionHeld?'中間発表の自動進行を保留しています。':'接続した端末の射撃・受信・振動を確認しています。',next:'下の「参加者・端末」で各銃の反応と診断ログを確認し、終わったら「一時診断を終了」を押してください。',checks};
 
   if (state.phase === 'PAUSED') {
     const [title, next] = pauseExplanation(state.pauseReason);

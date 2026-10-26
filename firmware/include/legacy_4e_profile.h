@@ -5,7 +5,7 @@
 // confirmed working LED connection; the archived PCB file still shows GPIO43.
 // The protocol profile string remains shared with the PC game server.
 constexpr char HARDWARE_PROFILE[] = "xiao-s3-plus-3rx-6led-motor-trigger";
-constexpr char FIRMWARE_VERSION[] = "0.8.0-4e42";
+constexpr char FIRMWARE_VERSION[] = "0.8.1-4e42";
 constexpr int RX_COUNT = 3;
 constexpr int RX_PINS[] = {44, 7, 8};
 constexpr const char* RX_IDS[] = {"rx1", "rx2", "rx3"};

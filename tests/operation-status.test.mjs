@@ -35,6 +35,9 @@ test('operator sees why play stopped and what to do next', () => {
   assert.match(blocked.title, /自動開始できません/);
   assert.match(blocked.detail, /時刻同期/);
   assert.match(pauseExplanation('server_restart')[0], /サーバーが再起動/);
+  const diagnostic = operationStatus(state({phase:'INTERMISSION', diagnostics:{enabled:true, intermissionHeld:true}}), options);
+  assert.match(diagnostic.title, /一時診断中/);
+  assert.match(diagnostic.detail, /自動進行を保留/);
 });
 
 test('disconnected and read-only screens explain why operation is unavailable', () => {

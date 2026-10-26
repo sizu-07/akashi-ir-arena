@@ -84,7 +84,7 @@ async function action(actionName, extra = {}) {
     commandId: commandId(),
     ...extra,
   });
-  const notices = {start: '開始操作を受け付けました。', pause: 'ゲームを一時停止しました。', finish: '試合全体を終了しました。', demo_end_round: '現在のゲームを終了しました。', new: '新しい4ゲーム戦を準備しました。', sync_ticket_members: '整理券メンバーを反映しました。名前を確認してください。', media: '投影画面を切り替えました。', demo_hit: '発射・命中を送信しました。', motor_demo_hit: '被弾振動を送信しました。', motor_demo_defeat: '撃破振動を送信しました。', motor_demo_revive: '復活振動を送信しました。'};
+  const notices = {start: '開始操作を受け付けました。', pause: 'ゲームを一時停止しました。', finish: '試合全体を終了しました。', demo_end_round: '現在のゲームを終了しました。', new: '新しい4ゲーム戦を準備しました。', sync_ticket_members: '整理券メンバーを反映しました。名前を確認してください。', media: '投影画面を切り替えました。', diagnostic_on:'一時診断を開始しました。', diagnostic_off:'一時診断を終了しました。', demo_hit: '発射・命中を送信しました。', motor_demo_hit: '被弾振動を送信しました。', motor_demo_defeat: '撃破振動を送信しました。', motor_demo_revive: '復活振動を送信しました。'};
   const videoNotices = {play: '動画を開始しました。', pause: '動画を停止しました。', restart: '動画を最初から再生しました。'};
   message(result.notice || (actionName === 'video' ? videoNotices[extra.operation] : notices[actionName]) || '操作を反映しました。');
 }
@@ -166,13 +166,14 @@ function disable() {
 
   $('takeover').disabled = pending || !connected;
   $('syncTicketMembers').disabled = locked || !state?.ticketBridge?.enabled || state?.phase !== 'LOBBY';
-  $('newMatch').disabled = locked || !(['LOBBY', 'FINISHED'].includes(state?.phase) || state?.demo && state?.testMode && state?.phase === 'INTERMISSION');
+  $('newMatch').disabled = locked || state?.diagnostics?.enabled || !(['LOBBY', 'FINISHED'].includes(state?.phase) || state?.demo && state?.testMode && state?.phase === 'INTERMISSION');
   if ($('testMode')) $('testMode').disabled = locked || state?.phase !== 'LOBBY' || !state?.simulation;
   if ($('demoSource')) $('demoSource').disabled = locked || !['LOBBY', 'FINISHED'].includes(state?.phase) && !(state?.phase === 'INTERMISSION' && state?.testMode);
-  document.querySelector('[data-action=start]').disabled = locked || !['LOBBY', 'PAUSED', 'INTERMISSION'].includes(state?.phase) || (state?.phase === 'INTERMISSION' && !state.demo) || (state?.phase === 'LOBBY' && !testRequested() && state?.ticketBridge?.enabled && !state.ticketBridge.membersLoaded);
+  document.querySelector('[data-action=start]').disabled = locked || state?.diagnostics?.enabled || !['LOBBY', 'PAUSED', 'INTERMISSION'].includes(state?.phase) || (state?.phase === 'INTERMISSION' && !state.demo) || (state?.phase === 'LOBBY' && !testRequested() && state?.ticketBridge?.enabled && !state.ticketBridge.membersLoaded);
   document.querySelector('[data-action=pause]').disabled = locked || !['COUNTDOWN', 'ACTIVE'].includes(state?.phase);
   document.querySelector('[data-action=finish]').disabled = locked || !['COUNTDOWN', 'ACTIVE', 'PAUSED', 'INTERMISSION'].includes(state?.phase);
-  $('demoEndRound').disabled = locked || !state?.demo || !['ACTIVE', 'PAUSED'].includes(state?.phase);
+  $('demoEndRound').disabled = locked || state?.diagnostics?.enabled || !state?.demo || !['ACTIVE', 'PAUSED'].includes(state?.phase);
+  $('diagnosticToggle').disabled = locked || state?.simulation || (!state?.diagnostics?.enabled && !state?.players?.some(player => player.connected && player.diagnosticCapable));
   const motorTarget = state?.players?.find((player) => player.id === $('motorDemoTarget').value);
   for (const button of ['motorDemoHit', 'motorDemoDefeat', 'motorDemoRevive'])
     $(button).disabled = locked || !state?.demo || state?.simulation || !motorTarget?.connected || !motorTarget.firmwareVersion?.startsWith('legacy-motor-demo-') || !Number.isInteger(motorTarget.demoDefeats) || !Number.isInteger(motorTarget.demoRevives);
@@ -195,7 +196,7 @@ function renderOperation() {
   const status = operationStatus(state, {connected, isOwner:state?.owner === sessionId, testRequested:testRequested()});
   $('operationCenter').dataset.tone = status.tone;
   $('operationTitle').textContent = status.title;
-  $('operationState').textContent = !connected ? '通信切断' : status.tone === 'danger' ? '要対応' : state?.phase === 'LOBBY' ? state?.simulation ? 'デモ待機' : status.tone === 'ready' ? '準備完了' : '準備中' : names[state?.phase] ?? '確認中';
+  $('operationState').textContent = !connected ? '通信切断' : state?.diagnostics?.enabled ? '診断中' : status.tone === 'danger' ? '要対応' : state?.phase === 'LOBBY' ? state?.simulation ? 'デモ待機' : status.tone === 'ready' ? '準備完了' : '準備中' : names[state?.phase] ?? '確認中';
   $('operationDetail').textContent = status.detail;
   $('operationNext').textContent = status.next;
   $('operationChecks').hidden = status.checks.length === 0;
@@ -211,12 +212,47 @@ function renderOperation() {
   }));
 }
 
+function textElement(tag, className, content) {
+  const element = document.createElement(tag);
+  element.className = className;
+  element.textContent = content;
+  return element;
+}
+
+const ledNames = {OFF:'消灯', RED:'赤', BLUE:'青', GREEN:'緑', CYAN:'水色', ORANGE:'オレンジ', PURPLE:'紫', WHITE:'白', MIXED:'混合'};
+const receiverNames = {rx1:'前', rx2:'左', rx3:'右'};
+const timeLabel = (at) => new Date(at).toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+
+function activityFor(player) {
+  const gameEvents = (state.activity ?? []).flatMap(event => {
+    if (event.type === 'shot' && event.deviceId === player.id) return [{at:event.at, text:'試合で射撃'}];
+    if (event.type === 'hit' && event.deviceId === player.id) return [{at:event.at, text:`${state.players.find(p => p.id === event.shooter)?.name ?? '相手'}から被弾`}];
+    if (event.type === 'hit' && event.shooter === player.id) return [{at:event.at, text:`${state.players.find(p => p.id === event.deviceId)?.name ?? '相手'}に命中`}];
+    if (event.type === 'respawn' && event.deviceId === player.id) return [{at:event.at, text:'復活'}];
+    return [];
+  });
+  const diagnosticEvents = (state.diagnostics?.events ?? []).flatMap(event => {
+    if (event.type === 'shot' && event.playerId === player.id) return [{at:event.at, text:'診断射撃（戦績対象外）'}];
+    if (event.type === 'hit' && event.playerId === player.id) return [{at:event.at, text:`${event.shooterName}の診断信号を${receiverNames[event.receiverId]}で受信`}];
+    if (event.type === 'hit' && event.shooterId === player.id) return [{at:event.at, text:`${event.playerName}が診断信号を受信`}];
+    return [];
+  });
+  return [...gameEvents, ...diagnosticEvents].sort((a,b) => b.at-a.at).slice(0, 3);
+}
+
+function indicator(label, value, tone='neutral') {
+  const item = document.createElement('div');
+  item.className = `device-indicator ${tone}`;
+  item.append(textElement('span', 'indicator-label', label), textElement('strong', 'indicator-value', value));
+  return item;
+}
+
 function render() {
   $('connection').textContent = state.demo ? state.simulation ? 'デモ：仮想端末で確認' : 'デモ：接続した実機で確認' : '本番：実機サーバー接続済';
   $('connection').className = 'badge';
   $('phase').textContent = state.testMode && state.phase === 'ACTIVE' ? '動作確認中' : state.testMode && state.phase === 'FINISHED' ? '動作確認終了' : names[state.phase];
-  $('clockLabel').textContent = state.phase === 'INTERMISSION' && !state.demo ? '次ゲームまで' : '残り時間';
-  $('clock').textContent = state.phase === 'INTERMISSION' && !state.demo && state.intermissionEndsAt
+  $('clockLabel').textContent = state.diagnostics?.intermissionHeld ? '次ゲームまで（一時保留）' : state.phase === 'INTERMISSION' && !state.demo ? '次ゲームまで' : '残り時間';
+  $('clock').textContent = state.diagnostics?.intermissionHeld ? '保留中' : state.phase === 'INTERMISSION' && !state.demo && state.intermissionEndsAt
     ? time(Math.max(0, state.intermissionEndsAt - state.serverMs)) : time(state.remainingMs);
   $('roundLabel').textContent = `第${state.round}ゲーム / 全${state.rules.rounds}ゲーム`;
   $('score').textContent = [...state.players].sort((a,b)=>b.kills-a.kills).map(p=>`${p.name} ${p.kills}`).join(' / ');
@@ -264,10 +300,22 @@ function render() {
   const playerElements = state.players.map((player) => {
     const batteryInfo = batteryStatus(player);
     const element = document.createElement('article');
-    element.className = 'player';
+    const online = player.connected && state.serverMs - player.lastSeen <= 3000;
+    const respawnMs = state.phase === 'PAUSED' ? player.respawnRemainingMs : player.respawnAt - state.serverMs;
+    const respawnSeconds = player.hp === 0 ? Math.max(0, Math.ceil(respawnMs / 1000)) : 0;
+    const triggerRecent = Number.isFinite(player.lastTriggerAt) && state.serverMs - player.lastTriggerAt < 2300;
+    const motorRecent = Number.isFinite(player.lastMotorAt) && state.serverMs - player.lastMotorAt < 2300;
+    element.className = `player player-card ${!online ? 'is-offline' : player.hp === 0 ? 'is-defeated' : player.lowBattery ? 'is-low-battery' : 'is-connected'}${online && (player.triggerDown || triggerRecent) ? ' is-triggered' : ''}`;
 
     const title = document.createElement('h3');
     title.textContent = player.name;
+    const identity = document.createElement('div');
+    identity.className = 'player-identity';
+    identity.append(title, textElement('small', 'device-id', player.id));
+    const stateBadge = textElement('span', 'player-state', !online ? '通信切断' : player.hp === 0 ? '撃破中' : player.lowBattery ? '電池低下' : state.simulation ? '仮想接続' : '接続中');
+    const header = document.createElement('div');
+    header.className = 'player-card-head';
+    header.append(identity, stateBadge);
 
     const score = document.createElement('div');
     score.className = 'player-kills';
@@ -281,7 +329,7 @@ function render() {
       `RSSI ${player.rssi ?? '—'} dBm\n` +
       `構成 ${
         player.hardwareProfile === 'xiao-s3-plus-3rx-6led-motor-trigger' && player.hardwareReady
-          ? player.firmwareVersion === '0.8.0-4e42' || player.firmwareVersion === '0.8.0-sim' ? '個人戦v0.8対応' : '旧ゲーム版・要更新'
+          ? ['0.8.0-4e42', '0.8.1-4e42', '0.8.0-sim'].includes(player.firmwareVersion) ? '個人戦v0.8対応' : '旧ゲーム版・要更新'
           : player.firmwareVersion === '0.7.1-rx44' && player.hardwareReady ? 'ゲーム用・受信専用（GPIO44）' : '未確認・旧版'
       }${player.bench ? ' / 机上モード' : ''}${player.lowBattery ? ' / 電池低下' : ''}\n` +
       `受信数 前:${player.rxFrames?.rx1 ?? '—'} ` +
@@ -293,20 +341,42 @@ function render() {
     meta.style.whiteSpace = 'pre-line';
 
     deviceElements.push(meta);
-    const summary = document.createElement('div');
-    summary.className = 'player-summary';
-    const respawnMs=state.phase==='PAUSED' ? player.respawnRemainingMs : player.respawnAt-state.serverMs;
-    const respawnSeconds=player.hp===0?Math.max(0,Math.ceil(respawnMs/1000)):0;
-    summary.textContent = `${player.hp===0 ? `撃破・あと${respawnSeconds}秒で復活` : player.connected ? state.simulation ? '仮想端末' : '生存・接続済み' : '通信切断'} / デス ${player.deaths} / 射撃 ${player.shots} / 命中率 ${player.accuracy}%${player.lowBattery ? ' / 電池低下' : ''}`;
-    const battery = document.createElement('div');
-    battery.className = `player-battery${batteryInfo.warning ? ' battery-warning' : ''}`;
-    battery.textContent = `${batteryInfo.text}${batteryInfo.status ? ` / ${batteryInfo.status}` : ''}`;
-    element.append(title, score, summary, battery);
+    const life = textElement('div', 'player-life', !online ? '端末の電源・Wi-Fiを確認' : player.hp === 0 ? `復活まで ${respawnSeconds} 秒` : state.phase === 'ACTIVE' ? '生存・射撃可能' : state.diagnostics?.enabled ? player.diagnosticMode ? '一時診断に参加中' : '端末の診断適用を待機中' : '接続状態を確認中');
+    const stats = textElement('p', 'player-stats', `デス ${player.deaths}  ／  射撃 ${player.shots}  ／  命中率 ${player.accuracy}%`);
+    const indicators = document.createElement('div');
+    indicators.className = 'device-indicators';
+    indicators.append(
+      indicator('リミット', !online ? '確認不可' : player.triggerDown ? '押下中' : triggerRecent ? '押下を検知' : player.diagnosticCapable ? '離されている' : '未対応', online && (player.triggerDown || triggerRecent) ? 'active' : 'neutral'),
+      indicator('モーター', !online ? '確認不可' : player.motorActive ? '動作中' : motorRecent ? '動作を検知' : player.diagnosticCapable ? '停止中' : '状態のみ', online && (player.motorActive || motorRecent) ? 'active' : 'neutral'),
+      indicator('テープLED', !online ? '確認不可' : player.ledColor ? ledNames[player.ledColor] ?? player.ledColor : '未対応', player.ledColor && player.ledColor !== 'OFF' ? 'led-on' : 'neutral'),
+      indicator('電池', !online ? '確認不可' : `${batteryInfo.text}${batteryInfo.status ? ` / ${batteryInfo.status}` : ''}`, batteryInfo.warning ? 'warning' : 'neutral'),
+    );
+    const rx = textElement('p', 'player-rx', `赤外線受信　前 ${player.rxFrames?.rx1 ?? '—'} ／ 左 ${player.rxFrames?.rx2 ?? '—'} ／ 右 ${player.rxFrames?.rx3 ?? '—'}`);
+    const activity = document.createElement('div');
+    activity.className = 'player-activity';
+    activity.append(textElement('strong', '', '直近の動作'));
+    const entries = activityFor(player);
+    const list = document.createElement('ul');
+    for (const entry of entries) list.append(textElement('li', '', `${timeLabel(entry.at)}　${entry.text}`));
+    if (!entries.length) list.append(textElement('li', 'empty', 'まだ記録がありません'));
+    activity.append(list);
+    element.append(header, score, life, stats, indicators, rx, activity);
     return element;
   });
 
   $('players').replaceChildren(...playerElements);
   $('deviceDetails').replaceChildren(...deviceElements);
+  $('diagnosticPanel').hidden = !!state.simulation;
+  $('diagnosticPanel').classList.toggle('is-active', !!state.diagnostics?.enabled);
+  $('diagnosticBadge').textContent = state.diagnostics?.enabled ? '診断中・戦績対象外' : '停止中';
+  $('diagnosticToggle').textContent = state.diagnostics?.enabled ? '一時診断を終了' : '一時診断を開始';
+  $('diagnosticGuidance').textContent = state.diagnostics?.enabled
+    ? `接続した銃のリミットを押して相手の受信部へ向けてください。${state.phase === 'PAUSED' ? '診断を終えた後、確認してからゲームを再開します。' : state.diagnostics.intermissionHeld ? '次ゲームの自動開始は診断終了まで保留します。' : ''}`
+    : state.players.some(player => player.connected && player.diagnosticCapable)
+      ? '必要なときだけ開始してください。接続中の対応端末で射撃・受信・振動を確認できます。'
+      : '診断対応ファームウェアの端末がまだ接続されていません。';
+  const diagnosticEntries = [...(state.diagnostics?.events ?? [])].reverse();
+  $('diagnosticLog').replaceChildren(...(diagnosticEntries.length ? diagnosticEntries.map(entry => textElement('li', '', `${timeLabel(entry.at)}　${entry.type === 'shot' ? `${entry.playerName} が診断射撃` : `${entry.shooterName} → ${entry.playerName} の${receiverNames[entry.receiverId]}で受信`}`)) : [textElement('li', 'empty', '診断ログはまだありません')]));
   $('demoPanel').hidden = !state.simulation;
   $('motorDemoPanel').hidden = !state.demo || state.simulation;
   const motorTarget = state.players.find((player) => player.id === $('motorDemoTarget').value);
@@ -366,6 +436,7 @@ document.querySelectorAll('[data-action]').forEach((button) => {
 });
 $('testMode').onchange = () => { if (state) render(); };
 $('dismissAlert').onclick = () => message('');
+$('diagnosticToggle').onclick = guarded(() => action(state.diagnostics?.enabled ? 'diagnostic_off' : 'diagnostic_on'));
 $('demoSource').onchange = guarded(async (event) => {
   const source = event.target.value;
   try { await action('demo_source', {source}); }

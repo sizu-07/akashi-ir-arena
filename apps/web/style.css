@@ -365,3 +365,72 @@ progress::-moz-progress-bar {
     flex: 1 1 40%;
   }
 }
+
+.players { gap: 12px; }
+.player.player-card,
+.player.player-card:first-child,
+.player.player-card:last-child,
+.player.player-card:nth-child(odd),
+.player.player-card:nth-child(even),
+.player.player-card:nth-child(n + 3) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 365px;
+  padding: 16px;
+  border: 2px solid var(--team-color);
+  border-top-width: 5px;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 2px 8px #1f2a3a0b;
+  transition: background-color .18s, box-shadow .18s, border-color .18s;
+}
+.player.player-card.is-offline { border-color: #bf3039; background: #fff0f0; }
+.player.player-card.is-defeated { border-color: #aa383d; background: #fff8f8; }
+.player.player-card.is-low-battery { border-color: #a86b1a; background: #fffbf2; }
+.player.player-card.is-triggered { background: #fff2dc; box-shadow: 0 0 0 3px #efab55; }
+.player-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.player-identity { min-width: 0; }
+.player.player-card h3 { margin: 0; font-size: 18px; line-height: 1.3; }
+.player.player-card h3::before { width: 6px; height: 17px; }
+.device-id { display: block; margin: 6px 0 0 14px; color: var(--muted); font-size: 11px; }
+.player-state { flex: none; padding: 4px 7px; border-radius: 3px; background: #eaf6ee; color: #256e4b; font-size: 12px; font-weight: 800; }
+.is-offline .player-state,
+.is-defeated .player-state { background: #f7dfe0; color: #9b2931; }
+.is-low-battery .player-state { background: #faecd2; color: #91551c; }
+.player.player-card .player-kills { margin-top: 2px; font-size: 35px; }
+.player-life { padding: 7px 10px; border-left: 3px solid var(--team-color); background: #f4f6f8; font-size: 14px; font-weight: 700; }
+.is-offline .player-life,
+.is-defeated .player-life { border-color: #aa383d; background: #f9e5e6; }
+.player-stats { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.device-indicators { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.device-indicator { min-width: 0; padding: 8px 9px; border: 1px solid #dde1e5; border-radius: 3px; background: #f7f8fa; }
+.device-indicator.active { border-color: #d78528; background: #ffe7c7; color: #713f07; }
+.device-indicator.warning { border-color: #be533f; background: #fff0ec; color: #9b3029; }
+.device-indicator.led-on { border-color: #9c8bbd; background: #f6f0ff; }
+.indicator-label { display: block; color: var(--muted); font-size: 11px; }
+.indicator-value { display: block; margin-top: 3px; font-size: 13px; overflow-wrap: anywhere; }
+.player-rx { margin: 0; color: var(--ink); font-size: 12px; font-weight: 700; line-height: 1.5; }
+.player-activity { margin-top: auto; padding-top: 9px; border-top: 1px solid var(--line); }
+.player-activity > strong { font-size: 12px; }
+.player-activity ul { margin: 4px 0 0; padding-left: 16px; color: var(--ink); font-size: 11px; line-height: 1.55; }
+.player-activity li { overflow-wrap: anywhere; }
+.player-activity .empty { color: var(--muted); }
+
+.diagnostic-panel { margin-top: 22px; padding: 20px; border: 1px solid #c6d1da; border-left: 5px solid #466d87; background: #f4f8fa; }
+.diagnostic-panel.is-active { border-color: #bb8143; border-left-color: #aa6419; background: #fff7ea; }
+.diagnostic-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.diagnostic-heading h3 { margin: 4px 0 0; font-size: 21px; }
+.diagnostic-badge { padding: 5px 9px; border: 1px solid #8ca5b6; border-radius: 3px; color: #375f79; font-size: 12px; font-weight: 800; }
+.is-active .diagnostic-badge { border-color: #bb8143; color: #885011; background: #ffebc9; }
+#diagnosticGuidance { margin: 12px 0; font-size: 15px; font-weight: 600; line-height: 1.5; }
+#diagnosticToggle { min-height: 46px; border-color: #466d87; color: #2b536d; background: white; font-weight: 800; }
+.is-active #diagnosticToggle { border-color: #aa6419; background: #aa6419; color: white; }
+.diagnostic-note { margin: 11px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.diagnostic-log-heading { display: flex; justify-content: space-between; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; }
+.diagnostic-log-heading span { color: var(--muted); font-size: 12px; }
+.diagnostic-log { display: grid; gap: 5px; max-height: 200px; overflow-y: auto; margin: 8px 0 0; padding: 0; list-style: none; }
+.diagnostic-log li { padding: 6px 8px; background: white; border-left: 3px solid #567a91; font-size: 12px; }
+.diagnostic-log .empty { color: var(--muted); }
+@media (max-width: 1100px) { .players { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .players { grid-template-columns: 1fr; } .device-details { grid-template-columns: 1fr; } }

@@ -1,6 +1,8 @@
 # player1～4の完全ゲーム版（組み立て済み4E基板）
 
-4台とも通常ゲームの共通ソース `src/main.cpp` を使用し、プレイヤー番号をビルド時に固定します。受信専用・送信診断版ではありません。ファームウェアの識別子は `0.8.0-4e42` です。現行ルールは [ゲーム仕様 v0.8](../docs/ゲーム仕様_v0.8.md) を参照してください。
+4台とも通常ゲームの共通ソース `src/main.cpp` を使用し、プレイヤー番号をビルド時に固定します。受信専用・送信診断版ではありません。ファームウェアの識別子は `0.8.1-4e42` です。現行ルールは [ゲーム仕様 v0.8](../docs/ゲーム仕様_v0.8.md) を参照してください。
+
+v0.8.1は本番サーバーの一時診断に対応します。運営画面で開始すると、試合中は残り時間を保って一時停止し、中間発表中は次ゲームへの自動進行を保留します。診断射撃には試合用と異なる赤外線フラグを使い、診断ログだけに射撃・受信を記録します。得点には加算しません。実機検証と4台への書き込みは別途必要です。
 
 | プレイヤー | ビルド環境 | 端末ID / 銃ID | 今回の固定IP | 保存済みBIN |
 |---|---|---|---|---|
@@ -42,10 +44,10 @@
 起動、接続・同期・試合状態・生存状態・異常の変化、有効な射撃、ゲーム信号の受信だけを出力します。毎秒の状態表示、HIGH/LOWエッジ、生波形は表示しません。同じ射撃を3受信部で受けた場合のシリアル表示は抑制しますが、PCへの報告と受信カウンターは省略しません。
 
 ```text
-BOOT firmware=0.8.0-4e42 player=1 id=gun-001
+BOOT firmware=0.8.1-4e42 player=1 id=gun-001
 STATE id=gun-001 wifi=ON mqtt=ON sync=OK phase=ACTIVE hp=1 armed=YES battery=3.80V gate=OK
 SHOT shooter=1 seq=0
-RX_GAME firmware=0.8.0-4e42 shooter=3 seq=0 receiver=rx1
+RX_GAME firmware=0.8.1-4e42 shooter=3 seq=0 receiver=rx1
 STATE id=gun-001 wifi=ON mqtt=ON sync=OK phase=ACTIVE hp=0 armed=YES battery=3.80V gate=OK
 ```
 

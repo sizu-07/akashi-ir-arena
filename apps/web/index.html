@@ -153,9 +153,20 @@
         <section class="panel">
           <div class="section-heading">
             <h2><span class="section-index">02</span>参加者・端末</h2>
-            <span class="hint">4人個人戦 / 開始前に名前と接続を確認</span>
+            <span class="hint">色付きカードで接続・ボタン・振動・受信を確認</span>
           </div>
           <div id="players" class="players"></div>
+          <div id="diagnosticPanel" class="diagnostic-panel" hidden>
+            <div class="diagnostic-heading">
+              <div><span class="operation-kicker">本番中も使用可能</span><h3>一時診断</h3></div>
+              <span id="diagnosticBadge" class="diagnostic-badge">停止中</span>
+            </div>
+            <p id="diagnosticGuidance">診断対応の端末が接続されると使用できます。</p>
+            <button id="diagnosticToggle" type="button">一時診断を開始</button>
+            <p class="diagnostic-note">診断中の射撃・受信は戦績に加算されません。試合中に開始するとゲームの残り時間を保持して一時停止します。中間発表の自動進行も保留します。</p>
+            <div class="diagnostic-log-heading"><strong>診断ログ</strong><span>新しい順・最大40件</span></div>
+            <ol id="diagnosticLog" class="diagnostic-log"></ol>
+          </div>
           <details class="player-details">
             <summary>端末の詳細・受信状況</summary>
             <div id="deviceDetails" class="device-details"></div>

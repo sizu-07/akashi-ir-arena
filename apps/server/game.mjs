@@ -15,7 +15,7 @@ export class Game {
   constructor(devices,{now=Date.now,log=()=>{},saved=null,allowTestMode=true,autoAdvanceRounds=false}={}) {
     this.allowTestMode=allowTestMode;
     this.autoAdvanceRounds=autoAdvanceRounds;
-    this.now=now; this.log=log; this.pending=[]; this.shots=[]; this.seen=new Map(); this.soundEvents=[]; this.events=saved?.eventNo??0;this.defaultPlayerNames=devices.map(device=>device.name);
+    this.now=now; this.log=log; this.pending=[]; this.shots=[]; this.seen=new Map(); this.soundEvents=[]; this.activity=[]; this.events=saved?.eventNo??0;this.defaultPlayerNames=devices.map(device=>device.name);
     this.s={id:randomUUID(),generation:1,phase:'LOBBY',pauseReason:null,rules:{...defaults},round:1,roundResults:[],remainingMs:defaults.durationSec*1000,intermissionEndsAt:null,intermissionBlockedReason:null,ticketRoundId:null,ticketStarted:false,ticketPaused:false,media:'score',winner:null,testMode:false,participantIds:[],
       players:devices.map(d=>({id:d.id,name:d.name,shooterId:d.shooterId,hp:1,kills:0,deaths:0,shots:0,hits:0,hitShots:0,accuracy:0,respawnAt:0,connected:false,armed:false,lastSeen:0,bootId:null,ack:null,lastShot:-1e15,rssi:null,battery:null,syncRtt:null}))};
     this.s.roundStart=Object.fromEntries(this.s.players.map(p=>[p.id,stats(p)]));
@@ -34,10 +34,11 @@ export class Game {
     } else if(saved?.players?.length===4) {
       for(const p of this.s.players)p.name=saved.players.find(old=>old.id===p.id)?.name??p.name;
     }
-    for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,motorDuty:null,motorPwmLimit:null,motorRunLimit:null,motorStartupMs:null,motorHwDuty:null,shotCooldownMs:null,ignoredShots:null,ledReady:null,ledWhite20:null,motorPattern:null,motorQueueDepth:null,motorDroppedCommands:null,resetReason:null,demoShots:null,demoHits:null,demoDefeats:null,demoRevives:null,demoCountdownBeats:null,demoCountdownMissed:null,demoDefeatPulses:null,rxFrames:{},lastIr:null,lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
+    for(const p of this.s.players)Object.assign(p,{hardwareProfile:null,hardwareReady:false,firmwareVersion:null,bench:false,lowBattery:false,motorActive:false,motorDuty:null,motorPwmLimit:null,motorRunLimit:null,motorStartupMs:null,motorHwDuty:null,shotCooldownMs:null,ignoredShots:null,ledReady:null,ledWhite20:null,motorPattern:null,motorQueueDepth:null,motorDroppedCommands:null,resetReason:null,demoShots:null,demoHits:null,demoDefeats:null,demoRevives:null,demoCountdownBeats:null,demoDefeatPulses:null,diagnosticCapable:false,diagnosticMode:false,triggerDown:null,triggerPresses:null,lastTriggerAt:null,motorPulses:null,lastMotorAt:null,ledColor:null,rxFrames:{},lastIr:null,lastReceiver:null,damageFeedback:null,reviveProgressMs:0});
     if(!allowTestMode&&this.s.testMode){this.s.phase='FINISHED';this.reset(this.s.rules);}
   }
   record(type,payload){const at=this.now();this.s.eventNo=++this.events;this.log({n:this.events,at,gameId:this.s.id,type,...payload});
+    if(['shot','hit','respawn'].includes(type)){this.activity.push({n:this.events,at,type,...payload});if(this.activity.length>60)this.activity.shift();}
     const kind=['shot','motor_demo_shot'].includes(type)?'shot':type==='motor_demo_hit'?'hit':type==='motor_demo_defeat'?'defeat':type==='motor_demo_revive'?'revive':type==='hit'?'defeat':type==='respawn'?'revive':['round_end','finish'].includes(type)?'match-end':null;
     if(kind){this.soundEvents.push({n:this.events,at,kind});if(this.soundEvents.length>64)this.soundEvents.shift();}
   }
@@ -49,7 +50,7 @@ export class Game {
   batteryOverride(p){return this.s.testMode&&this.isParticipant(p.id)&&['COUNTDOWN','ACTIVE'].includes(this.s.phase);}
   readyForMatch(p){return this.s.testMode?this.testReady(p):deviceReady(p);}
   current(p){return p.connected&&this.now()-p.lastSeen<=2500&&p.syncRtt!==null&&p.syncRtt<=400;}
-  view(){return structuredClone({...this.s,serverMs:this.now(),soundEvents:this.soundEvents});}
+  view(){return structuredClone({...this.s,serverMs:this.now(),soundEvents:this.soundEvents,activity:this.activity});}
   setMedia(mode) {
     if (!['score', 'rules', 'video', 'black'].includes(mode)) throw Error('映像モード不正');
     if (['ACTIVE', 'COUNTDOWN'].includes(this.s.phase)) throw Error('試合中は映像切替できません');
@@ -75,7 +76,7 @@ export class Game {
     for(const p of this.s.players)Object.assign(p,{hp:1,kills:0,deaths:0,shots:0,hits:0,hitShots:0,accuracy:0,armed:false,ack:null,lastShot:-1e15,deadAt:0,respawnAt:0,respawnRemainingMs:0,reviveProgressMs:0});
     this.s.roundStart=Object.fromEntries(this.s.players.map(p=>[p.id,stats(p)]));
     for(const p of this.s.players){p.damageFeedback=null;p.lastReceiver=null;}
-    this.shots=[];this.pending=[];this.seen.clear();this.soundEvents=[];this.record('new_game',{rules:r});}
+    this.shots=[];this.pending=[];this.seen.clear();this.soundEvents=[];this.activity=[];this.record('new_game',{rules:r});}
   start(displayReady,{testMode=false,automatic=false}={}){if(!['LOBBY','PAUSED','INTERMISSION'].includes(this.s.phase))throw Error('待機・停止中・途中経過表示中のみ開始できます');
     if(this.s.phase==='INTERMISSION'&&this.autoAdvanceRounds&&!automatic)throw Error('次ゲームは途中経過の15秒後に自動開始します');
     if(!displayReady)throw Error('投影画面で「表示を準備」を押してください');
@@ -87,7 +88,7 @@ export class Game {
     if(!selected.length)throw Error('接続・時刻同期した端末が1台以上必要です');
     if(!mode&&selected.some(receiverOnlyGame))throw Error('受信専用端末は「接続済み端末だけで動作確認」で使用してください');
     if(!mode&&selected.length!==4)throw Error('通常試合は4台必要です');
-    if(!mode&&selected.some(p=>!['0.8.0-4e42','0.8.0-sim'].includes(p.firmwareVersion)))throw Error('通常試合には4台とも個人戦用v0.8ファームウェアが必要です');
+    if(!mode&&selected.some(p=>!['0.8.0-4e42','0.8.1-4e42','0.8.0-sim'].includes(p.firmwareVersion)))throw Error('通常試合には4台とも個人戦用v0.8ファームウェアが必要です');
     if(selected.some(p=>!this.current(p)))throw Error('参加端末の接続・時刻同期を確認してください');
     if(selected.some(p=>mode?!this.testReady(p):!deviceReady(p)))throw Error(mode?'参加端末の構成・通常モードを確認してください':'4台の個人戦対応・通常モード・電池状態を確認してください');
     this.s.testMode=mode;this.s.participantIds=selected.map(p=>p.id);
@@ -123,13 +124,22 @@ export class Game {
   }
   finish(reason='operator'){this.finishMatch(reason);}
   hello(id,bootId){const p=this.player(id);if(typeof bootId!=='string'||bootId.length>80)throw Error('boot_id不正');
-    if(p.bootId!==bootId){p.armed=false;p.syncRtt=null;p.hardwareReady=false;p.hardwareProfile=null;p.lastIr=null;p.damageFeedback=null;if(this.isParticipant(id)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause('端末再起動');}p.bootId=bootId;p.connected=true;p.lastSeen=this.now();}
+    if(p.bootId!==bootId){p.armed=false;p.syncRtt=null;p.hardwareReady=false;p.hardwareProfile=null;p.lastIr=null;p.damageFeedback=null;p.triggerPresses=null;p.motorPulses=null;p.lastTriggerAt=null;p.lastMotorAt=null;if(this.isParticipant(id)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause('端末再起動');}p.bootId=bootId;p.connected=true;p.lastSeen=this.now();}
   heartbeat(id,data){const p=this.player(id);p.connected=true;p.lastSeen=this.now();p.battery=Number.isFinite(data.battery)&&data.battery>=0?data.battery:null;p.rssi=data.rssi??null;
     p.batteryReplaceVoltage=Number.isFinite(data.battery_replace_v)&&data.battery_replace_v>0&&data.battery_replace_v<=30?data.battery_replace_v:null;
     p.syncRtt=Number.isFinite(data.syncRtt)&&data.syncRtt>=0?data.syncRtt:null;
     p.hardwareProfile=typeof data.hardware_profile==='string'?data.hardware_profile.slice(0,80):null;
     p.hardwareReady=data.hardware_ready===true;p.firmwareVersion=typeof data.firmware_version==='string'?data.firmware_version.slice(0,24):null;
     p.bench=data.bench===true;p.lowBattery=data.lowBattery===true;p.motorActive=data.motor_active===true;
+    p.diagnosticCapable=data.diagnostic_capable===true;p.diagnosticMode=data.diagnostic_mode===true;
+    p.triggerDown=typeof data.trigger_down==='boolean'?data.trigger_down:null;
+    const triggerPresses=Number.isSafeInteger(data.trigger_presses)&&data.trigger_presses>=0?data.trigger_presses:null;
+    if(p.triggerPresses!==null&&triggerPresses!==null&&triggerPresses>p.triggerPresses)p.lastTriggerAt=this.now();
+    p.triggerPresses=triggerPresses;
+    const motorPulses=Number.isSafeInteger(data.motor_pulses)&&data.motor_pulses>=0?data.motor_pulses:null;
+    if(p.motorPulses!==null&&motorPulses!==null&&motorPulses>p.motorPulses)p.lastMotorAt=this.now();
+    p.motorPulses=motorPulses;
+    p.ledColor=typeof data.led_color==='string'&&/^(OFF|RED|BLUE|GREEN|CYAN|ORANGE|PURPLE|WHITE|MIXED)$/.test(data.led_color)?data.led_color:null;
     p.motorPwmLimit=Number.isInteger(data.motor_pwm_limit)&&data.motor_pwm_limit>0&&data.motor_pwm_limit<=255?data.motor_pwm_limit:null;
     p.motorRunLimit=Number.isInteger(data.motor_run_limit)&&data.motor_run_limit>0&&data.motor_run_limit<=255?data.motor_run_limit:null;
     p.motorStartupMs=Number.isInteger(data.motor_startup_ms)&&data.motor_startup_ms>0&&data.motor_startup_ms<=100?data.motor_startup_ms:null;
@@ -205,7 +215,7 @@ export class Game {
       for(const p of this.s.players)if(p.hp===0&&p.respawnAt&&t>=p.respawnAt){p.hp=1;p.deadAt=0;p.respawnAt=0;this.record('respawn',{deviceId:p.id});}
       if(!this.s.remainingMs)this.endRound('time');
     }
-    if(this.s.phase==='INTERMISSION'&&this.autoAdvanceRounds&&!this.s.testMode&&t>=this.s.intermissionEndsAt){
+    if(this.s.phase==='INTERMISSION'&&this.autoAdvanceRounds&&!this.s.testMode&&Number.isFinite(this.s.intermissionEndsAt)&&t>=this.s.intermissionEndsAt){
       try{this.start(displayReady,{automatic:true});}
       catch(error){this.s.intermissionBlockedReason=error.message;}
     }
