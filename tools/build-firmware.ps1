@@ -1,4 +1,4 @@
-param([string]$Python = 'python',[switch]$Upload,[string]$Port)
+param([string]$Python = 'python',[ValidateSet('xiao_s3_plus','legacy_4e_game','player1_game','player2_game','player3_game','player4_game','receiver_only_game','transmitter_diagnostics','receiver_diagnostics','all_receivers_diagnostics','red_led_diagnostics','standalone_diagnostics','board_diagnostics','limit_diagnostics','trigger_output_diagnostics','led_line_diagnostics','gpio43_low_diagnostics','wifi_game_diagnostics')][string]$Environment = 'xiao_s3_plus',[switch]$Upload,[string]$Port)
 $ErrorActionPreference='Stop'
 $projectPath = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location $projectPath
@@ -13,7 +13,21 @@ $previousCore=$env:PLATFORMIO_CORE_DIR
 try {
   if (Test-Path "$drive/.tools/python") { $env:PYTHONPATH="$drive/.tools/python" }
   $env:PLATFORMIO_CORE_DIR="$drive/.tools/platformio"
-  $arguments=@('-m','platformio','run','-e','xiao_s3_plus','-d',"$drive/firmware")
+  $firmwareDir = switch ($Environment) {
+    'transmitter_diagnostics' { "$drive/firmware/transmitter-diagnostic" }
+    'receiver_diagnostics' { "$drive/firmware/receiver-diagnostic" }
+    'standalone_diagnostics' { "$drive/firmware/standalone-diagnostic" }
+    'all_receivers_diagnostics' { "$drive/firmware/all-receivers-diagnostic" }
+    'red_led_diagnostics' { "$drive/firmware/red-led-diagnostic" }
+    'board_diagnostics' { "$drive/firmware/diagnostic" }
+    'limit_diagnostics' { "$drive/firmware/limit-diagnostic" }
+    'trigger_output_diagnostics' { "$drive/firmware/trigger-output-diagnostic" }
+    'led_line_diagnostics' { "$drive/firmware/led-line-diagnostic" }
+    'gpio43_low_diagnostics' { "$drive/firmware/gpio43-low-diagnostic" }
+    'wifi_game_diagnostics' { "$drive/firmware/wifi-game-diagnostic" }
+    default { "$drive/firmware" }
+  }
+  $arguments=@('-m','platformio','run','-e',$Environment,'-d',$firmwareDir)
   if ($Upload) { if (-not $Port) { throw '-Uploadには-Port COM番号が必要です' }; $arguments+=@('-t','upload','--upload-port',$Port) }
   & $Python @arguments
   if ($LASTEXITCODE -ne 0) { throw 'ファームウェアのビルドに失敗しました' }

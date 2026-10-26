@@ -94,10 +94,8 @@ export async function createTicketApp({
       if (url.pathname === '/health') return json(res, 200, {ok: true, updatedAt: queue.state.updatedAt});
       if (url.pathname === '/') { res.writeHead(302, {Location: '/register'}); return res.end(); }
 
-      if (url.pathname === '/api/public/available-slots' && req.method === 'GET') {
-        const partySize = Number(url.searchParams.get('partySize'));
-        const slots = queue.availableRegistrationSlots(partySize).map(({roundId, ...slot}) => slot);
-        return json(res, 200, {partySize, slots, updatedAt: queue.state.updatedAt});
+      if (url.pathname === '/api/public/availability' && req.method === 'GET') {
+        return json(res, 200, queue.publicAvailability(url.searchParams.get('partySize')));
       }
 
       if (url.pathname === '/api/public/register' && req.method === 'POST') {
@@ -225,7 +223,7 @@ export async function createTicketApp({
         const round = queue.state.rounds.find((item) => item.status === 'CALLED') ?? queue.state.rounds.find((item) => item.status === 'PLAYING');
         const playerNicknames = round ? queue.roundPlayerNicknames(round) : [];
         const summary = round && queue.roundSummary(round.id);
-        return json(res, round ? 200 : 404, round ? {roundId: round.id, number: round.number, status: round.status, playerNicknames, assignedPeople: summary.assignedPeople, checkedInPeople: summary.checkedInPeople, ready: summary.assignedPeople > 0 && summary.checkedInPeople === summary.assignedPeople} : {error: '対象回がありません'});
+        return json(res, round ? 200 : 404, round ? {roundId: round.id, number: round.number, status: round.status, playerNicknames, assignedPeople: summary.assignedPeople, checkedInPeople: summary.checkedInPeople, ready: summary.assignedPeople === 4 && summary.checkedInPeople === 4} : {error: '対象回がありません'});
       }
 
       if (url.pathname.startsWith('/scan/')) { res.writeHead(302, {Location: `/scanner#${url.pathname.slice(6)}`}); return res.end(); }

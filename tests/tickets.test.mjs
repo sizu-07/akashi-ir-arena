@@ -48,55 +48,52 @@ test('1枠15分で参加者ごとのニックネームを保存する', () => {
   assert.throws(() => queue.register({requestId: 'missing-name-request', nicknames: ['1人だけ'], partySize: 2, consent: true}), /一致/);
 });
 
-test('参加人数が入れる時間だけを提示し、選択した15分枠へ登録する', () => {
-  const now = new Date('2026-10-08T10:02:00+09:00').getTime();
+test('受付前に人数別の案内予定を表示し、希望した後の時刻を割当へ反映する', () => {
+  const now = new Date('2026-09-17T17:07:00+09:00').getTime();
   const queue = new TicketQueue({now: () => now});
-  queue.register({requestId: 'availability-existing-three', nicknames: ['A', 'B', 'C'], partySize: 3, consent: true});
-
-  const twoPersonSlots = queue.availableRegistrationSlots(2);
-  assert.equal(twoPersonSlots.length, 12);
-  assert.equal(twoPersonSlots[0].remainingSeats, 4);
-  assert.equal(twoPersonSlots[0].startAt, new Date('2026-10-08T10:30:00+09:00').getTime());
-  assert.equal(twoPersonSlots[0].recommended, true);
-
-  const selected = queue.register({
-    requestId: 'availability-selected-two', nicknames: ['D', 'E'], partySize: 2, consent: true,
-    preferredSlotStartAt: twoPersonSlots[0].startAt,
-  });
-  assert.equal(selected.slotStartAt, twoPersonSlots[0].startAt);
-  assert.equal(queue.round(queue.state.tickets.find((ticket) => ticket.accessToken === selected.accessToken).roundId).status, 'LOCKED_SCHEDULED');
-
-  const onePersonSlot = queue.availableRegistrationSlots(1)[0];
-  assert.equal(onePersonSlot.startAt, new Date('2026-10-08T10:15:00+09:00').getTime());
-  assert.equal(onePersonSlot.remainingSeats, 1);
-  const filler = queue.register({
-    requestId: 'availability-fill-one', nicknames: ['F'], partySize: 1, consent: true,
-    preferredSlotStartAt: onePersonSlot.startAt,
-  });
-  assert.equal(filler.slotStartAt, onePersonSlot.startAt);
-  assert.equal(queue.operatorView().rounds.find((round) => round.effectiveSlotStartAt === onePersonSlot.startAt).assignedPeople, 4);
+  const before = queue.publicAvailability(2);
+  assert.equal(queue.state.tickets.length, 0, '予定の照会だけでは整理券を発行しない');
+  assert.ok(before.current.estimatedCallAt);
+  assert.ok(before.alternatives.length > 0);
+  const requested = before.alternatives[2];
+  const delayed = queue.register({requestId: 'deferred-preview-request', nicknames: ['甲', '乙'], partySize: 2, consent: true, earliestCallAt: requested.earliestCallAt});
+  assert.equal(delayed.estimatedCallAt, requested.estimatedCallAt);
+  assert.ok(delayed.estimatedCallAt >= requested.earliestCallAt);
+  const auto = queue.register({requestId: 'automatic-after-deferred', nicknames: ['丙', '丁'], partySize: 2, consent: true});
+  assert.ok(auto.estimatedCallAt < delayed.estimatedCallAt, '後から登録した最短希望者は空いた先の枠を使う');
+  assert.ok(queue.publicTicket(delayed.accessToken).estimatedCallAt >= requested.earliestCallAt);
+  assert.throws(() => queue.register({requestId: 'invalid-preference', nicknames: ['不正'], partySize: 1, consent: true, earliestCallAt: now + 1}), /希望する案内時刻/);
 });
 
-test('時間選択後に満席になった場合は4名を超えて登録しない', () => {
-  const queue = new TicketQueue();
-  const selectedTime = queue.availableRegistrationSlots(4)[0].startAt;
-  queue.register({requestId: 'selected-slot-winner', nicknames: ['1', '2', '3', '4'], partySize: 4, consent: true, preferredSlotStartAt: selectedTime});
-  assert.throws(() => queue.register({
-    requestId: 'selected-slot-loser', nicknames: ['5', '6', '7', '8'], partySize: 4, consent: true, preferredSlotStartAt: selectedTime,
-  }), /満席|選び直して/);
+test('確認画面の体験枠が変わった場合は発券しない', () => {
+  const now = new Date('2026-09-17T17:07:00+09:00').getTime();
+  const queue = new TicketQueue({now: () => now});
+  const preview = queue.publicAvailability(4).current;
+  assert.equal(preview.slotEndAt - preview.slotStartAt, 15 * 60_000);
+  queue.register({requestId: 'other-full-party', nicknames: ['甲', '乙', '丙', '丁'], partySize: 4, consent: true});
+  assert.throws(() => queue.register({requestId: 'stale-confirmation', nicknames: ['戊', '己', '庚', '辛'], partySize: 4, consent: true, expectedSlotStartAt: preview.slotStartAt}), /案内時刻が更新/);
   assert.equal(queue.state.tickets.length, 1);
+  const refreshed = queue.publicAvailability(4).current;
+  const ticket = queue.register({requestId: 'fresh-confirmation', nicknames: ['戊', '己', '庚', '辛'], partySize: 4, consent: true, expectedSlotStartAt: refreshed.slotStartAt});
+  assert.equal(ticket.slotStartAt, refreshed.slotStartAt);
 });
 
-test('3人以上のチーム選択を保存し、ゲームのA/B席へ配置する', () => {
+test('個人戦の整理券枠は4名全員が揃うまで開始しない', () => {
+  const queue = new TicketQueue();
+  register(queue,'2名',2);
+  const round = queue.operatorView().rounds[0];
+  queue.callNext('operator');
+  for(const id of queue.round(round.id).ticketIds)queue.checkIn(queue.ticket(id).qrToken,'operator');
+  assert.throws(()=>queue.applyGameEvent({eventId:'not-four',type:'GAME_STARTED',targetRoundId:round.id,source:'game'}),/4名必要/);
+});
+
+test('複数人登録の名前を個人戦の参加者順に渡し、旧チーム指定は無視する', () => {
   const queue = new TicketQueue();
   const group = queue.register({requestId: 'team-group-request', nicknames: ['甲', '乙', '丙'], playerTeams: ['B', 'A', 'B'], partySize: 3, consent: true});
   const solo = queue.register({requestId: 'team-solo-request', nicknames: ['丁'], partySize: 1, consent: true});
-  assert.deepEqual(queue.publicTicket(group.accessToken).playerTeams, ['B', 'A', 'B']);
-  assert.deepEqual(queue.roundPlayerNicknames(queue.round(queue.state.tickets.find((ticket) => ticket.accessToken === group.accessToken).roundId)), ['乙', '丁', '甲', '丙']);
-  assert.equal(queue.state.tickets.find((ticket) => ticket.accessToken === solo.accessToken).playerTeams, null);
-  assert.throws(() => queue.register({requestId: 'team-overflow-request', nicknames: ['1', '2', '3'], playerTeams: ['A', 'A', 'A'], partySize: 3, consent: true}), /2人まで/);
-  assert.throws(() => queue.register({requestId: 'team-count-request', nicknames: ['1', '2', '3', '4'], playerTeams: ['A', 'B'], partySize: 4, consent: true}), /2人まで/);
-  assert.throws(() => queue.register({requestId: 'team-invalid-request', nicknames: ['1', '2', '3'], playerTeams: ['A', 'B', 'C'], partySize: 3, consent: true}), /2人まで/);
+  assert.equal('playerTeams' in queue.publicTicket(group.accessToken), false);
+  assert.deepEqual(queue.roundPlayerNicknames(queue.round(queue.state.tickets.find((ticket) => ticket.accessToken === group.accessToken).roundId)), ['甲', '乙', '丙', '丁']);
+  assert.equal('playerTeams' in queue.state.tickets.find((ticket) => ticket.accessToken === solo.accessToken), false);
 });
 
 test('現在時刻に依存せず切りのよい15分枠へ割り当て、前枠の開始時刻を入場予定にする', () => {
@@ -584,12 +581,6 @@ test('HTTP同時登録、運営認証、操作冪等性、閲覧分離', async (
   const app = await createTicketApp({dataDir: dir, operatorPassword: password, gameApiKey: apiKey});
   const base = `http://127.0.0.1:${app.server.address().port}`;
   try {
-    const availabilityResponse = await fetch(`${base}/api/public/available-slots?partySize=2`);
-    assert.equal(availabilityResponse.status, 200);
-    const availability = await availabilityResponse.json();
-    assert.equal(availability.partySize, 2);
-    assert.equal(availability.slots.length, 12);
-    assert.ok(availability.slots.every((slot) => slot.remainingSeats >= 2 && !('roundId' in slot)));
     const registrations = await Promise.all(Array.from({length: 20}, (_, index) => fetch(`${base}/api/public/register`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({requestId: `http-request-${index}`, nickname: `組${index}`, partySize: index % 4 + 1, consent: true})})));
     assert.ok(registrations.every((response) => response.status === 201));
     assert.equal(new Set(app.queue.state.tickets.map((ticket) => ticket.receptionNumber)).size, 20);
@@ -713,6 +704,77 @@ test('対象枠が未確定のゲームイベントを送信せず、古い不�
   }
 });
 
+test('ゲームサーバー再起動後も同じ整理券枠へ一時停止・再開・終了を送る', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-bridge-recovery-'));
+  const events = [];
+  const server = (await import('node:http')).createServer(async (request, response) => {
+    if (request.url === '/api/game/events') {
+      let body = ''; for await (const chunk of request) body += chunk;
+      events.push(JSON.parse(body));
+    }
+    response.writeHead(200, {'Content-Type': 'application/json'});response.end('{"ok":true}');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const bridge = createTicketBridge({url:`http://127.0.0.1:${server.address().port}`,apiKey:'test-key',dataDir:dir,initialRoundId:'saved-round',initialPhase:'ACTIVE'});
+  try {
+    const game = {id:'saved-game',phase:'PAUSED',ticketStarted:true,ticketPaused:false,testMode:false};
+    bridge.observe(game);
+    game.phase='COUNTDOWN';bridge.observe(game);
+    game.phase='ACTIVE';bridge.observe(game);
+    game.phase='INTERMISSION';bridge.observe(game);
+    game.phase='COUNTDOWN';bridge.observe(game);
+    game.phase='PAUSED';bridge.observe(game);
+    game.phase='ACTIVE';bridge.observe(game);
+    game.phase='FINISHED';bridge.observe(game);
+    await bridge.close();
+    assert.deepEqual(events.map(event=>event.type),['GAME_PAUSED','GAME_RESUMED','GAME_PAUSED','GAME_RESUMED','GAME_ENDED']);
+    assert.deepEqual(events.map(event=>event.targetRoundId),Array(5).fill('saved-round'));
+  } finally {
+    await new Promise(resolve=>server.close(resolve));
+    rmSync(dir,{recursive:true,force:true});
+  }
+});
+
+test('同じ一時停止の再送は整理券の調整枠を増やさない', () => {
+  const queue = new TicketQueue();
+  register(queue,'4名',4);
+  const round = queue.operatorView().rounds[0];
+  queue.callNext('operator');
+  for (const id of queue.round(round.id).ticketIds) queue.checkIn(queue.ticket(id).qrToken,'operator');
+  queue.applyGameEvent({eventId:'pause-seed-start',type:'GAME_STARTED',targetRoundId:round.id,source:'game'});
+  queue.applyGameEvent({eventId:'pause-seed-1',type:'GAME_PAUSED',targetRoundId:round.id,source:'game'});
+  const delay = queue.state.settings.globalDelayMinutes;
+  const result = queue.applyGameEvent({eventId:'pause-seed-2',type:'GAME_PAUSED',targetRoundId:round.id,source:'game'});
+  assert.equal(result.alreadyPaused,true);
+  assert.equal(queue.state.settings.globalDelayMinutes,delay);
+});
+
+test('動作確認モードは整理券枠があっても試合イベントを送信しない', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-bench-test-'));
+  const received = [];
+  const server = (await import('node:http')).createServer(async (request, response) => {
+    if (request.method === 'POST' && request.url === '/api/game/events') received.push(request.url);
+    response.writeHead(200, {'Content-Type': 'application/json'});
+    response.end(request.url === '/api/game/current-round'
+      ? JSON.stringify({roundId: 'round-1', playerNicknames: ['A', 'B', 'C', 'D'], ready: true})
+      : '{"ok":true}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const bridge = createTicketBridge({url: `http://127.0.0.1:${server.address().port}`, apiKey: 'test-key', dataDir: dir});
+  try {
+    await bridge.loadPlayerNicknames();
+    for (const phase of ['LOBBY', 'COUNTDOWN', 'ACTIVE', 'PAUSED', 'COUNTDOWN', 'ACTIVE', 'FINISHED']) {
+      bridge.observe({id: 'bench-game', phase, testMode: true});
+    }
+    await bridge.close();
+    assert.deepEqual(received, []);
+    assert.equal(bridge.pending, 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
 test('整理券の参加者名と対象枠をゲーム側へ連携する', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-player-name-test-'));
   const received = [];
@@ -763,7 +825,7 @@ test('登録から呼出・入場・ゲーム開始終了・次枠呼出までHT
     assert.equal((await checkIn.json()).code, 'OK');
     assert.equal((await (await fetch(`${base}/api/public/ticket/${first.accessToken}`)).json()).status, 'CHECKED_IN');
     const current = await (await fetch(`${base}/api/game/current-round`, {headers: {Authorization: `Bearer ${apiKey}`}})).json();
-    assert.deepEqual(current.playerNicknames, ['夏', '冬', '春', '秋']);
+    assert.deepEqual(current.playerNicknames, ['春', '夏', '秋', '冬']);
     const event = (eventId, type, targetRoundId) => fetch(`${base}/api/game/events`, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`}, body: JSON.stringify({eventId, type, targetRoundId, occurredAt: Date.now(), source: 'e2e-game'})});
     assert.equal((await event('e2e-start', 'GAME_STARTED', current.roundId)).status, 200);
     assert.equal((await (await fetch(`${base}/api/public/ticket/${first.accessToken}`)).json()).status, 'PLAYING');

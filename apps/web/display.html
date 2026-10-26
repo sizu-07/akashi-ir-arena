@@ -25,7 +25,7 @@
           <span class="brand-caption">AKASHI<br />IR ARENA</span>
         </div>
         <div class="edition">
-          赤外線チーム対戦<span>2 ON 2 / LOCAL BATTLE</span>
+          赤外線4人個人戦<span>FREE FOR ALL / 4 PLAYERS</span>
         </div>
         <div class="phase-tag">
           <span class="live-dot" aria-hidden="true"></span
@@ -41,43 +41,39 @@
         </div>
         <div class="signal-art" aria-hidden="true">
           <span>FIELD / AKASHI</span><i></i><b>✳</b
-          ><span>2 VS 2<br />IR BATTLE</span>
+          ><span>1 VS 1 VS 1 VS 1<br />IR BATTLE</span>
         </div>
         <div class="target-art" aria-hidden="true">
           <div class="target-ring"></div>
           <span>光</span><small>LOCK ON / 02</small><i>✦</i>
         </div>
-        <div class="scoreboard" id="score" aria-label="撃破数 A 0 対 B 0">
-          <div class="team-score score-a">
-            <span class="team-caption">TEAM / <b>A</b></span
-            ><strong id="scoreA">00</strong
-            ><span class="score-caption">撃破数 / TAKEDOWNS</span>
+        <div class="scoreboard" id="score" aria-label="4人の累計キル数">
+          <div class="round-badge">
+            <span>GAME / 全4ゲーム</span><strong id="round">1 / 4</strong>
           </div>
           <div class="time-block">
             <span class="time-caption">TIME LEFT <i>／ 残り時間</i></span
-            ><strong id="clock">05:00</strong>
+            ><strong id="clock">01:30</strong>
             <div class="time-track"><div id="timeProgress"></div></div>
             <span id="matchNote">STAND BY — 開始の合図を待て</span>
           </div>
-          <div class="team-score score-b">
-            <span class="team-caption">TEAM / <b>B</b></span
-            ><strong id="scoreB">00</strong
-            ><span class="score-caption">撃破数 / TAKEDOWNS</span>
+          <div class="leader-badge">
+            <span>TOP KILLS / 暫定首位</span><strong id="leader">—</strong>
           </div>
         </div>
         <span class="versus-sticker" aria-hidden="true"
-          >VS<span>2×2</span></span
+          >VS<span>1×4</span></span
         >
       </section>
       <div class="roster-heading">
-        <span><b>01—02</b> TEAM A <i>／ Aチーム</i></span
-        ><span>PLAYER STATUS <b>↓</b></span
-        ><span><b>03—04</b> TEAM B <i>／ Bチーム</i></span>
+        <span><b>01—04</b> FREE FOR ALL <i>／ 4人個人戦</i></span
+        ><span>PLAYER RANKING <b>↓</b></span
+        ><span>4 GAMES <i>／ 合計キル勝負</i></span>
       </div>
       <section
         id="players"
         class="players"
-        aria-label="プレイヤーのHP"
+        aria-label="プレイヤーのキル数と状態"
       ></section>
       <footer class="arena-footer">
         <span class="footer-label">明石光線 <b>／</b> IR ARENA</span
@@ -96,7 +92,7 @@
         >AKASHI IR ARENA <b>↗</b></span
       >
       <span class="overlay-corner corner-bottom" aria-hidden="true"
-        >2 ON 2 · MAKE YOUR SHOT.</span
+        >FREE FOR ALL · MAKE YOUR SHOT.</span
       >
       <div class="count-directive" aria-hidden="true">
         <span id="countDirective">READY</span><small>照準を、合わせろ。</small>
@@ -107,6 +103,11 @@
           <span id="countEcho" aria-hidden="true"></span>
           <h2 id="overlayTitle"></h2>
         </div>
+        <div id="resultLead" class="result-lead" hidden>
+          <span>WINNER</span><strong id="resultChampion"></strong>
+        </div>
+        <ol id="resultBoard" class="result-board" aria-label="順位と戦績" hidden></ol>
+        <p id="resultMeta" class="result-meta" hidden></p>
         <p id="overlayText"></p>
         <div id="slideProgress" aria-hidden="true"></div>
       </div>
@@ -132,6 +133,7 @@
       <details id="pair">
         <summary>タブレット接続QR</summary>
         <img id="qr" src="/api/pair.svg" alt="タブレット接続QR" />
+        <p id="pairUrl">接続先を取得中</p>
         <p>運営PINが別途必要です</p>
       </details>
     </div>

@@ -14,9 +14,6 @@ function render(ticket) {
   $('status').textContent = states[ticket.status] || ticket.status;
   $('status').className = `status ${ticket.status}`;
   $('identity').textContent = `${(ticket.playerNicknames || [ticket.nickname]).join('・')} / ${ticket.partySize}名`;
-  const teams = ticket.playerTeams;
-  $('teamAssignment').hidden = !teams?.length;
-  $('teamAssignment').textContent = teams?.length ? ticket.playerNicknames.map((name, index) => `${name}：チーム${teams[index]}`).join(' / ') : '';
   $('called').hidden = ticket.status !== 'CALLED';
   const checkedIn = ['CHECKED_IN', 'PLAYING', 'COMPLETED'].includes(ticket.status);
   $('checkinNotice').hidden = !checkedIn;

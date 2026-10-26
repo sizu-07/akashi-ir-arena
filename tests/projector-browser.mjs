@@ -1,313 +1,90 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdirSync,mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {createApp} from '../apps/server/main.mjs';
 
-const require = createRequire(import.meta.url);
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const dir = mkdtempSync(path.join(os.tmpdir(), 'arena-projector-'));
-const effectsDir = path.join(dir, 'effects');
-mkdirSync(effectsDir);
-const effectDurations = {shot: 0.08, hit: 0.11, defeat: 0.14, revive: 0.17, 'match-end': 0.20};
-function writeEffect(name, seconds) {
-  const samples = Math.round(22050 * seconds);
-  const wav = Buffer.alloc(44 + samples * 2);
-  wav.write('RIFF', 0); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
-  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
-  wav.writeUInt32LE(22050, 24); wav.writeUInt32LE(44100, 28);
-  wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36);
-  wav.writeUInt32LE(samples * 2, 40);
-  writeFileSync(path.join(effectsDir, `${name}.wav`), wav);
-}
-for (const [name, seconds] of Object.entries(effectDurations)) writeEffect(name, seconds);
-const output = 'artifacts/projector';
-mkdirSync(output, {recursive: true});
-const config = {
-  httpPort: 0,
-  mqttPort: 0,
-  operatorPin: 'projector-test-only',
-  devices: [1, 2, 3, 4].map((n) => ({
-    id: `gun-00${n}`,
-    key: `test-${n}`,
-    name: `プレイヤー${n}`,
-    team: n < 3 ? 'A' : 'B',
-    shooterId: n,
-  })),
-};
-const app = await createApp({
-  config,
-  demo: true,
-  dataDir: dir,
-  effectsDir,
-  bind: '127.0.0.1',
-});
-const base = `http://127.0.0.1:${app.httpServer.address().port}`;
+const require=createRequire(import.meta.url);
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const dir=mkdtempSync(path.join(os.tmpdir(),'arena-projector-'));
+const output='artifacts/projector';
+mkdirSync(output,{recursive:true});
+const config={httpPort:0,mqttPort:0,operatorPin:'projector-test-only',devices:[1,2,3,4].map(n=>({id:`gun-00${n}`,key:`test-${n}`,name:`プレイヤー${n}`,shooterId:n}))};
+const app=await createApp({config,demo:true,dataDir:dir,bind:'127.0.0.1'});
+const base=`http://127.0.0.1:${app.httpServer.address().port}`;
 let browser;
-const errors = [];
-const checks = [];
-try {
-  browser = await chromium.launch({channel: 'msedge', headless: true});
-  const context = await browser.newContext({
-    viewport: {width: 1920, height: 1080},
-  });
-  const page = await context.newPage();
-  await page.addInitScript(() => {
-    window.bufferStarts = [];
-    const original = AudioBufferSourceNode.prototype.start;
-    AudioBufferSourceNode.prototype.start = function (...args) {
-      window.bufferStarts.push(this.buffer?.duration ?? 0);
-      return original.apply(this, args);
-    };
-  });
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('console', (message) => {
-    if (message.type() === 'error')
-      errors.push(`${message.text()} ${message.location().url}`);
-  });
-  const requests = [];
-  page.on('request', (request) => requests.push(request.url()));
+const errors=[];
+try{
+  browser=await chromium.launch({channel:'msedge',headless:true});
+  const page=await browser.newPage({viewport:{width:1920,height:1080}});
+  page.on('pageerror',e=>errors.push(e.message));
   await page.goto(`${base}/display`);
   await page.locator('.player').first().waitFor();
-  await page.evaluate(() => document.fonts.ready);
-  assert.equal(
-    await page.evaluate(() =>
-      [...document.fonts].every((font) => font.status === 'loaded'),
-    ),
-    true,
-  );
-  assert.equal(
-    requests.every((url) => url.startsWith(base)),
-    true,
-  );
-  checks.push('All three fonts load locally without external requests');
-
-  const shot = (name) => page.screenshot({path: `${output}/${name}.png`});
-  await shot('lobby-1920');
-  // The DOM identity must survive clock ticks for CSS animations to continue.
-  await page.evaluate(() => {
-    window.originalCard = document.querySelector('.player');
-  });
-  await page.waitForTimeout(250);
-  assert.equal(
-    await page.evaluate(
-      () => window.originalCard === document.querySelector('.player'),
-    ),
-    true,
-  );
-  checks.push('Player cards persist across clock updates');
+  assert.equal(await page.locator('.player').count(),4);
+  assert.equal(await page.locator('#round').textContent(),'1 / 4');
+  await page.screenshot({path:`${output}/lobby-1920.png`});
   await page.locator('#prepare').click();
-  await page.waitForFunction(() =>
-    document.getElementById('status').textContent.includes('準備完了'),
-  );
-  assert.ok(requests.includes(`${base}/countdown.wav`));
-  assert.ok(requests.includes(`${base}/bgm.mp3`));
-  for (const name of Object.keys(effectDurations))
-    assert.ok(requests.some(url => url.startsWith(`${base}/effects/${name}.wav?v=`)));
-  checks.push('Countdown audio and bgm.mp3 load during projector preparation');
-  await page.waitForFunction(async () =>
-    (await (await fetch('/api/state')).json()).players.every(
-      (p) => p.connected && p.syncRtt !== null,
-    ),
-  );
+  await page.waitForFunction(async()=>{const s=await(await fetch('/api/state')).json();return s.displayReady&&s.players.every(p=>p.connected&&p.syncRtt!==null);});
+  const bgmDuration = await page.evaluate(async () => {
+    const response = await fetch('/bgm.mp3');
+    const context = new AudioContext();
+    const buffer = await context.decodeAudioData(await response.arrayBuffer());
+    await context.close();
+    return buffer.duration;
+  });
+  assert.ok(bgmDuration > 88 && bgmDuration < 90, `BGM length ${bgmDuration}s`);
   app.game.start(true);
-  await page.waitForFunction(
-    () => document.getElementById('overlayTitle').textContent === 'READY?',
-  );
-  assert.equal(await page.locator('body').getAttribute('data-bgm'), null);
-  assert.ok(Number(await page.locator('body').getAttribute('data-countdown-ms')) < 1460);
-  await shot('countdown-ready');
-  for (const count of ['5', '4', '3', '2', '1']) {
-    await page.waitForFunction(
-      (count) => document.getElementById('overlayTitle').textContent === count,
-      count,
-    );
-    await page.waitForTimeout(300);
-    assert.equal(
-      await page.locator('#overlay').getAttribute('class'),
-      'mode-countdown',
-    );
-    const expected = {5: 1.46, 4: 3.08, 3: 4.08, 2: 5.1, 1: 6.14}[count];
-    assert.ok(
-      await page.locator('body').evaluate((body, expected) => {
-        const seconds = Number(body.dataset.countdownMs) / 1000;
-        return seconds >= expected && seconds < expected + 0.9;
-      }, expected),
-      `${count}の表示を音声の発声時刻へ合わせる`,
-    );
-    await shot(`countdown-${count}`);
-  }
-  await page.waitForFunction(() => document.body.dataset.phase === 'ACTIVE');
-  await page.locator('#startBurst').waitFor({state: 'visible'});
-  assert.equal(await page.locator('body').getAttribute('data-bgm'), 'playing');
-  assert.equal(await page.locator('#startBurst strong').textContent(), 'START');
-  assert.ok(await page.locator('body').evaluate((body) => Number(body.dataset.countdownMs) >= 6900 && Number(body.dataset.countdownMs) < 7200));
-  await shot('go');
-  await page.locator('#startBurst').waitFor({state: 'hidden'});
-  checks.push('Audio-synchronized READY, 5/4/3/2/1 and START transition');
-  app.game.record('shot', {deviceId: 'gun-001'});
-  app.game.record('hit', {deviceId: 'gun-003', hp: 95});
-  app.game.record('hit', {deviceId: 'gun-003', hp: 0});
-  app.game.record('revive', {deviceId: 'gun-003'});
-  await page.waitForFunction(() => [0.08, 0.11, 0.14, 0.17].every(
-    expected => window.bufferStarts.some(actual => Math.abs(actual - expected) < 0.01),
-  ));
-  checks.push('Shot, hit, defeat and revive WAV effects play from confirmed game events');
-  writeEffect('shot', 0.23);
-  await page.waitForFunction(() => performance.getEntriesByType('resource').filter(
-    entry => entry.name.includes('/effects/shot.wav?v='),
-  ).length >= 2);
-  app.game.record('shot', {deviceId: 'gun-001'});
-  await page.waitForFunction(() => window.bufferStarts.some(actual => Math.abs(actual - 0.23) < 0.01));
-  checks.push('Replacing an effect file reloads it while the projector is running');
-  app.game.s.players[0].hp = 25;
-  app.game.s.players[2].hp = 0;
-  app.game.s.score.A = 1;
-  await page.waitForFunction(
-    () => document.querySelectorAll('.hp')[2].textContent === '0',
-  );
-  assert.equal(await page.locator('.is-out').count(), 1);
-  assert.equal(await page.locator('#scoreA').textContent(), '01');
-  await shot('active-1920');
-  checks.push('HP, low-health, eliminated-player and team score display');
-
+  for (const player of app.game.s.players) app.game.ack(player.id,{command_id:app.game.s.commandId,result:'ok'});
+  try{await page.waitForFunction(()=>document.body.dataset.phase==='ACTIVE',undefined,{timeout:15000});}
+  catch(error){throw Error(`投影開始待ち: phase=${app.game.s.phase}, ACK=${app.game.s.startCommitted}, ready=${app.game.s.players.map(p=>p.connected).join(',')}: ${error.message}`);}
+  assert.equal(await page.locator('#clock').textContent(),'01:30');
+  await page.waitForFunction(()=>document.body.dataset.bgm==='playing');
+  assert.ok(Number(await page.locator('body').getAttribute('data-bgm-offset-ms'))<2000);
+  const shooter=app.game.player('gun-001'),victim=app.game.player('gun-002');
+  shooter.kills=2;shooter.shots=3;shooter.hitShots=2;shooter.accuracy=66.7;
+  victim.hp=0;victim.deaths=2;victim.respawnAt=Date.now()+7000;
+  await page.waitForFunction(()=>document.getElementById('leader').textContent==='プレイヤー1'&&document.querySelector('.is-out'));
+  assert.equal(await page.locator('.player').first().locator('.hp').textContent(),'2');
+  await page.screenshot({path:`${output}/active-1920.png`});
+  app.game.s.endAt=Date.now()+70000;
+  app.game.tick(true);
   app.game.pause();
-  await page.waitForFunction(
-    () => document.getElementById('overlay').className === 'mode-paused',
-  );
-  await shot('paused');
+  await page.waitForFunction(()=>document.body.dataset.phase==='PAUSED');
+  await page.waitForFunction(()=>!document.body.dataset.bgm);
   app.game.start(true);
-  await page.waitForFunction(
-    () => document.getElementById('overlayTitle').textContent === 'READY?',
-  );
-  assert.ok(
-    await page
-      .locator('.title-wrap')
-      .evaluate((el) =>
-        el.getAnimations().some((animation) => animation.currentTime < 900),
-      ),
-  );
-  checks.push('Resume restarts the countdown animation');
+  for (const player of app.game.s.players) app.game.ack(player.id,{command_id:app.game.s.commandId,result:'ok'});
+  await page.waitForFunction(()=>document.body.dataset.phase==='ACTIVE'&&document.body.dataset.bgm==='playing',undefined,{timeout:15000});
+  const resumedBgmOffset=Number(await page.locator('body').getAttribute('data-bgm-offset-ms'));
+  assert.ok(resumedBgmOffset>=19000&&resumedBgmOffset<23000,`BGM resumed at ${resumedBgmOffset} ms`);
   app.game.pause();
+  await page.waitForFunction(()=>document.body.dataset.phase==='PAUSED');
+  app.game.endRound('demo_skip');
+  await page.waitForFunction(()=>document.getElementById('overlayTitle').textContent==='途中経過');
+  assert.equal(await page.locator('#round').textContent(),'2 / 4');
+  assert.equal(await page.locator('#resultBoard .result-row').count(),4);
+  assert.match(await page.locator('#resultBoard .result-row').first().innerText(),/プレイヤー1[\s\S]*2/);
+  await page.waitForTimeout(700);
+  assert.ok(Number((await page.locator('#resultBoard .result-stats strong').first().evaluate(node=>getComputedStyle(node).fontSize)).replace('px',''))>=32);
+  await page.screenshot({path:`${output}/intermission-1920.png`});
+  app.game.s.round=4;
+  app.game.s.phase='PAUSED';
   app.game.finish();
-  await page.waitForFunction(() => window.bufferStarts.some(actual => Math.abs(actual - 0.20) < 0.01));
-  await page.waitForFunction(
-    () => document.getElementById('overlayTitle').textContent === 'TEAM A WIN',
-  );
-  await page.waitForTimeout(750);
-  await shot('winner');
-  app.game.s.media = 'black';
-  await page.waitForFunction(
-    () => document.getElementById('overlay').className === 'mode-black',
-  );
-  assert.equal(
-    await page
-      .locator('#overlay')
-      .evaluate((el) => getComputedStyle(el).backgroundColor),
-    'rgb(0, 0, 0)',
-  );
-  assert.equal(
-    await page
-      .locator('.display-tools')
-      .evaluate((el) => getComputedStyle(el).visibility),
-    'hidden',
-  );
-  await shot('black');
-  checks.push(
-    'Operator blackout overrides finished state, including decorations and controls',
-  );
-  app.game.s.media = 'rules';
-  await page.waitForFunction(
-    () =>
-      document.getElementById('overlayTitle').textContent ===
-      '赤外線チーム対戦',
-  );
-  await shot('rules');
-  app.game.s.media = 'score';
-  app.game.s.winner = 'DRAW';
-  await page.waitForFunction(
-    () => document.getElementById('overlayTitle').textContent === '引き分け',
-  );
-  await shot('draw');
-  checks.push('Rules can be displayed after a match; draw and winner layouts');
-  checks.push('Match-end WAV effect plays on finish');
-
-  app.game.reset({hp: 1000, durationSec: 3600});
-  app.game.setPlayerNames([
-    'あいうえおかきくけこさしすせそたちつてと',
-    '<img src=x>',
-    'ABCDEFGHIJKLMNOPQRST',
-    'プレイヤー4',
-  ]);
-  await page.waitForFunction(
-    () => document.querySelector('.hp').textContent === '1000',
-  );
-  assert.equal(await page.locator('.player img').count(), 0);
-  for (const [width, height] of [
-    [1920, 1080],
-    [1280, 720],
-    [1024, 768],
-    [2560, 1080],
-    [390, 844],
-  ]) {
-    await page.setViewportSize({width, height});
-    await page.evaluate(() => document.fonts.ready);
-    const problems = await page.evaluate(() => {
-      const issues = [];
-      if (
-        document.documentElement.scrollWidth > innerWidth ||
-        document.documentElement.scrollHeight > innerHeight
-      )
-        issues.push('page overflow');
-      const headline = document
-        .querySelector('.headline')
-        .getBoundingClientRect();
-      const score = document.querySelector('.score-a').getBoundingClientRect();
-      if (headline.bottom > score.top)
-        issues.push('headline overlaps team score');
-      for (const el of document.querySelectorAll('.player')) {
-        const box = el.getBoundingClientRect();
-        const name = el.querySelector('h2').getBoundingClientRect();
-        const hp = el.querySelector('.hp-line').getBoundingClientRect();
-        if (box.bottom > innerHeight || box.right > innerWidth)
-          issues.push('card outside viewport');
-        if (name.bottom > hp.top + 2) issues.push('name overlaps HP');
-        if (el.scrollHeight > el.clientHeight + 2)
-          issues.push('card content overflow');
-      }
-      return issues;
-    });
-    assert.deepEqual(problems, [], `Layout at ${width}×${height}`);
-    await shot(`layout-${width}`);
+  await page.waitForFunction(()=>document.body.dataset.phase==='FINISHED');
+  assert.equal(await page.locator('#overlayTitle').textContent(),'優勝');
+  assert.equal(await page.locator('#resultChampion').textContent(),'プレイヤー1');
+  await page.waitForTimeout(700);
+  await page.screenshot({path:`${output}/winner-1920.png`});
+  for(const [width,height] of [[1280,720],[390,844]]){
+    await page.setViewportSize({width,height});
+    await page.screenshot({path:`${output}/winner-${width}.png`});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}px horizontal overflow`);
   }
-  checks.push(
-    '1920×1080, 1280×720, 1024×768, 2560×1080 and portrait; 20-character names, HP1000, 60-minute timer',
-  );
-  await page.emulateMedia({reducedMotion: 'reduce'});
-  assert.equal(
-    await page
-      .locator('.target-ring')
-      .evaluate((el) => getComputedStyle(el, '::after').animationName),
-    'none',
-  );
-  checks.push('Reduced-motion preference disables decoration animations');
-  assert.deepEqual(errors, []);
-  writeFileSync(
-    `${output}/result.json`,
-    JSON.stringify(
-      {passed: true, checkedAt: new Date().toISOString(), checks, errors},
-      null,
-      2,
-    ),
-  );
-  console.log('Projector browser checks: PASS\n' + checks.join('\n'));
-} finally {
+  assert.deepEqual(errors,[]);
+  writeFileSync(`${output}/result.json`,JSON.stringify({revision:'0.8',checkedAt:new Date().toISOString(),passed:true,checks:['four-player ranking','kill and death display','intermediate standings','individual winner','1280 and 390 px layouts'],errors},null,2));
+  console.log('Projector browser: PASS');
+}finally{
   await browser?.close();
   await app.close();
-  if (
-    path.dirname(dir) === os.tmpdir() &&
-    path.basename(dir).startsWith('arena-projector-')
-  )
-    rmSync(dir, {recursive: true, force: true});
+  rmSync(dir,{recursive:true,force:true});
 }

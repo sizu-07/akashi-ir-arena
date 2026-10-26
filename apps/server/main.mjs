@@ -10,7 +10,7 @@ import aedesFactory from 'aedes';
 import {WebSocketServer,WebSocket} from 'ws';
 import QRCode from 'qrcode';
 import {Game} from './game.mjs';
-import {hardware} from './hardware.mjs';
+import {hardware,legacyMotorDemo,receiverOnlyGame,receiverOnlyProfile} from './hardware.mjs';
 import {storage} from './store.mjs';
 import {createTicketBridge} from './ticket-bridge.mjs';
 import {availableEffects,effectNames} from './sounds.mjs';
@@ -30,31 +30,55 @@ const listenServer=(server,port,bind)=>new Promise((resolve,reject)=>{
  server.once('error',failed);server.once('listening',listening);server.listen(port,bind);
 });
 const closeServer=server=>server.listening?new Promise(resolve=>server.close(resolve)):Promise.resolve();
+export function tabletAddressOf(interfaces){
+ const addresses=Object.entries(interfaces).flatMap(([name,items])=>(items??[]).filter(a=>a.family==='IPv4'&&!a.internal).map(a=>({name,address:a.address})));
+ return addresses.find(a=>/wi-?fi|wlan|wireless|無線/i.test(a.name))?.address??addresses[0]?.address??'127.0.0.1';
+}
 export async function detectRunningGameServer(port){
  try {const response=await fetch(`http://127.0.0.1:${port}/api/state`,{signal:AbortSignal.timeout(1000)});if(!response.ok)return null;
   const state=await response.json();return typeof state.demo==='boolean'&&Array.isArray(state.players)?state:null;
  }catch{return null;}
 }
-export async function createApp({config,demo=false,dataDir=path.join(root,'data'),effectsDir=path.join(root,'assets/audio/effects'),bind='0.0.0.0'}={}){
- const db=storage(dataDir), game=new Game(config.devices,{saved:db.load(),log:e=>db.log(e)});
- const ticketBridge=createTicketBridge({url:config.ticketServerUrl,apiKey:config.ticketServerApiKey,dataDir,log:e=>db.log(e)});
+export async function createApp({config,demo=false,demoSource,dataDir=path.join(root,'data'),effectsDir=path.join(root,'assets/audio/effects'),bind='0.0.0.0'}={}){
+ const db=storage(dataDir),saved=db.load(),game=new Game(config.devices,{saved,allowTestMode:demo,autoAdvanceRounds:!demo,log:e=>db.log(e)});
+ let simulation=demo&&(demoSource??saved?.demoSource??'simulation')!=='devices',simulators=null,switchingSource=false;
+ const simulationKey=randomBytes(24).toString('hex');
+ if(demo)game.s.demoSource=simulation?'simulation':'devices';
+ const ticketBridge=createTicketBridge({url:demo?undefined:config.ticketServerUrl,apiKey:config.ticketServerApiKey,dataDir,initialRoundId:game.s.ticketRoundId,initialPhase:saved?.phase,log:e=>db.log(e)});
  const broker=aedesFactory({heartbeatInterval:5000,connectTimeout:5000});
  const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
  const local=req=>['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
- const sessions=new Map(),commands=new Map(),attempts=new Map();let owner=null,preparedTicketGameId=null,pairToken=randomBytes(16).toString('hex'),pairExpires=Date.now()+600000;
+ const sessions=new Map(),commands=new Map(),attempts=new Map();let owner=null,preparedTicketGameId=game.s.phase==='LOBBY'&&game.s.ticketRoundId?game.s.id:null,pairToken=randomBytes(16).toString('hex'),pairExpires=Date.now()+600000;
+ const demoEventCounts=new Map();
  const wss=new WebSocketServer({noServer:true,maxPayload:8192});
  const displayReady=()=>[...wss.clients].some(ws=>ws.display&&ws.displayReady&&ws.readyState===WebSocket.OPEN);
- broker.authenticate=(client,username,password,cb)=>{const d=config.devices.find(d=>d.id===username);const ok=!!d&&equal(password?.toString(),d.key)&&client.id===d.id;client.deviceId=ok?d.id:null;cb(null,ok);};
+ broker.authenticate=(client,username,password,cb)=>{const d=config.devices.find(d=>d.id===username);const ok=!!d&&!switchingSource&&equal(password?.toString(),simulation?simulationKey:d.key)&&client.id===(simulation?`sim-${d.id}`:d.id);client.deviceId=ok?d.id:null;client.simulation=simulation;cb(null,ok);};
  broker.authorizePublish=(client,packet,cb)=>{const prefix=`irgame/v1/device/${client.deviceId}/`;const allowed=['event','hello','telemetry','reported'].map(s=>prefix+s);
    cb(!packet.retain&&packet.payload.length<=4096&&allowed.includes(packet.topic)?null:Error('publish denied'));};
  broker.authorizeSubscribe=(client,sub,cb)=>{cb(null,[`irgame/v1/device/${client.deviceId}/desired`,`irgame/v1/device/${client.deviceId}/command`].includes(sub.topic)?sub:null);};
  const publish=(id,suffix,payload,retain=false)=>broker.publish({topic:`irgame/v1/device/${id}/${suffix}`,payload:Buffer.from(JSON.stringify(payload)),qos:1,retain},err=>{if(err)console.error('MQTT publish:',err.message);});
- function desired(p){publish(p.id,'desired',{schema_version:1,hardware_profile:hardware.profile,damage_feedback:p.damageFeedback,game_id:game.s.id,game_generation:game.s.generation,server_time_ms:Date.now(),lease_ms:3000,phase:game.s.phase,armed:p.armed,hp:p.hp,revive_progress_ms:p.reviveProgressMs,team:p.team,shooter_id:p.shooterId,rules:game.s.rules,start_at:game.s.startAt??0,start_committed:!!game.s.startCommitted,command_id:game.s.commandId??'',media:game.s.media},true);}
+ function desired(p){publish(p.id,'desired',{schema_version:1,hardware_profile:receiverOnlyGame(p)?receiverOnlyProfile:hardware.profile,damage_feedback:p.damageFeedback,game_id:game.s.id,game_generation:game.s.generation,server_time_ms:Date.now(),lease_ms:3000,phase:game.s.phase,test_mode:game.s.testMode,battery_override:game.batteryOverride(p),armed:p.armed,hp:p.hp,respawn_at:p.respawnAt??0,round:game.s.round,shooter_id:p.shooterId,rules:game.s.rules,start_at:game.s.startAt??0,start_committed:!!game.s.startCommitted,command_id:game.s.commandId??'',media:game.s.media},true);}
  function sync(){for(const p of game.s.players)desired(p);}
- broker.on('publish',(packet,client)=>{if(!client)return;try{const id=client.deviceId,m=JSON.parse(packet.payload.toString()),suffix=packet.topic.split('/').at(-1);
+ broker.on('publish',(packet,client)=>{if(!client||switchingSource||client.simulation!==simulation)return;try{const id=client.deviceId,m=JSON.parse(packet.payload.toString()),suffix=packet.topic.split('/').at(-1);
    if(suffix==='hello'){game.hello(id,m.boot_id);desired(game.player(id));}
    else if(suffix==='telemetry'){if(m.boot_id!==game.player(id).bootId)return;game.heartbeat(id,m);publish(id,'command',{type:'time_sync',echo:m.device_time_ms,server_time_ms:Date.now()});}
-   else if(suffix==='event'){const result=game.event(id,m);db.log({at:Date.now(),gameId:game.s.id,type:'device_event_result',deviceId:id,eventType:m.type,messageId:m.message_id,...result});publish(id,'command',{type:'event_result',candidate_message_id:m.message_id,game_id:game.s.id,game_generation:game.s.generation,...result});db.save(game.s);sync();}
+   else if(suffix==='event'){
+     const player=game.player(id);
+     if(demo&&!simulation&&['motor_demo_shot','motor_demo_hit','motor_demo_defeat','motor_demo_revive'].includes(m.type)&&legacyMotorDemo(player)){
+       if(m.boot_id!==player.bootId||!Number.isSafeInteger(m.count)||m.count<1)return;
+       let seen=demoEventCounts.get(id);
+       if(!seen||seen.bootId!==player.bootId){seen={bootId:player.bootId,motor_demo_shot:0,motor_demo_hit:0,motor_demo_defeat:0,motor_demo_revive:0};demoEventCounts.set(id,seen);}
+       if(m.count<=seen[m.type])return;
+       seen[m.type]=m.count;
+       if(m.type==='motor_demo_shot')player.demoShots=m.count;
+       else if(m.type==='motor_demo_hit')player.demoHits=m.count;
+       else if(m.type==='motor_demo_defeat')player.demoDefeats=m.count;
+       else player.demoRevives=m.count;
+       game.record(m.type,{deviceId:id,count:m.count});db.save(game.s);
+     }else{
+       const result=game.event(id,m);db.log({at:Date.now(),gameId:game.s.id,type:'device_event_result',deviceId:id,eventType:m.type,messageId:m.message_id,...result});publish(id,'command',{type:'event_result',candidate_message_id:m.message_id,game_id:game.s.id,game_generation:game.s.generation,...result});db.save(game.s);sync();
+     }
+   }
  }catch(e){db.log({at:Date.now(),type:'invalid_device_message',reason:e.message});}});
  const mqttServer=net.createServer(broker.handle);
  function session(req){const token=(req.headers.cookie??'').split(';').map(s=>s.trim()).find(s=>s.startsWith('arena='))?.slice(6);const s=sessions.get(token);if(s&&s.expires>Date.now()){s.seen=Date.now();return s;}return null;}
@@ -80,9 +104,13 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       res.setHeader('Set-Cookie',`arena=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`);return reply(res,200,{csrf:s.csrf,id:s.id});
     }
     if(url.pathname==='/api/session'){const s=session(req);return reply(res,s?200:401,s?{csrf:s.csrf,id:s.id,owner,local:local(req),demo}:{});}
-    if(url.pathname==='/api/state'){if(!session(req)&&!local(req))return reply(res,401,{});return reply(res,200,{...game.view(),soundFiles:soundFiles(),displayReady:displayReady(),demo,owner,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}});}
+    if(url.pathname==='/api/state'){if(!session(req)&&!local(req))return reply(res,401,{});return reply(res,200,{...game.view(),soundFiles:soundFiles(),displayReady:displayReady(),demo,simulation,owner,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}});}
+    if(url.pathname==='/api/pair-info'){
+      if(!local(req))return reply(res,403,{});
+      return reply(res,200,{url:`http://${tabletAddressOf(os.networkInterfaces())}:${httpServer.address().port}/`});
+    }
     if(url.pathname==='/api/pair.svg'){
-      if(!local(req))return reply(res,403,{});const addresses=Object.values(os.networkInterfaces()).flat().filter(a=>a.family==='IPv4'&&!a.internal);const host=addresses[0]?.address??'127.0.0.1';
+      if(!local(req))return reply(res,403,{});const host=tabletAddressOf(os.networkInterfaces());
       if(Date.now()>pairExpires){pairToken=randomBytes(16).toString('hex');pairExpires=Date.now()+600000;}
       res.writeHead(200,{'Content-Type':'image/svg+xml','Cache-Control':'no-store'});return res.end(await QRCode.toString(`http://${host}:${httpServer.address().port}/?pair=${pairToken}`,{type:'svg'}));
     }
@@ -100,26 +128,65 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
         mkdirSync(path.join(root,'config/provision'),{recursive:true});for(const d of config.devices)writeFileSync(path.join(root,`config/provision/${d.id}.json`),JSON.stringify({ssid:b.ssid,password:b.password,host:b.host,port:config.mqttPort,id:d.id,key:d.key,hardwareProfile:hardware.profile,bench:false,adcScale:2.0}));return reply(res,200,{ok:true,message:'config/provision に4台分を保存しました。各銃へUSBで初回登録してください'});
       }
       if(url.pathname==='/api/action'){
+        if(switchingSource)throw Error('確認対象を切り替えています。完了後に操作してください');
         if(typeof b.commandId!=='string'||b.commandId.length>80)throw Error('commandIdが必要です');const key=s.id+'/'+b.commandId;if(commands.has(key))return reply(res,200,commands.get(key));
         let operation={};
         switch(b.action){
-          case 'new':game.reset(b.rules);break;
+          case 'demo_source':{
+            if(!demo)throw Error('デモ専用操作');
+            if(!['LOBBY','FINISHED'].includes(game.s.phase)&&!(game.s.phase==='INTERMISSION'&&game.s.testMode))throw Error('確認対象は待機中・途中経過・終了後だけ変更できます');
+            if(!['simulation','devices'].includes(b.source))throw Error('確認対象を選択してください');
+            if(simulation===(b.source==='simulation'))break;
+            switchingSource=true;
+            try{
+              game.reset(game.s.rules);sync();
+              await simulators?.close();simulators=null;
+              await Promise.all(Object.values(broker.clients).map(client=>new Promise(resolve=>client.close(resolve))));
+              const names=game.s.players.map(p=>p.name);
+              game.s.players=new Game(config.devices).s.players.map((p,i)=>({...p,name:names[i]}));
+              demoEventCounts.clear();simulation=b.source==='simulation';game.s.demoSource=b.source;
+            }finally{switchingSource=false;}
+            if(simulation)simulators=await startSimulation();
+            operation={notice:simulation?'仮想端末4台で確認します。':'接続した実機で確認します。端末の再接続を待ってください。'};
+            break;
+          }
+          case 'new':game.reset();break;
           case 'sync_ticket_members':{
             if(game.s.phase!=='LOBBY')throw Error('整理券メンバーは新しい試合の待機中だけ反映できます');
             if(!ticketBridge.enabled)throw Error('公開整理券サーバーが未設定です');
             game.setPlayerNames(await ticketBridge.loadPlayerNicknames());
+            game.s.ticketRoundId=ticketBridge.currentRoundId;
             preparedTicketGameId=game.s.id;
             operation={notice:`整理券メンバーを反映しました: ${game.s.players.map(player=>player.name).join(' / ')}`};
             break;
           }
-          case 'start':if(game.s.phase==='LOBBY'&&ticketBridge.enabled&&preparedTicketGameId!==game.s.id)throw Error('先に「整理券メンバーを反映」を押してください');game.start(displayReady());break;
+          case 'start':{
+            if(!demo&&(b.testMode===true||game.s.testMode))throw Error('動作確認は「起動_デモ.cmd」で実行してください');
+            const testMode=game.s.phase==='PAUSED'?game.s.testMode:b.testMode===true;
+            if(demo&&!simulation&&!testMode)throw Error('デモ版の実機確認では「接続済み端末だけで動作確認」を選択してください');
+            if(!testMode&&game.s.phase==='LOBBY'&&ticketBridge.enabled&&preparedTicketGameId!==game.s.id)throw Error('先に「整理券メンバーを反映」を押してください');
+            game.start(displayReady(),{testMode});break;
+          }
           case 'pause':game.pause();break;
-          case 'finish':game.finish();break;
-          case 'hp':game.correct(b.id,Number(b.hp),b.reason);break;
+          case 'finish':game.finish('operator');break;
+          case 'demo_end_round':if(!demo)throw Error('デモ専用操作');game.endRound('demo_skip');break;
           case 'media':if(b.mode==='video'&&!existsSync(path.join(root,'assets/rules.webm')))throw Error('assets/rules.webmがありません');game.setMedia(b.mode);break;
           case 'video':if(!existsSync(path.join(root,'assets/rules.webm')))throw Error('assets/rules.webmがありません');game.controlVideo(b.operation);break;
-          case 'demo_hit':if(!demo)throw Error('デモ専用操作');simulators?.hit(b.shooter,b.victim,b.receiver??'rx1');break;
-          case 'demo_revive':if(!demo)throw Error('デモ専用操作');simulators?.revive(b.shooter,b.victim);break;
+          case 'demo_hit':if(!simulation)throw Error('仮想端末専用操作');simulators?.hit(b.shooter,b.victim,b.receiver??'rx1');break;
+          case 'motor_demo_hit':
+          case 'motor_demo_defeat':
+          case 'motor_demo_revive':{
+            if(!demo||simulation)throw Error('デモ版の実機モーター確認専用操作');
+            const player=game.player(b.id);
+            if(!player.connected||!legacyMotorDemo(player))
+              throw Error('対象端末は実機モーターデモに接続していません');
+            if(b.action!=='motor_demo_hit'&&!['legacy-motor-demo-3','legacy-motor-demo-4','legacy-motor-demo-5','legacy-motor-demo-6'].includes(player.firmwareVersion))
+              throw Error('この振動は端末の更新後に使用できます');
+            publish(player.id,'command',{type:b.action,command_id:b.commandId,server_time_ms:Date.now()});
+            const name={motor_demo_hit:'被弾',motor_demo_defeat:'HP 0',motor_demo_revive:'復活'}[b.action];
+            operation={notice:`${player.name}へ${name}振動を送信しました。端末の状態を確認してください。`};
+            break;
+          }
           default:throw Error('未知の操作');
         }
         db.log({at:Date.now(),gameId:game.s.id,type:'operator_action',operator:s.id,action:b.action,reason:b.reason});const result={ok:true,commandId:b.commandId,...operation};commands.set(key,result);if(commands.size>2000)commands.delete(commands.keys().next().value);db.save(game.s);sync();return reply(res,200,result);
@@ -143,6 +210,7 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
       return res.end(file);
     }
     const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.webm':'assets/rules.webm','/countdown.wav':'assets/audio/countdown/countdown.wav','/bgm.mp3':'assets/audio/bgm/bgm.mp3'};
+    files['/battery-status.js']='apps/web/battery-status.js';
     files['/operator-shared.css']='apps/ticket-web/operator-shared.css';
     files['/display.css']='apps/web/display.css';
     files['/display-icon.svg']='apps/web/display-icon.svg';
@@ -158,10 +226,13 @@ export async function createApp({config,demo=false,dataDir=path.join(root,'data'
  });
  try {await listenServer(httpServer,config.httpPort,bind);await listenServer(mqttServer,config.mqttPort,bind);}
  catch(error){await closeServer(httpServer);await closeServer(mqttServer);await new Promise(resolve=>broker.close(resolve));throw error;}
- let simulators=null;if(demo){const {simulate}=await import('./simulator.mjs');simulators=await simulate(config.devices,mqttServer.address().port);}
- let count=0;const timer=setInterval(()=>{game.tick();if(game.s.phase==='COUNTDOWN'&&!displayReady())game.pause('投影画面切断');
+ async function startSimulation(){const {simulate}=await import('./simulator.mjs');return simulate(config.devices.map(d=>({...d,clientId:`sim-${d.id}`,key:simulationKey})),mqttServer.address().port);}
+ if(simulation)simulators=await startSimulation();
+ let count=0,lastSavedPhase=game.s.phase;const timer=setInterval(()=>{game.tick(displayReady());if(game.s.phase==='COUNTDOWN'&&!displayReady())game.pause('投影画面切断');
+   const ticketStartedBefore=game.s.ticketStarted,ticketPausedBefore=game.s.ticketPaused;
    ticketBridge.observe(game.s);
-   const state={...game.view(),soundFiles:soundFiles(),owner,displayReady:displayReady(),demo,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}};
+   if(game.s.phase!==lastSavedPhase||game.s.ticketStarted!==ticketStartedBefore||game.s.ticketPaused!==ticketPausedBefore){db.save(game.s);lastSavedPhase=game.s.phase;}
+   const state={...game.view(),soundFiles:soundFiles(),owner,displayReady:displayReady(),demo,simulation,ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}};
    for(const ws of wss.clients)if(ws.readyState===WebSocket.OPEN){if(ws.bufferedAmount>100000){ws.close();continue;}ws.send(JSON.stringify(state));}
    if(++count%4===0){sync();db.save(game.s);}if(count%240===0){for(const [k,s] of sessions)if(s.expires<Date.now())sessions.delete(k);}
  },250);
@@ -176,7 +247,7 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
   else {console.log(`赤外線対戦サーバーはすでに起動しています。既存のサーバーを使用します。\n運営: http://localhost:${config.httpPort}/\n投影: http://localhost:${config.httpPort}/display`);if(shouldOpen)openBrowser(`http://localhost:${config.httpPort}/`);}
  }else try {
   app=await createApp({config,demo,dataDir:path.join(root,demo?'data/demo':'data/live')});
-  console.log(`赤外線対戦 ${demo?'[シミュレーター／実機を接続しない]':'[実機モード]'}\n運営: http://localhost:${config.httpPort}/\n投影: http://localhost:${config.httpPort}/display\nPIN: config/local.json を参照`);
+  console.log(`赤外線対戦 ${demo?'[デモ／仮想端末・実機確認を画面で切替]':'[本番／実機4台の通常試合]'}\n運営: http://localhost:${config.httpPort}/\n投影: http://localhost:${config.httpPort}/display\nPIN: config/local.json を参照`);
   for(const items of Object.values(os.networkInterfaces()))for(const a of items??[])if(a.family==='IPv4'&&!a.internal)console.log(`タブレット接続候補: http://${a.address}:${config.httpPort}/`);
   if(shouldOpen)openBrowser(`http://localhost:${config.httpPort}/`);
  }catch(error){

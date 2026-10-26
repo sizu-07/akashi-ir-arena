@@ -77,10 +77,10 @@
               <small>現在の試合</small>
               <h2 id="phase">待機</h2>
             </div>
-            <div><small>残り時間</small><strong id="clock">05:00</strong></div>
+            <div><small id="clockLabel">残り時間</small><strong id="clock">01:30</strong></div>
             <div class="match-score">
-              <small>チームスコア</small>
-              <div id="score">A 0 : 0 B</div>
+              <small id="roundLabel">第1ゲーム / 全4ゲーム</small>
+              <div id="score">累計キル 0</div>
             </div>
           </div>
           <p id="readiness"></p>
@@ -93,11 +93,22 @@
             <button data-media="video">ルール説明動画</button>
             <button data-action="start" class="primary">試合を開始</button>
           </div>
+          <div id="demoControls" hidden>
+            <label>デモの確認対象
+              <select id="demoSource">
+                <option value="simulation">仮想端末4台（実機なし）</option>
+                <option value="devices">接続した実機</option>
+              </select>
+            </label>
+            <p class="hint">確認対象を切り替えると戦績・残り時間を戻します。実機のWi-Fi設定・端末キーは本番と共通です。デモから整理券の試合進行は更新しません。</p>
+            <label class="hint"><input id="testMode" type="checkbox" /> 接続済み端末だけで動作確認（1台から開始・電池低下でも動作できます。通常試合の判定は行いません）</label>
+          </div>
           <div class="match-secondary">
-            <p>終了後は「次の試合を準備」から。ルール設定は引き継がれます。</p>
+            <p id="roundFlow">各ゲームは90秒。本番では途中経過を15秒表示して次のゲームへ自動で進みます。デモでは手動で進められます。</p>
             <div class="actions">
               <button data-action="pause" class="warning">一時停止</button
-              ><button data-action="finish" class="danger">試合終了</button>
+              ><button id="demoEndRound" data-action="demo_end_round" hidden>このゲームを終了して途中経過へ</button
+              ><button data-action="finish" class="danger">試合全体を強制終了</button>
             </div>
           </div>
         </section>
@@ -125,7 +136,7 @@
         <section class="panel">
           <div class="section-heading">
             <h2><span class="section-index">02</span>参加者・端末</h2>
-            <span class="hint">2対2 / 開始前に名前と接続を確認</span>
+            <span class="hint">4人個人戦 / 開始前に名前と接続を確認</span>
           </div>
           <div id="players" class="players"></div>
           <details class="player-details">
@@ -135,85 +146,10 @@
         </section>
 
         <h2 class="maintenance-title">補正・設定</h2>
-        <details class="panel">
-          <summary>ルールを変更する（通常は操作不要）</summary>
-          <div class="details-body">
-            <form id="rulesForm" class="settings">
-              <label>
-                HP
-                <input name="hp" type="number" value="100" min="1" max="1000" />
-              </label>
-              <label>
-                ダメージ
-                <input
-                  name="damage"
-                  type="number"
-                  value="5"
-                  min="1"
-                  max="1000"
-                />
-              </label>
-              <label>
-                試合時間（秒）
-                <input
-                  name="durationSec"
-                  type="number"
-                  value="300"
-                  min="10"
-                  max="3600"
-                />
-              </label>
-              <input name="fireMs" type="hidden" value="1000" />
-              <input name="reviveMs" type="hidden" value="3000" />
-              <label>
-                復活時のHP
-                <input name="reviveHp" type="number" value="50" min="1" max="1000" />
-              </label>
-              <label>
-                無敵時間（ms）
-                <input
-                  name="invulnerableMs"
-                  type="number"
-                  value="300"
-                  min="0"
-                  max="3000"
-                />
-              </label>
-              <label>
-                味方撃ち
-                <input name="friendlyFire" type="checkbox" />
-              </label>
-              <button class="primary">変更したルールで新試合を準備</button>
-            </form>
-          </div>
-        </details>
-
-        <details class="panel">
-          <summary>HP補正（停止中のみ）</summary>
-          <div class="details-body">
-            <form id="hpForm" class="settings">
-              <label>
-                対象
-                <select id="hpPlayer"></select>
-              </label>
-              <label>
-                変更後HP
-                <input
-                  id="hpValue"
-                  type="number"
-                  value="100"
-                  min="0"
-                  max="1000"
-                />
-              </label>
-              <label>
-                理由
-                <input id="hpReason" required maxlength="200" />
-              </label>
-              <button>補正を記録</button>
-            </form>
-          </div>
-        </details>
+        <section class="panel">
+          <h2>固定ルール</h2>
+          <p>1対1対1対1・90秒×4ゲーム。1発で撃破、7秒後に自動復活。4ゲームの合計キル数で優勝者を決めます。</p>
+        </section>
 
         <section id="demoPanel" class="panel" hidden>
           <h2>実機なしの動作確認</h2>
@@ -236,11 +172,23 @@
               </select>
             </label>
             <button id="demoHit">発射・命中を送信</button>
-            <button id="demoRevive">味方の3秒復活を送信</button>
           </div>
           <p>
-            実際のMQTT通信経由で候補を送ります。復活は射手と対象を同じチームにし、対象のHPを0にしてから使用してください。
+            実際のMQTT通信経由で命中候補を送ります。撃破後は7秒で自動復活します。
           </p>
+        </section>
+
+        <section id="motorDemoPanel" class="panel" hidden>
+          <h2>実機モーター動作確認</h2>
+          <p>動いていた版のモーター制御に戻しています。SW1の射撃は310 ms・PWM 220/255、被弾は420 ms・255/255の1回です。射撃時にテープLEDを8個、白色20%で約310 ms点灯させます。射撃後1秒以内の押下とモーター動作中の押下は無視し、後から再生しません。開始5秒前から1秒ごとに300 msの振動5回、HP 0で3回、復活で500 msの振動を行います。効果音は準備済みのPC投影画面から鳴ります。</p>
+          <div class="settings">
+            <label>対象端末 <select id="motorDemoTarget"></select></label>
+            <button id="motorDemoHit">被弾振動を送信</button>
+            <button id="motorDemoDefeat">HP 0の振動を送信</button>
+            <button id="motorDemoRevive">復活振動を送信</button>
+          </div>
+          <p id="motorDemoStatus">端末の接続を確認しています。</p>
+          <p id="motorDemoDrive">PWM状態は端末の更新・接続後に表示されます。</p>
         </section>
 
         <details id="provisionPanel" class="panel" hidden>

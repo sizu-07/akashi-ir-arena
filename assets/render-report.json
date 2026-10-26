@@ -7,6 +7,6 @@
   "video": "VP8 WebM 25fps",
   "audio": "none; projector countdown and BGM remain separate",
   "slides": 6,
-  "sha256": "f0c755b8986876526e73409f306fd493714e6a1396f9a538e05cde513c8a55bb",
+  "sha256": "b47aec8b21d4128d988456ced20b2da5d79365db4bcb84085385417e3f7f1dd3",
   "toolSource": "Edge MediaRecorder"
 }

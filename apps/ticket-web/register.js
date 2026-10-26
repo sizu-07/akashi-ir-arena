@@ -8,19 +8,20 @@ const nicknameFields = document.querySelector('#nicknameFields');
 const noticeDialog = document.querySelector('#mandatoryNotice');
 const noticeConfirmed = document.querySelector('#noticeConfirmed');
 const noticeContinue = document.querySelector('#noticeContinue');
-const timeSelection = document.querySelector('#timeSelection');
-const recommendedTime = document.querySelector('#recommendedTime');
-const availableSlots = document.querySelector('#availableSlots');
-const changeTime = document.querySelector('#changeTime');
-const toReview = document.querySelector('#toReview');
-const backToForm = document.querySelector('#backToForm');
+const arrivalTime = document.querySelector('#arrivalTime');
+const arrivalMessage = document.querySelector('#arrivalMessage');
+const changeArrival = document.querySelector('#changeArrival');
+const arrivalOptions = document.querySelector('#arrivalOptions');
+const arrivalSelect = document.querySelector('#arrivalSelect');
+const registerButton = document.querySelector('#registerButton');
 const review = document.querySelector('#registrationReview');
 const reviewBack = document.querySelector('#reviewBack');
 const reviewSubmit = document.querySelector('#reviewSubmit');
-let pendingRegistration = null;
-let selectedSlot = null;
+let availability = null;
+let availabilityRequest = 0;
 let submitting = false;
-
+let reviewing = false;
+let reviewedData = null;
 noticeDialog.addEventListener('cancel', (event) => event.preventDefault());
 noticeConfirmed.addEventListener('change', () => { noticeContinue.disabled = !noticeConfirmed.checked; });
 noticeContinue.addEventListener('click', () => {
@@ -29,14 +30,51 @@ noticeContinue.addEventListener('click', () => {
   partySize.focus();
 });
 noticeDialog.showModal();
-
-const formatDate = (value) => new Intl.DateTimeFormat('ja-JP', {month: 'numeric', day: 'numeric', weekday: 'short'}).format(new Date(value));
-const formatTime = (value) => new Intl.DateTimeFormat('ja-JP', {hour: '2-digit', minute: '2-digit', hour12: false}).format(new Date(value));
-const formatSlot = (slot) => `${formatDate(slot.startAt)} ${formatTime(slot.startAt)}〜${formatTime(slot.endAt)}`;
-const formatAdmission = (slot) => {
-  const callAt = Math.max(slot.startAt - 15 * 60_000, Date.now());
-  return `${formatDate(callAt)} ${formatTime(callAt)}ごろ`;
+const formatTime = (value) => {
+  const date = new Date(value);
+  const time = date.toLocaleTimeString('ja-JP', {hour: '2-digit', minute: '2-digit'});
+  if (date.toDateString() === new Date().toDateString()) return time;
+  return `${date.toLocaleDateString('ja-JP', {month: 'numeric', day: 'numeric', weekday: 'short'})} ${time}`;
 };
+function showArrival() {
+  if (!availability) return;
+  const selected = availability.alternatives.find((option) => String(option.earliestCallAt) === arrivalSelect.value);
+  const estimatedCallAt = selected?.estimatedCallAt ?? availability.current.estimatedCallAt;
+  arrivalTime.textContent = `${formatTime(estimatedCallAt)}ごろ${estimatedCallAt <= Date.now() + 60_000 ? '（まもなく）' : ''}`;
+  arrivalMessage.textContent = selected
+    ? '選択した時間にご案内する予定です。'
+    : 'この時間が難しい場合は、下のボタンから変更してください。';
+}
+async function refreshAvailability() {
+  if (submitting || reviewing) return;
+  const sequence = ++availabilityRequest;
+  const previous = arrivalSelect.value;
+  registerButton.disabled = true;
+  arrivalTime.textContent = '確認中…';
+  try {
+    const response = await fetch(`/api/public/availability?partySize=${encodeURIComponent(partySize.value)}`, {cache: 'no-store'});
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error || '案内時刻を確認できません');
+    if (sequence !== availabilityRequest) return;
+    availability = result;
+    arrivalSelect.replaceChildren();
+    arrivalSelect.add(new Option(`表示中の入場時間（${formatTime(result.current.estimatedCallAt)}ごろ）`, ''));
+    for (const option of result.alternatives) {
+      arrivalSelect.add(new Option(`${formatTime(option.estimatedCallAt)}ごろ`, String(option.earliestCallAt)));
+    }
+    if ([...arrivalSelect.options].some((option) => option.value === previous)) arrivalSelect.value = previous;
+    else if (previous) message.textContent = '選択した時間が更新されました。入場時間を確認してください。';
+    changeArrival.hidden = result.alternatives.length === 0;
+    registerButton.disabled = submitting;
+    showArrival();
+  } catch (error) {
+    if (sequence !== availabilityRequest) return;
+    availability = null;
+    arrivalTime.textContent = '案内時刻を取得できません';
+    changeArrival.hidden = true;
+    message.textContent = error.message;
+  }
+}
 function renderNicknameFields() {
   const previous = [...nicknameFields.querySelectorAll('input')].map((input) => input.value);
   const count = Number(partySize.value);
@@ -54,8 +92,20 @@ function renderNicknameFields() {
     return row;
   }));
 }
-partySize.addEventListener('change', renderNicknameFields);
+partySize.addEventListener('change', () => {
+  renderNicknameFields();
+  arrivalSelect.value = '';
+  refreshAvailability();
+});
 renderNicknameFields();
+refreshAvailability();
+setInterval(refreshAvailability, 30_000);
+changeArrival.addEventListener('click', () => {
+  arrivalOptions.hidden = !arrivalOptions.hidden;
+  changeArrival.setAttribute('aria-expanded', String(!arrivalOptions.hidden));
+  changeArrival.textContent = arrivalOptions.hidden ? 'この時間が難しい場合は変更する' : '入場時間の一覧を閉じる';
+});
+arrivalSelect.addEventListener('change', showArrival);
 if (saved) {
   const link = document.createElement('a');
   link.href = saved;
@@ -63,101 +113,49 @@ if (saved) {
   link.className = 'saved-ticket';
   form.before(link);
 }
-form.addEventListener('submit', async (event) => {
+form.addEventListener('submit', (event) => {
   event.preventDefault();
   message.textContent = '';
-  const button = form.querySelector('button');
-  button.disabled = true;
-  try {
-    const data = new FormData(form);
-    pendingRegistration = {requestId, nicknames: data.getAll('nickname'), partySize: Number(data.get('partySize')), consent: data.get('consent') === 'on'};
-    const response = await fetch(`/api/public/available-slots?partySize=${pendingRegistration.partySize}`);
-    const result = await response.json();
-    if (!response.ok) throw Error(result.error || '登録可能な時間を取得できませんでした');
-    renderAvailableSlots(result.slots);
-    form.hidden = true;
-    timeSelection.hidden = false;
-    timeSelection.scrollIntoView({behavior: 'smooth', block: 'start'});
-  } catch (error) {
-    message.textContent = error.message;
-  } finally {
-    button.disabled = false;
+  if (!availability || submitting || reviewing) return;
+  const data = new FormData(form);
+  const selected = availability.alternatives.find((option) => String(option.earliestCallAt) === arrivalSelect.value);
+  const time = selected ?? availability.current;
+  if (!time?.estimatedCallAt || !time?.slotStartAt || !time?.slotEndAt) {
+    message.textContent = '案内時刻を確認できません。もう一度お試しください。';
+    return;
   }
-});
-
-function renderAvailableSlots(slots) {
-  if (!slots.length) throw Error('現在、この人数で登録できる時間がありません');
-  selectedSlot = slots[0];
-  availableSlots.hidden = true;
-  changeTime.setAttribute('aria-expanded', 'false');
-  changeTime.textContent = 'この時間が難しい場合は変更する';
-  renderSelectedTime();
-  availableSlots.replaceChildren(...slots.map((slot) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'slot-choice';
-    const time = document.createElement('strong');
-    time.textContent = `${formatAdmission(slot)} 入場`;
-    const meta = document.createElement('span');
-    meta.textContent = `ゲームプレイ予定 ${formatSlot(slot)}・残り${slot.remainingSeats}名`;
-    button.append(time, meta);
-    button.addEventListener('click', () => {
-      selectedSlot = slot;
-      renderSelectedTime();
-      availableSlots.hidden = true;
-      changeTime.setAttribute('aria-expanded', 'false');
-      changeTime.textContent = 'この時間が難しい場合は変更する';
-    });
-    return button;
-  }));
-}
-
-function renderSelectedTime() {
-  recommendedTime.replaceChildren();
-  const label = document.createElement('span');
-  label.textContent = '入場時間はこの時間です';
-  const strong = document.createElement('strong');
-  strong.textContent = formatAdmission(selectedSlot);
-  const guidance = document.createElement('span');
-  guidance.textContent = `ゲームプレイ予定 ${formatSlot(selectedSlot)}。この時間が難しい場合は下のボタンを押してください。`;
-  recommendedTime.append(label, strong, guidance);
-}
-
-changeTime.addEventListener('click', () => {
-  availableSlots.hidden = !availableSlots.hidden;
-  changeTime.setAttribute('aria-expanded', String(!availableSlots.hidden));
-  changeTime.textContent = availableSlots.hidden ? 'この時間が難しい場合は変更する' : '時間一覧を閉じる';
-});
-
-toReview.addEventListener('click', () => {
-  if (!pendingRegistration || !selectedSlot) return;
-  document.querySelector('#reviewPartySize').textContent = `${pendingRegistration.partySize}人`;
-  document.querySelector('#reviewNicknames').textContent = pendingRegistration.nicknames.join('・');
-  document.querySelector('#reviewArrival').textContent = formatAdmission(selectedSlot);
-  document.querySelector('#reviewPlayWindow').textContent = `${formatTime(selectedSlot.startAt)}〜${formatTime(selectedSlot.endAt)}`;
-  document.querySelector('#reviewEnd').textContent = `終了予定 ${formatDate(selectedSlot.endAt)} ${formatTime(selectedSlot.endAt)}ごろ`;
-  timeSelection.hidden = true;
+  reviewedData = {
+    requestId,
+    nicknames: data.getAll('nickname'),
+    partySize: Number(data.get('partySize')),
+    consent: data.get('consent') === 'on',
+    earliestCallAt: arrivalSelect.value ? Number(arrivalSelect.value) : null,
+    expectedSlotStartAt: time.slotStartAt,
+  };
+  document.querySelector('#reviewPartySize').textContent = `${reviewedData.partySize}人`;
+  document.querySelector('#reviewNicknames').textContent = reviewedData.nicknames.join('・');
+  document.querySelector('#reviewArrival').textContent = `${formatTime(time.estimatedCallAt)}ごろ`;
+  document.querySelector('#reviewPlayWindow').textContent = `${formatTime(time.slotStartAt)}〜${formatTime(time.slotEndAt)}`;
+  document.querySelector('#reviewEnd').textContent = `終了予定 ${formatTime(time.slotEndAt)}ごろ`;
+  reviewing = true;
+  form.hidden = true;
   review.hidden = false;
   review.scrollIntoView({block: 'start'});
 });
-
 reviewBack.addEventListener('click', () => {
+  reviewing = false;
+  reviewedData = null;
   review.hidden = true;
-  timeSelection.hidden = false;
-  message.textContent = '';
+  form.hidden = false;
+  refreshAvailability();
 });
-
 reviewSubmit.addEventListener('click', async () => {
-  if (!pendingRegistration || !selectedSlot || submitting) return;
-  message.textContent = '';
+  if (!reviewedData || submitting) return;
   submitting = true;
   reviewSubmit.disabled = true;
+  let shouldRefresh = false;
   try {
-    const response = await fetch('/api/public/register', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({...pendingRegistration, preferredSlotStartAt: selectedSlot.startAt}),
-    });
+    const response = await fetch('/api/public/register', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(reviewedData)});
     const result = await response.json();
     if (!response.ok) throw Error(result.error || '登録できませんでした');
     localStorage.setItem('akashi-ticket-url', result.ticketUrl);
@@ -166,22 +164,13 @@ reviewSubmit.addEventListener('click', async () => {
   } catch (error) {
     message.textContent = error.message;
     review.hidden = true;
-    timeSelection.hidden = false;
-    try {
-      const response = await fetch(`/api/public/available-slots?partySize=${pendingRegistration.partySize}`);
-      const result = await response.json();
-      if (response.ok) renderAvailableSlots(result.slots);
-    } catch {}
+    form.hidden = false;
+    reviewing = false;
+    reviewedData = null;
+    shouldRefresh = true;
   } finally {
     submitting = false;
     reviewSubmit.disabled = false;
+    if (shouldRefresh) refreshAvailability();
   }
-});
-
-backToForm.addEventListener('click', () => {
-  timeSelection.hidden = true;
-  form.hidden = false;
-  pendingRegistration = null;
-  message.textContent = '';
-  form.scrollIntoView({behavior: 'smooth', block: 'start'});
 });
