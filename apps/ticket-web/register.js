@@ -11,8 +11,15 @@ const noticeContinue = document.querySelector('#noticeContinue');
 const timeSelection = document.querySelector('#timeSelection');
 const recommendedTime = document.querySelector('#recommendedTime');
 const availableSlots = document.querySelector('#availableSlots');
+const changeTime = document.querySelector('#changeTime');
+const toReview = document.querySelector('#toReview');
 const backToForm = document.querySelector('#backToForm');
+const review = document.querySelector('#registrationReview');
+const reviewBack = document.querySelector('#reviewBack');
+const reviewSubmit = document.querySelector('#reviewSubmit');
 let pendingRegistration = null;
+let selectedSlot = null;
+let submitting = false;
 
 noticeDialog.addEventListener('cancel', (event) => event.preventDefault());
 noticeConfirmed.addEventListener('change', () => { noticeContinue.disabled = !noticeConfirmed.checked; });
@@ -26,21 +33,13 @@ noticeDialog.showModal();
 const formatDate = (value) => new Intl.DateTimeFormat('ja-JP', {month: 'numeric', day: 'numeric', weekday: 'short'}).format(new Date(value));
 const formatTime = (value) => new Intl.DateTimeFormat('ja-JP', {hour: '2-digit', minute: '2-digit', hour12: false}).format(new Date(value));
 const formatSlot = (slot) => `${formatDate(slot.startAt)} ${formatTime(slot.startAt)}〜${formatTime(slot.endAt)}`;
-function updateTeamOptions() {
-  const selects = [...nicknameFields.querySelectorAll('select[name="team"]')];
-  const counts = {A: 0, B: 0};
-  for (const select of selects) if (select.value) counts[select.value] += 1;
-  for (const select of selects) {
-    for (const team of ['A', 'B']) {
-      select.querySelector(`option[value="${team}"]`).disabled = counts[team] >= 2 && select.value !== team;
-    }
-  }
-}
+const formatAdmission = (slot) => {
+  const callAt = Math.max(slot.startAt - 15 * 60_000, Date.now());
+  return `${formatDate(callAt)} ${formatTime(callAt)}ごろ`;
+};
 function renderNicknameFields() {
   const previous = [...nicknameFields.querySelectorAll('input')].map((input) => input.value);
-  const previousTeams = [...nicknameFields.querySelectorAll('select')].map((select) => select.value);
   const count = Number(partySize.value);
-  document.querySelector('#teamHint').hidden = count < 3;
   nicknameFields.replaceChildren(...Array.from({length: count}, (_, index) => {
     const row = document.createElement('div');
     row.className = 'participant-row';
@@ -52,34 +51,10 @@ function renderNicknameFields() {
     input.value = previous[index] ?? '';
     label.append(input);
     row.append(label);
-    if (count >= 3) {
-      const teamLabel = document.createElement('label');
-      teamLabel.textContent = `${index + 1}人目のチーム`;
-      const select = document.createElement('select');
-      select.name = 'team';
-      select.required = true;
-      const placeholder = document.createElement('option');
-      placeholder.value = '';
-      placeholder.textContent = 'チームを選択';
-      select.append(placeholder);
-      for (const team of ['A', 'B']) {
-        const option = document.createElement('option');
-        option.value = team;
-        option.textContent = `チーム${team}`;
-        select.append(option);
-      }
-      select.value = previousTeams[index] ?? '';
-      teamLabel.append(select);
-      row.append(teamLabel);
-    }
     return row;
   }));
-  updateTeamOptions();
 }
 partySize.addEventListener('change', renderNicknameFields);
-nicknameFields.addEventListener('change', (event) => {
-  if (event.target.matches('select[name="team"]')) updateTeamOptions();
-});
 renderNicknameFields();
 if (saved) {
   const link = document.createElement('a');
@@ -95,9 +70,7 @@ form.addEventListener('submit', async (event) => {
   button.disabled = true;
   try {
     const data = new FormData(form);
-    const teams = data.getAll('team');
-    if (teams.length && (teams.filter((team) => team === 'A').length > 2 || teams.filter((team) => team === 'B').length > 2)) throw Error('各チームは2人までです。チームを選び直してください');
-    pendingRegistration = {requestId, nicknames: data.getAll('nickname'), playerTeams: teams, partySize: Number(data.get('partySize')), consent: data.get('consent') === 'on'};
+    pendingRegistration = {requestId, nicknames: data.getAll('nickname'), partySize: Number(data.get('partySize')), consent: data.get('consent') === 'on'};
     const response = await fetch(`/api/public/available-slots?partySize=${pendingRegistration.partySize}`);
     const result = await response.json();
     if (!response.ok) throw Error(result.error || '登録可能な時間を取得できませんでした');
@@ -114,37 +87,76 @@ form.addEventListener('submit', async (event) => {
 
 function renderAvailableSlots(slots) {
   if (!slots.length) throw Error('現在、この人数で登録できる時間がありません');
-  recommendedTime.innerHTML = '';
-  const label = document.createElement('span');
-  label.textContent = 'おすすめ';
-  const strong = document.createElement('strong');
-  strong.textContent = `ゲーム時間は ${formatSlot(slots[0])} です。`;
-  const guidance = document.createElement('span');
-  guidance.textContent = 'この時間が難しい場合は、下から別の時間を選んでください。';
-  recommendedTime.append(label, strong, guidance);
+  selectedSlot = slots[0];
+  availableSlots.hidden = true;
+  changeTime.setAttribute('aria-expanded', 'false');
+  changeTime.textContent = 'この時間が難しい場合は変更する';
+  renderSelectedTime();
   availableSlots.replaceChildren(...slots.map((slot) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `slot-choice${slot.recommended ? ' recommended' : ''}`;
+    button.className = 'slot-choice';
     const time = document.createElement('strong');
-    time.textContent = formatSlot(slot);
+    time.textContent = `${formatAdmission(slot)} 入場`;
     const meta = document.createElement('span');
-    meta.textContent = `${slot.recommended ? 'おすすめ・' : ''}残り${slot.remainingSeats}名`;
+    meta.textContent = `ゲームプレイ予定 ${formatSlot(slot)}・残り${slot.remainingSeats}名`;
     button.append(time, meta);
-    button.addEventListener('click', () => confirmRegistration(slot.startAt));
+    button.addEventListener('click', () => {
+      selectedSlot = slot;
+      renderSelectedTime();
+      availableSlots.hidden = true;
+      changeTime.setAttribute('aria-expanded', 'false');
+      changeTime.textContent = 'この時間が難しい場合は変更する';
+    });
     return button;
   }));
 }
 
-async function confirmRegistration(preferredSlotStartAt) {
+function renderSelectedTime() {
+  recommendedTime.replaceChildren();
+  const label = document.createElement('span');
+  label.textContent = '入場時間はこの時間です';
+  const strong = document.createElement('strong');
+  strong.textContent = formatAdmission(selectedSlot);
+  const guidance = document.createElement('span');
+  guidance.textContent = `ゲームプレイ予定 ${formatSlot(selectedSlot)}。この時間が難しい場合は下のボタンを押してください。`;
+  recommendedTime.append(label, strong, guidance);
+}
+
+changeTime.addEventListener('click', () => {
+  availableSlots.hidden = !availableSlots.hidden;
+  changeTime.setAttribute('aria-expanded', String(!availableSlots.hidden));
+  changeTime.textContent = availableSlots.hidden ? 'この時間が難しい場合は変更する' : '時間一覧を閉じる';
+});
+
+toReview.addEventListener('click', () => {
+  if (!pendingRegistration || !selectedSlot) return;
+  document.querySelector('#reviewPartySize').textContent = `${pendingRegistration.partySize}人`;
+  document.querySelector('#reviewNicknames').textContent = pendingRegistration.nicknames.join('・');
+  document.querySelector('#reviewArrival').textContent = formatAdmission(selectedSlot);
+  document.querySelector('#reviewPlayWindow').textContent = `${formatTime(selectedSlot.startAt)}〜${formatTime(selectedSlot.endAt)}`;
+  document.querySelector('#reviewEnd').textContent = `終了予定 ${formatDate(selectedSlot.endAt)} ${formatTime(selectedSlot.endAt)}ごろ`;
+  timeSelection.hidden = true;
+  review.hidden = false;
+  review.scrollIntoView({block: 'start'});
+});
+
+reviewBack.addEventListener('click', () => {
+  review.hidden = true;
+  timeSelection.hidden = false;
   message.textContent = '';
-  const buttons = [...availableSlots.querySelectorAll('button')];
-  for (const button of buttons) button.disabled = true;
+});
+
+reviewSubmit.addEventListener('click', async () => {
+  if (!pendingRegistration || !selectedSlot || submitting) return;
+  message.textContent = '';
+  submitting = true;
+  reviewSubmit.disabled = true;
   try {
     const response = await fetch('/api/public/register', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({...pendingRegistration, preferredSlotStartAt}),
+      body: JSON.stringify({...pendingRegistration, preferredSlotStartAt: selectedSlot.startAt}),
     });
     const result = await response.json();
     if (!response.ok) throw Error(result.error || '登録できませんでした');
@@ -153,14 +165,18 @@ async function confirmRegistration(preferredSlotStartAt) {
     location.href = result.ticketUrl;
   } catch (error) {
     message.textContent = error.message;
+    review.hidden = true;
+    timeSelection.hidden = false;
     try {
       const response = await fetch(`/api/public/available-slots?partySize=${pendingRegistration.partySize}`);
       const result = await response.json();
       if (response.ok) renderAvailableSlots(result.slots);
     } catch {}
-    for (const button of buttons) button.disabled = false;
+  } finally {
+    submitting = false;
+    reviewSubmit.disabled = false;
   }
-}
+});
 
 backToForm.addEventListener('click', () => {
   timeSelection.hidden = true;

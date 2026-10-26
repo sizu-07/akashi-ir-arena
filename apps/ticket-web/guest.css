@@ -219,6 +219,23 @@
   font-size: 12px;
   font-weight: 800;
 }
+.arrival-lock { margin: 12px 0; color: var(--accent-hover); font-size: 13px; font-weight: 700; }
+#changeTime { min-height: 48px; }
+#toReview { display: block; width: 100%; min-height: 52px; margin: 18px 0 10px; }
+#backToForm { min-height: 44px; }
+.registration-review { padding-top: 8px; }
+.registration-review h2 { margin-bottom: 4px; }
+.registration-review > p { margin-top: 0; }
+.review-details { margin: 20px 0; }
+.review-details > div { display: grid; grid-template-columns: 110px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.review-details dt { color: var(--muted); }
+.review-details dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.review-time-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
+.review-time-grid > div { padding: 18px; border: 1px solid var(--line); border-top: 3px solid var(--accent); background: var(--accent-soft); }
+.review-time-grid span, .review-time-grid small { display: block; font-size: 13px; }
+.review-time-grid strong { display: block; margin: 8px 0; color: var(--accent-hover); font-size: clamp(21px, 4vw, 28px); line-height: 1.25; font-variant-numeric: tabular-nums; }
+.review-actions { display: flex; gap: 12px; margin-top: 20px; }
+.review-actions button { flex: 1; min-height: 52px; }
 .recommended-time strong {
   color: var(--accent-hover);
   font-size: clamp(19px, 5vw, 24px);
@@ -291,6 +308,8 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
 }
+.operator-help { margin: 12px 0 6px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--accent-soft); font-size: 14px; }
+.ticket-time-reminder { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
 .guest-page .status {
   border: 1px solid var(--line);
   background: var(--surface);
@@ -483,6 +502,8 @@
   .available-slots {
     grid-template-columns: 1fr;
   }
+  .review-time-grid { grid-template-columns: 1fr; }
+  .review-actions { flex-direction: column-reverse; }
   .guest-time + .guest-time {
     padding-left: 14px;
   }

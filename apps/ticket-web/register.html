@@ -17,9 +17,9 @@
       <ol class="mandatory-notice-list">
         <li><strong>時間通りに来てください</strong><span>指定時間までに来られない場合、整理券はキャンセルされます。</span></li>
         <li><strong>QRコードを保存してください</strong><span>発行後のQRコードは、必ずスクリーンショットで保存してください。</span></li>
-        <li><strong>登録後は変更できません</strong><span>名前やチームは、整理券の登録後に変更できません。</span></li>
-        <li><strong>基本的に1人でプレイします</strong><span>保護者と一緒にはプレイできません。小さいお子さまには難しい場合があります。</span></li>
-        <li><strong>時間が変わる場合があります</strong><span>運営の都合により、登録後でも時間が変更される可能性があります。</span></li>
+        <li><strong>登録後は変更できません</strong><span>ニックネームと入場時間は、整理券の登録後に変更できません。</span></li>
+        <li><strong>小さいお子さんには難しいゲームです</strong><span>基本的に1人でプレイします。保護者と一緒にはプレイできません。</span></li>
+        <li><strong>時間が変わる場合があります</strong><span>運営の都合で予定時刻が変わる場合があります。整理券画面の時間を適宜確認してください。</span></li>
       </ol>
       <label class="notice-confirm-check">
         <input id="noticeConfirmed" type="checkbox" />
@@ -57,7 +57,6 @@
             <p class="hint">
               1人ずつ入力してください。ゲーム画面にもこの名前が表示されます。
             </p>
-            <p id="teamHint" class="hint" hidden>3人以上の場合は各参加者のチームを選んでください。各チーム2人まで選べます。変更するときは、先に1人を「チームを選択」に戻してください。</p>
             <div id="nicknameFields" class="form-grid"></div>
           </fieldset>
           <p class="notice">
@@ -65,18 +64,37 @@
           </p>
           <label class="check"
             ><input name="consent" type="checkbox" required /><span
-              >画面に表示される案内を確認し、呼び出し時に入口へ向かうことに同意します。本名や連絡先は入力しません。</span
+              >画面に表示される案内と注意事項を確認し、呼び出し時に入口へ向かうことに同意します。</span
             ></label
           >
           <button class="primary">登録内容と時間を確認する</button>
         </form>
         <section id="timeSelection" class="time-selection" hidden aria-labelledby="timeSelectionTitle">
-          <span class="section-index">04</span>
-          <h2 id="timeSelectionTitle">ゲーム時間を選んで確定</h2>
-          <p id="recommendedTime" class="recommended-time"></p>
-          <p class="hint">この人数で登録できる時間だけを表示しています。希望する時間をタップすると登録が確定します。</p>
-          <div id="availableSlots" class="available-slots"></div>
+          <span class="section-index">03</span>
+          <h2 id="timeSelectionTitle">入場時間をご確認ください</h2>
+          <div id="recommendedTime" class="recommended-time" aria-live="polite"></div>
+          <button id="changeTime" type="button" aria-expanded="false" aria-controls="availableSlots">この時間が難しい場合は変更する</button>
+          <div id="availableSlots" class="available-slots" hidden></div>
+          <p class="arrival-lock">整理券の登録後は、入場時間を変更できません。</p>
+          <button id="toReview" type="button" class="primary">入力内容を確認する</button>
           <button id="backToForm" type="button">入力内容を変更する</button>
+        </section>
+        <section id="registrationReview" class="registration-review" aria-labelledby="reviewHeading" hidden>
+          <h2 id="reviewHeading">入力内容をご確認ください</h2>
+          <p>これで間違いないですね？</p>
+          <dl class="review-details">
+            <div><dt>参加人数</dt><dd id="reviewPartySize"></dd></div>
+            <div><dt>ニックネーム</dt><dd id="reviewNicknames"></dd></div>
+          </dl>
+          <div class="review-time-grid">
+            <div><span>入場時間</span><strong id="reviewArrival"></strong></div>
+            <div><span>ゲームプレイ予定</span><strong id="reviewPlayWindow"></strong><small id="reviewEnd"></small></div>
+          </div>
+          <p class="hint">登録後は入場時間を変更できません。運営の都合で予定が変わる場合があるため、発券後も整理券画面を適宜確認してください。</p>
+          <div class="review-actions">
+            <button id="reviewBack" type="button">入力内容に戻る</button>
+            <button id="reviewSubmit" type="button" class="primary">この内容で整理券を登録する</button>
+          </div>
         </section>
         <p id="message" class="error" role="alert"></p>
       </section>
