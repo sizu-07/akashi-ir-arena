@@ -57,6 +57,30 @@ STATE id=gun-001 wifi=ON mqtt=ON sync=OK phase=ACTIVE hp=0 armed=YES battery=3.8
 
 保存済みplayer1のWi-Fi設定と本番サーバーの各端末キーから、4台の完全版設定を生成できます。設定ファイルはGit管理外の `config/provision/players-4e/gun-001.json`～`gun-004.json` に保存します。既存の受信診断用設定は残します。
 
+### 通常の書き込み（コマンド1つ）
+
+1. 書き込むplayer番号の基板だけをUSBでPCへ接続し、電池を外します。シリアルモニターは閉じます。
+2. このリポジトリのフォルダーで、該当するコマンドを実行します。
+
+```powershell
+.\flash-player.cmd 1
+.\flash-player.cmd 2
+.\flash-player.cmd 3
+.\flash-player.cmd 4
+```
+
+4台を同時につながず、1台の書き込み完了後にUSBを付け替えて次の番号を実行します。COMポートが1つなら自動検出します。複数ある場合は、Windowsで確認した番号を第2引数へ指定します。
+
+```powershell
+.\flash-player.cmd 2 COM5
+```
+
+保存済み `0.8.1-4e42` のplayer別BINを使用し、SHA-256、ESP32-S3、16 MB Flashを確認してから書き込みます。Wi-Fi設定も続けて保存します。設定ファイルが未生成の場合は、保存済みplayer1設定と本番サーバー設定から自動生成します。**コマンドに指定した番号と実際にUSBでつないだ基板の番号は、自動では照合できません。** ラベルを確認してください。
+
+COMポートが表示されない場合は、BOOTボタンを押しながらUSBを接続し、接続後にBOOTを離してから再実行します。シリアルモニターがCOMポートを使用中なら閉じます。書き込み後に本番画面で端末名、接続、`0.8.1-4e42` の表示を確認してください。
+
+### ファームウェアを開発・再ビルドする場合
+
 ```powershell
 node tools/prepare-player-settings.mjs
 pwsh -File tools/build-firmware.ps1 -Environment player1_game
@@ -66,12 +90,12 @@ pwsh -File tools/build-firmware.ps1 -Environment player4_game
 node tools/export-player-firmware.mjs
 ```
 
-各プレイヤーの書き込みは、対象をUSBだけで接続し、次のスクリプトを使用します。`-Player` と `-Port` を実際の機器に合わせます。ビルド環境と設定ファイルを同じプレイヤーにそろえて書き込みます。
+PowerShellから直接実行する場合は、次の形式も使用できます。保存済みBINを使うため、毎回のビルドは不要です。
 
 ```powershell
-pwsh -File tools/flash-player-game.ps1 -Player 1 -Port COM3
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/flash-player-game.ps1 -Player 1 -Port COM3
 ```
 
 各保存フォルダには `bootloader.bin`、`partitions.bin`、`boot_app0.bin`、`firmware.bin` とSHA-256・manifestがあります。これらにはWi-Fiパスワード・端末キーを含めていません。`firmware.bin` 単体の書き込み先は `0x10000` で、初回は他の領域も必要です。スクリプトで書き込む場合は自動で設定されます。
 
-2026年10月22日更新。4台分のビルド、BINの個別識別子・SHA-256、赤外線ID、通常ゲームの発射／全員相互の命中判定をソフトウェアで検証済みです。4台同時の実機試合動作は未検証です。player3の受信専用ブレッドボードには、別途保存済みの `receiver_only_game` を使用します。
+4台分のビルド、BINの個別識別子・SHA-256、赤外線ID、通常ゲームの発射／全員相互の命中判定をソフトウェアで検証済みです。4台同時の実機試合と一時診断の実機動作は未検証です。player3の受信専用ブレッドボードには、別途保存済みの `receiver_only_game` を使用します。
