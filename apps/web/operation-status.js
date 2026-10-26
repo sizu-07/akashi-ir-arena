@@ -49,10 +49,10 @@ export function operationStatus(state, {connected, isOwner, testRequested}) {
     return {tone:'danger', title:'次のゲームを自動開始できません', detail:`理由：${state.intermissionBlockedReason}`, next:'投影画面と参加端末を確認してください。条件がそろうと自動で開始します。', checks};
   }
   if (state.phase === 'LOBBY') {
-    if (state.simulation) return {tone:'info', title:'仮想端末でのデモ待機中', detail:'画面上の4台は仮想端末です。', next:'実機を確認する場合は、確認対象を「接続した実機」に切り替えてください。', checks};
     const missing = checks.find(check => !check.ok);
-    return missing ? {tone:'warning', title:`開始前の準備：${missing.label}を確認してください`, detail:missing.detail, next:missing.label === '投影画面' ? '右上の「投影画面を開く」を押し、投影画面で「表示を準備」を押してください。' : missing.label === '参加者名' ? '「整理券メンバーを反映」を押し、下の参加者名を確認してください。' : '下の参加者・端末欄で対象を確認し、4台の接続と設定をそろえてください。', checks}
-      : {tone:'ready', title:'第1ゲームを開始できます', detail:'投影・参加者・端末の準備がそろいました。', next:'参加者を所定位置へ案内し、「第1ゲームを開始」を押してください。', checks};
+    if (missing) return {tone:'warning', title:`開始前の準備：${missing.label}を確認してください`, detail:missing.detail, next:missing.label === '投影画面' ? '右上の「投影画面を開く」を押し、投影画面で「表示を準備」を押してください。' : missing.label === '参加者名' ? '「整理券メンバーを反映」を押し、下の参加者名を確認してください。' : '下の参加者・端末欄で対象を確認し、4台の接続と設定をそろえてください。', checks};
+    if (state.simulation) return {tone:'info', title:'仮想端末でのデモ待機中', detail:'画面上の4台は仮想端末です。', next:'仮想端末で試す場合は「第1ゲームを開始」を押してください。実機を確認する場合は確認対象を「接続した実機」に切り替えます。', checks};
+    return {tone:'ready', title:'第1ゲームを開始できます', detail:'投影・参加者・端末の準備がそろいました。', next:'参加者を所定位置へ案内し、「第1ゲームを開始」を押してください。', checks};
   }
   if (state.phase === 'COUNTDOWN') return {tone:'info', title:'開始カウントダウン中', detail:'参加者は射撃開始を待っています。', next:'異常があれば「一時停止」を押してください。', checks};
   if (state.phase === 'ACTIVE') return {tone:'ready', title:state.testMode ? '動作確認中' : `第${state.round}ゲーム進行中`, detail:'残り時間と得点を確認してください。', next:'異常があれば「一時停止」を押してください。中止が必要な場合は「試合全体を強制終了」を使います。', checks};
