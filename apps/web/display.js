@@ -3,6 +3,7 @@ import {slides as content} from './rules-content.js';
 const slides = content.map(([title, ...lines]) => [title, lines.join('\n')]);
 const $ = (id) => document.getElementById(id);
 const playerNodes = new Map();
+const standbyNodes = new Map();
 let ws;
 let ready = false;
 let audio;
@@ -468,6 +469,35 @@ function renderPlayers() {
   });
 }
 
+function renderStandby() {
+  const players = [...state.players].sort((a, b) => a.shooterId - b.shooterId);
+  const ids = new Set(players.map((player) => player.id));
+  for (const [id, node] of standbyNodes) {
+    if (!ids.has(id)) {
+      node.element.remove();
+      standbyNodes.delete(id);
+    }
+  }
+  players.forEach((player, index) => {
+    let node = standbyNodes.get(player.id);
+    if (!node) {
+      const element = document.createElement('article');
+      element.className = 'standby-slot';
+      // Names are inserted with textContent so ticket nicknames cannot create markup.
+      element.innerHTML = '<span class="standby-slot-number"></span><h3></h3><span class="standby-slot-arrow" aria-hidden="true">↓</span><svg class="standby-figure" viewBox="0 0 200 240" aria-hidden="true" focusable="false"><circle cx="100" cy="53" r="37"/><path d="M99 102c-47 0-83 32-87 83l-6 55h188l-6-55c-4-51-40-83-89-83Z"/></svg><span class="standby-spot"><b></b><span>POSITION</span></span>';
+      node = {element, number: element.querySelector('.standby-slot-number'), name: element.querySelector('h3')};
+      standbyNodes.set(player.id, node);
+    }
+    if ($('standbyLanes').children[index] !== node.element)
+      $('standbyLanes').insertBefore(node.element, $('standbyLanes').children[index] ?? null);
+    node.element.style.setProperty('--slot-index', index);
+    node.element.style.setProperty('--slot-color', ['#1684a7', '#c45e28', '#6b9c31', '#9a58a7'][player.shooterId - 1] ?? 'var(--red)');
+    node.number.textContent = `PLAYER ${String(player.shooterId).padStart(2, '0')}`;
+    node.name.textContent = player.name;
+    node.name.classList.toggle('long-name', [...player.name].length > 10);
+  });
+}
+
 function render() {
   if (!state) return;
   const now = Date.now() + offset;
@@ -527,6 +557,7 @@ function render() {
     FINISHED: 'DEVICE TEST — 動作確認終了',
   }[state.phase] : matchNotes[state.phase]);
   renderPlayers();
+  renderStandby();
 
   if (state.phase === 'ACTIVE' && state.media === 'score' && ready && !connectionLost &&
       !bgmSource && !startTimer && bgmFinishedKey !== bgmKey()) {

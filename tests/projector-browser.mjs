@@ -20,10 +20,24 @@ try{
   const page=await browser.newPage({viewport:{width:1920,height:1080}});
   page.on('pageerror',e=>errors.push(e.message));
   await page.goto(`${base}/display`);
-  await page.locator('.player').first().waitFor();
+  await page.locator('.standby-slot').first().waitFor();
+  assert.equal(await page.locator('.standby-slot').count(),4);
+  assert.deepEqual(await page.locator('.standby-slot h3').allTextContents(),['プレイヤー1','プレイヤー2','プレイヤー3','プレイヤー4']);
+  assert.equal(await page.locator('.standby-intro h2').textContent(),'STAND HERE.');
   assert.equal(await page.locator('.player').count(),4);
+  assert.equal(await page.locator('.player').first().isVisible(),false);
   assert.equal(await page.locator('#round').textContent(),'1 / 4');
   await page.screenshot({path:`${output}/lobby-1920.png`});
+  await page.setViewportSize({width:1280,height:720});
+  await page.screenshot({path:`${output}/lobby-1280.png`});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'lobby 1280px horizontal overflow');
+  await page.setViewportSize({width:1920,height:1080});
+  const mobileLobby=await browser.newPage({viewport:{width:390,height:844}});
+  await mobileLobby.goto(`${base}/display`);
+  await mobileLobby.locator('.standby-slot').first().waitFor();
+  await mobileLobby.screenshot({path:`${output}/lobby-390.png`});
+  assert.equal(await mobileLobby.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'lobby 390px horizontal overflow');
+  await mobileLobby.close();
   await page.locator('#prepare').click();
   await page.waitForFunction(async()=>{const s=await(await fetch('/api/state')).json();return s.displayReady&&s.players.every(p=>p.connected&&p.syncRtt!==null);});
   const bgmDuration = await page.evaluate(async () => {
@@ -38,6 +52,8 @@ try{
   for (const player of app.game.s.players) app.game.ack(player.id,{command_id:app.game.s.commandId,result:'ok'});
   try{await page.waitForFunction(()=>document.body.dataset.phase==='ACTIVE',undefined,{timeout:15000});}
   catch(error){throw Error(`投影開始待ち: phase=${app.game.s.phase}, ACK=${app.game.s.startCommitted}, ready=${app.game.s.players.map(p=>p.connected).join(',')}: ${error.message}`);}
+  assert.equal(await page.locator('#standby').isVisible(),false);
+  assert.equal(await page.locator('.player').first().isVisible(),true);
   assert.equal(await page.locator('#clock').textContent(),'01:30');
   await page.waitForFunction(()=>document.body.dataset.bgm==='playing');
   assert.ok(Number(await page.locator('body').getAttribute('data-bgm-offset-ms'))<2000);
@@ -81,7 +97,7 @@ try{
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}px horizontal overflow`);
   }
   assert.deepEqual(errors,[]);
-  writeFileSync(`${output}/result.json`,JSON.stringify({revision:'0.8',checkedAt:new Date().toISOString(),passed:true,checks:['four-player ranking','kill and death display','intermediate standings','individual winner','1280 and 390 px layouts'],errors},null,2));
+  writeFileSync(`${output}/result.json`,JSON.stringify({revision:'0.8',checkedAt:new Date().toISOString(),passed:true,checks:['four-player position guide','four-player ranking','kill and death display','intermediate standings','individual winner','1280 and 390 px layouts'],errors},null,2));
   console.log('Projector browser: PASS');
 }finally{
   await browser?.close();
