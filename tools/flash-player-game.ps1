@@ -86,19 +86,27 @@ try {
     $env:PYTHONPATH=$flashTools+[IO.Path]::PathSeparator+$previousPythonPath
     $esptoolArgs=@('-m','esptool')
   }
-  $probe=@($esptoolArgs)+@('--chip','esp32s3','--port',$Port,'--baud','115200','flash_id')
-  $savedPreference=$ErrorActionPreference
-  try {
-    $ErrorActionPreference='Continue'
-    $probeOutput=(& $Python @probe 2>&1 | Out-String)
-  }finally{$ErrorActionPreference=$savedPreference}
+  $noStub=$false
+  foreach($connectionMode in @('normal','rom')){
+    $connectionArgs=if($connectionMode -eq 'rom'){@('--no-stub')}else{@()}
+    $probe=@($esptoolArgs)+@('--chip','esp32s3','--port',$Port,'--baud','115200')+$connectionArgs+@('flash_id')
+    $savedPreference=$ErrorActionPreference
+    try {
+      $ErrorActionPreference='Continue'
+      $probeOutput=(& $Python @probe 2>&1 | Out-String)
+    }finally{$ErrorActionPreference=$savedPreference}
+    if($LASTEXITCODE -eq 0){$noStub=$connectionMode -eq 'rom';break}
+    if($connectionMode -eq 'normal'){Write-Warning '通常の接続確認に失敗したため、低速の接続方法を試します。'}
+  }
   if($LASTEXITCODE -ne 0){throw "$Port の接続確認に失敗しました。シリアルモニターを閉じ、必要ならBOOT操作後に再実行してください。`n$probeOutput"}
   if($probeOutput -notmatch 'Detected flash size:\s*16MB'){throw "16MBのESP32-S3として確認できませんでした。別の基板へは書き込みません。`n$probeOutput"}
   Write-Host "${Port}: ESP32-S3 / 16MB を確認しました。書き込みます。"
   $pairs=@();foreach($image in $images){$pairs+=@($image.Offset,(Join-Path $release $image.Name))}
   $flashed=$false
-  foreach($baud in @(460800,115200)){
-    $arguments=@($esptoolArgs)+@('--chip','esp32s3','--port',$Port,'--baud',"$baud",'--after','hard_reset','write_flash','--verify','--flash_mode','keep','--flash_freq','keep','--flash_size','keep')+$pairs
+  $baudRates=if($noStub){@(115200)}else{@(460800,115200)}
+  foreach($baud in $baudRates){
+    $writeConnectionArgs=if($noStub){@('--no-stub')}else{@()}
+    $arguments=@($esptoolArgs)+@('--chip','esp32s3','--port',$Port,'--baud',"$baud",'--after','hard_reset')+$writeConnectionArgs+@('write_flash','--no-progress','--verify','--flash_mode','keep','--flash_freq','keep','--flash_size','keep')+$pairs
     & $Python @arguments
     if($LASTEXITCODE -eq 0){$flashed=$true;break}
     Write-Warning "$baud bpsで失敗しました。低速で再試行します。"
