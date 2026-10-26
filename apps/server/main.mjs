@@ -211,6 +211,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
     }
     const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.webm':'assets/rules.webm','/countdown.wav':'assets/audio/countdown/countdown.wav','/bgm.mp3':'assets/audio/bgm/bgm.mp3'};
     files['/battery-status.js']='apps/web/battery-status.js';
+    files['/operation-status.js']='apps/web/operation-status.js';
     files['/operator-shared.css']='apps/ticket-web/operator-shared.css';
     files['/display.css']='apps/web/display.css';
     files['/display-icon.svg']='apps/web/display-icon.svg';

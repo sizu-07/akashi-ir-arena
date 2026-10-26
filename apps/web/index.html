@@ -71,6 +71,23 @@
           >
         </div>
 
+        <section id="operationCenter" class="operation-center panel" data-tone="info" aria-label="運営状況">
+          <div class="operation-center-head">
+            <div>
+              <span class="operation-kicker">現在の状況</span>
+              <h2 id="operationTitle">ゲームの状態を確認しています</h2>
+            </div>
+            <span id="operationState" class="operation-state">確認中</span>
+          </div>
+          <p id="operationDetail" class="operation-detail">サーバーからの更新を待っています。</p>
+          <div class="operation-next"><strong>次にすること</strong><p id="operationNext">しばらくお待ちください。</p></div>
+          <div id="operationAlert" class="operation-alert" hidden role="alert" tabindex="-1">
+            <div><strong id="operationAlertTitle">操作を確認してください</strong><p id="operationAlertText"></p><p id="operationAlertNext"></p></div>
+            <button id="dismissAlert" type="button" aria-label="この通知を閉じる">閉じる</button>
+          </div>
+          <div id="operationChecks" class="operation-checks" aria-label="開始前の確認項目"></div>
+        </section>
+
         <section class="panel match-console" aria-label="試合の進行">
           <div class="match">
             <div>
@@ -83,8 +100,8 @@
               <div id="score">累計キル 0</div>
             </div>
           </div>
-          <p id="readiness"></p>
-          <p id="nextStep" class="next-action">接続を確認しています。</p>
+          <p id="readiness" hidden></p>
+          <p id="nextStep" hidden></p>
           <div class="match-actions">
             <button id="newMatch">次の試合を準備</button>
             <button id="syncTicketMembers" data-action="sync_ticket_members">

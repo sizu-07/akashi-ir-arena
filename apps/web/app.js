@@ -1,4 +1,5 @@
 import {batteryStatus} from './battery-status.js';
+import {operationStatus} from './operation-status.js';
 const $ = (id) => document.getElementById(id);
 
 let csrf = '';
@@ -11,8 +12,34 @@ let pending = false;
 let previousDemoSource;
 const testRequested = () => state?.demo && ($('testMode')?.checked ?? false);
 
-const message = (text) => {
-  $('message').textContent = text;
+function errorNext(text) {
+  if (/rules\.webm/.test(text)) return 'メインPCの assets フォルダーに説明動画を置いてから、もう一度操作してください。';
+  if (/投影画面|表示を準備/.test(text)) return '右上の「投影画面を開く」を押し、投影画面で「表示を準備」を押してください。';
+  if (/整理券|メンバー/.test(text)) return '「整理券メンバーを反映」を押し、参加者名を確認してください。';
+  if (/端末|4台|ファームウェア|電池|時刻同期/.test(text)) return '下の参加者・端末欄で該当端末を確認し、接続や設定を直してください。';
+  if (/接続|通信/.test(text)) return 'メインPCのゲームサーバーとネットワークの接続を確認してください。';
+  if (/操作権/.test(text)) return 'この画面の「操作権を取得」を押してください。';
+  return '現在の状況と確認項目を見て原因を直し、もう一度操作してください。';
+}
+
+const message = (text, {error = false} = {}) => {
+  if ($('dashboard').hidden) {
+    $('message').textContent = text;
+    $('message').className = error ? 'error' : '';
+    return;
+  }
+  $('message').textContent = '';
+  const alert = $('operationAlert');
+  alert.hidden = !text;
+  alert.dataset.tone = error ? 'danger' : 'success';
+  alert.setAttribute('role', error ? 'alert' : 'status');
+  $('operationAlertTitle').textContent = error ? '操作できませんでした' : '操作を反映しました';
+  $('operationAlertText').textContent = text;
+  $('operationAlertNext').textContent = error ? errorNext(text) : '';
+  if (error && text) {
+    $('operationCenter').scrollIntoView({block:'start', behavior:'smooth'});
+    alert.focus({preventScroll:true});
+  }
 };
 
 async function configureTicketLinks() {
@@ -72,7 +99,7 @@ function guarded(callback) {
     try {
       await callback(event);
     } catch (error) {
-      message(error.message);
+      message(error.message, {error: true});
     } finally {
       pending = false;
       disable();
@@ -110,7 +137,7 @@ function connect() {
 
   ws.onopen = () => {
     connected = true;
-    message('');
+    renderOperation();
   };
 
   ws.onmessage = (event) => {
@@ -122,6 +149,7 @@ function connect() {
     connected = false;
     $('connection').textContent = '通信切断・操作不可';
     $('connection').className = 'badge offline';
+    renderOperation();
     disable();
     setTimeout(connect, 1500);
   };
@@ -131,7 +159,7 @@ function disable() {
   const locked = pending || !connected || state?.owner !== sessionId;
 
   document
-    .querySelectorAll('#dashboard button:not(#takeover)')
+    .querySelectorAll('#dashboard button:not(#takeover):not(#dismissAlert)')
     .forEach((button) => {
       button.disabled = locked;
     });
@@ -162,6 +190,26 @@ const names = {
   INTERMISSION: '途中経過',
   FINISHED: '試合終了',
 };
+
+function renderOperation() {
+  const status = operationStatus(state, {connected, isOwner:state?.owner === sessionId, testRequested:testRequested()});
+  $('operationCenter').dataset.tone = status.tone;
+  $('operationTitle').textContent = status.title;
+  $('operationState').textContent = !connected ? '通信切断' : status.tone === 'danger' ? '要対応' : state?.phase === 'LOBBY' ? state?.simulation ? 'デモ待機' : status.tone === 'ready' ? '準備完了' : '準備中' : names[state?.phase] ?? '確認中';
+  $('operationDetail').textContent = status.detail;
+  $('operationNext').textContent = status.next;
+  $('operationChecks').hidden = status.checks.length === 0;
+  $('operationChecks').replaceChildren(...status.checks.map(check => {
+    const item = document.createElement('div');
+    item.className = `operation-check ${check.ok ? 'ok' : 'missing'}`;
+    const label = document.createElement('strong');
+    label.textContent = `${check.ok ? '✓' : '!'} ${check.label}`;
+    const detail = document.createElement('span');
+    detail.textContent = check.detail;
+    item.append(label, detail);
+    return item;
+  }));
+}
 
 function render() {
   $('connection').textContent = state.demo ? state.simulation ? 'デモ：仮想端末で確認' : 'デモ：接続した実機で確認' : '本番：実機サーバー接続済';
@@ -209,6 +257,7 @@ function render() {
     else if (connectedPlayers < 4) $('nextStep').textContent = `端末が${connectedPlayers}/4台接続されています。通常試合には4台必要です。`;
   }
   if (state.simulation && state.phase === 'LOBBY') $('nextStep').textContent = 'デモモードです。表示中の4台は仮想端末です。実機を確認する場合は、確認対象を「接続した実機」に切り替えてください。';
+  renderOperation();
   document.querySelectorAll('[data-media]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.media === state.media)));
 
   const deviceElements = [];
@@ -316,6 +365,7 @@ document.querySelectorAll('[data-action]').forEach((button) => {
   });
 });
 $('testMode').onchange = () => { if (state) render(); };
+$('dismissAlert').onclick = () => message('');
 $('demoSource').onchange = guarded(async (event) => {
   const source = event.target.value;
   try { await action('demo_source', {source}); }
@@ -359,4 +409,4 @@ $('provisionForm').onsubmit = guarded(async () => {
 });
 
 configureTicketLinks().catch(() => {});
-enter().catch((error) => message(error.message));
+enter().catch((error) => message(error.message, {error: true}));

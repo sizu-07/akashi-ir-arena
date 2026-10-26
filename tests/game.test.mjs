@@ -71,11 +71,12 @@ test('defeated player respawns automatically at seven seconds without score loss
 test('pause freezes round clock and respawn countdown until resumed',()=>{
   const f=fixture();f.start();f.fire('gun-001',1);f.hit('gun-002',1,1);
   f.advance(2000);const remaining=f.g.s.remainingMs;f.g.pause();
+  assert.equal(f.g.view().pauseReason,'operator');
   assert.equal(f.g.player('gun-002').respawnRemainingMs,5000);
   f.advance(30000);assert.equal(f.g.s.remainingMs,remaining);
-  f.start();f.advance(4999);assert.equal(f.g.player('gun-002').hp,0);
+  f.start();assert.equal(f.g.view().pauseReason,null);f.advance(4999);assert.equal(f.g.player('gun-002').hp,0);
   f.advance(1);assert.equal(f.g.player('gun-002').hp,1);
-  f.g.player('gun-001').lastSeen-=4000;f.g.tick();assert.equal(f.g.s.phase,'PAUSED');
+  f.g.player('gun-001').lastSeen-=4000;f.g.tick();assert.equal(f.g.s.phase,'PAUSED');assert.equal(f.g.view().pauseReason,'端末通信断');
 });
 
 test('saved 120-second match resumes with the same elapsed time on the 90-second clock',()=>{

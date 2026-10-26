@@ -16,7 +16,7 @@ export class Game {
     this.allowTestMode=allowTestMode;
     this.autoAdvanceRounds=autoAdvanceRounds;
     this.now=now; this.log=log; this.pending=[]; this.shots=[]; this.seen=new Map(); this.soundEvents=[]; this.events=saved?.eventNo??0;this.defaultPlayerNames=devices.map(device=>device.name);
-    this.s={id:randomUUID(),generation:1,phase:'LOBBY',rules:{...defaults},round:1,roundResults:[],remainingMs:defaults.durationSec*1000,intermissionEndsAt:null,intermissionBlockedReason:null,ticketRoundId:null,ticketStarted:false,ticketPaused:false,media:'score',winner:null,testMode:false,participantIds:[],
+    this.s={id:randomUUID(),generation:1,phase:'LOBBY',pauseReason:null,rules:{...defaults},round:1,roundResults:[],remainingMs:defaults.durationSec*1000,intermissionEndsAt:null,intermissionBlockedReason:null,ticketRoundId:null,ticketStarted:false,ticketPaused:false,media:'score',winner:null,testMode:false,participantIds:[],
       players:devices.map(d=>({id:d.id,name:d.name,shooterId:d.shooterId,hp:1,kills:0,deaths:0,shots:0,hits:0,hitShots:0,accuracy:0,respawnAt:0,connected:false,armed:false,lastSeen:0,bootId:null,ack:null,lastShot:-1e15,rssi:null,battery:null,syncRtt:null}))};
     this.s.roundStart=Object.fromEntries(this.s.players.map(p=>[p.id,stats(p)]));
     if(saved?.players?.length===4&&saved.rules?.mode===defaults.mode) {
@@ -25,7 +25,7 @@ export class Game {
       const remainingMs = oldDuration
         ? Math.max(0, Math.min(loadedRules.durationSec * 1000, loadedRules.durationSec * 1000 - (120000 - (saved.remainingMs ?? 120000))))
         : saved.remainingMs;
-      this.s={...this.s,...saved,remainingMs,phase:['ACTIVE','COUNTDOWN'].includes(saved.phase)?'PAUSED':saved.phase,generation:saved.generation+1,rules:loadedRules};
+      this.s={...this.s,...saved,remainingMs,phase:['ACTIVE','COUNTDOWN'].includes(saved.phase)?'PAUSED':saved.phase,pauseReason:['ACTIVE','COUNTDOWN'].includes(saved.phase)?'server_restart':saved.pauseReason??null,generation:saved.generation+1,rules:loadedRules};
       this.s.players=devices.map(d=>{const old=saved.players.find(p=>p.id===d.id)??{};return {...old,id:d.id,name:old.name??d.name,shooterId:d.shooterId,connected:false,armed:false,lastSeen:0,ack:null,bootId:null,lastShot:-1e15};});
       this.s.testMode= saved.testMode===true;
       this.s.participantIds=Array.isArray(saved.participantIds)?saved.participantIds:devices.map(d=>d.id);
@@ -71,7 +71,7 @@ export class Game {
   }
   setPlayerNames(names=[]){for(const [index,player] of this.s.players.entries()){const name=String(names[index]??'').trim();player.name=name&&name.length<=20?name:this.defaultPlayerNames[index];}this.record('player_names_updated',{names:this.s.players.map(player=>player.name)});}
   reset(rules={}){if(!['LOBBY','FINISHED'].includes(this.s.phase)&&!(this.s.phase==='INTERMISSION'&&this.s.testMode))throw Error('終了してから新試合を作成してください');
-    const r=rulesOf(rules);this.s.id=randomUUID();this.s.generation++;this.s.phase='LOBBY';this.s.rules=r;this.s.round=1;this.s.roundResults=[];this.s.remainingMs=r.durationSec*1000;this.s.intermissionEndsAt=null;this.s.intermissionBlockedReason=null;this.s.ticketRoundId=null;this.s.ticketStarted=false;this.s.ticketPaused=false;this.s.winner=null;this.s.testMode=false;this.s.participantIds=[];this.s.media='score';this.s.videoPlayback=null;
+    const r=rulesOf(rules);this.s.id=randomUUID();this.s.generation++;this.s.phase='LOBBY';this.s.pauseReason=null;this.s.rules=r;this.s.round=1;this.s.roundResults=[];this.s.remainingMs=r.durationSec*1000;this.s.intermissionEndsAt=null;this.s.intermissionBlockedReason=null;this.s.ticketRoundId=null;this.s.ticketStarted=false;this.s.ticketPaused=false;this.s.winner=null;this.s.testMode=false;this.s.participantIds=[];this.s.media='score';this.s.videoPlayback=null;
     for(const p of this.s.players)Object.assign(p,{hp:1,kills:0,deaths:0,shots:0,hits:0,hitShots:0,accuracy:0,armed:false,ack:null,lastShot:-1e15,deadAt:0,respawnAt:0,respawnRemainingMs:0,reviveProgressMs:0});
     this.s.roundStart=Object.fromEntries(this.s.players.map(p=>[p.id,stats(p)]));
     for(const p of this.s.players){p.damageFeedback=null;p.lastReceiver=null;}
@@ -91,12 +91,12 @@ export class Game {
     if(selected.some(p=>!this.current(p)))throw Error('参加端末の接続・時刻同期を確認してください');
     if(selected.some(p=>mode?!this.testReady(p):!deviceReady(p)))throw Error(mode?'参加端末の構成・通常モードを確認してください':'4台の個人戦対応・通常モード・電池状態を確認してください');
     this.s.testMode=mode;this.s.participantIds=selected.map(p=>p.id);
-    this.s.generation++;this.s.phase='COUNTDOWN';this.s.intermissionEndsAt=null;this.s.intermissionBlockedReason=null;this.s.startAt=this.now()+countdownDurationMs;this.s.countdownAudioStartAt=this.s.startAt-countdownDurationMs;this.s.commandId=randomUUID();this.s.startCommitted=selected.every(p=>!this.gameDeviceReady(p));this.s.media='score';this.s.videoPlayback=null;
+    this.s.generation++;this.s.phase='COUNTDOWN';this.s.pauseReason=null;this.s.intermissionEndsAt=null;this.s.intermissionBlockedReason=null;this.s.startAt=this.now()+countdownDurationMs;this.s.countdownAudioStartAt=this.s.startAt-countdownDurationMs;this.s.commandId=randomUUID();this.s.startCommitted=selected.every(p=>!this.gameDeviceReady(p));this.s.media='score';this.s.videoPlayback=null;
     if(nextRound){for(const p of this.s.players)Object.assign(p,{hp:1,deadAt:0,respawnAt:0,respawnRemainingMs:0,lastShot:-1e15,reviveProgressMs:0});this.s.roundStart=Object.fromEntries(this.s.players.map(p=>[p.id,stats(p)]));this.s.remainingMs=this.s.rules.durationSec*1000;}
     if(resuming)for(const p of this.s.players)if(p.hp===0&&p.respawnRemainingMs>0){p.respawnAt=this.s.startAt+p.respawnRemainingMs;p.respawnRemainingMs=0;}
     for(const p of this.s.players){p.ack=null;p.armed=false;p.damageFeedback=null;}this.record('countdown',{startAt:this.s.startAt,commandId:this.s.commandId,testMode:mode,participantIds:this.s.participantIds});}
   pause(reason='operator'){if(this.s.phase==='ACTIVE')this.s.remainingMs=Math.max(0,this.s.endAt-this.now());
-    if(['ACTIVE','COUNTDOWN'].includes(this.s.phase)){this.s.phase='PAUSED';this.s.generation++;this.s.startCommitted=false;for(const p of this.s.players){p.armed=false;if(p.hp===0)p.respawnRemainingMs=Math.max(0,p.respawnAt-this.now());}this.pending=[];this.shots=[];this.record('pause',{reason});}}
+    if(['ACTIVE','COUNTDOWN'].includes(this.s.phase)){this.s.phase='PAUSED';this.s.pauseReason=reason;this.s.generation++;this.s.startCommitted=false;for(const p of this.s.players){p.armed=false;if(p.hp===0)p.respawnRemainingMs=Math.max(0,p.respawnAt-this.now());}this.pending=[];this.shots=[];this.record('pause',{reason});}}
   endRound(reason='time'){
     if(!['ACTIVE','PAUSED'].includes(this.s.phase))throw Error('進行中のゲームだけ終了できます');
     if(this.s.phase==='ACTIVE')this.s.remainingMs=Math.max(0,this.s.endAt-this.now());
