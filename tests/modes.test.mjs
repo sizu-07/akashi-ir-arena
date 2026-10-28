@@ -73,9 +73,7 @@ test('本番は動作確認APIを拒否し、4台の準備とACK後に通常試�
     assert.equal((await action('start')).status, 400, '1台では通常試合を開始できない');
     for (const n of [2, 3, 4]) clients.push(await connectDevice(app, n));
     app.game.heartbeat('gun-001', {hardware_profile: hardware.profile, hardware_ready: true, firmware_version:'0.8.0-4e42', syncRtt: 5, lowBattery: true});
-    assert.equal((await action('start')).status, 400, '本番では電池保護を解除しない');
-    app.game.heartbeat('gun-001', {hardware_profile: hardware.profile, hardware_ready: true, firmware_version:'0.8.0-4e42', syncRtt: 5, lowBattery: false});
-    assert.equal((await action('start')).status, 200);
+    assert.equal((await action('start')).status, 200, '本番でも電池低下を記録しながら開始する');
     assert.equal(app.game.s.testMode, false);
     assert.equal(app.game.s.participantIds.length, 4);
     await waitFor(() => app.game.s.startCommitted);
@@ -114,7 +112,7 @@ test('デモは仮想端末を停止して実機1台を確認でき、通常試�
     assert.equal((await action('demo_hit')).status, 400);
     assert.equal((await action('start', {testMode: true})).status, 200);
     assert.deepEqual(app.game.s.participantIds, ['gun-001']);
-    assert.equal(app.game.batteryOverride(app.game.player('gun-001')), true);
+    assert.equal(app.game.batteryOverride(app.game.player('gun-001')), false);
     assert.equal((await action('demo_source', {source: 'simulation'})).status, 400, 'カウントダウン中に確認対象を変えない');
     await waitFor(() => app.game.s.startCommitted);
     now = app.game.s.startAt; app.game.player('gun-001').lastSeen = now;

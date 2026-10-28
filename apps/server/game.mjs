@@ -3,7 +3,7 @@ import {hardware,receiverIds,deviceReady,legacyMotorDemo,receiverOnlyGame} from 
 import {decodeGameFrame} from './ir-frame.mjs';
 export const countdownDurationMs = 7010;
 export const intermissionDurationMs = 15000;
-export const defaults = Object.freeze({mode:'FFA_KILLS_V1', rounds:4, durationSec:90, fireMs:1000, respawnMs:7000});
+export const defaults = Object.freeze({mode:'FFA_KILLS_V1', rounds:4, durationSec:85, displayDurationSec:90, fireMs:700, respawnMs:7000});
 export function rulesOf(input={}) {
   for(const [key,value] of Object.entries(defaults))
     if(input[key]!==undefined&&input[key]!==value)throw Error(`${key} は固定ルールです`);
@@ -20,10 +20,11 @@ export class Game {
       players:devices.map(d=>({id:d.id,name:d.name,shooterId:d.shooterId,hp:1,kills:0,deaths:0,shots:0,hits:0,hitShots:0,accuracy:0,respawnAt:0,connected:false,armed:false,lastSeen:0,bootId:null,ack:null,lastShot:-1e15,rssi:null,battery:null,syncRtt:null}))};
     this.s.roundStart=Object.fromEntries(this.s.players.map(p=>[p.id,stats(p)]));
     if(saved?.players?.length===4&&saved.rules?.mode===defaults.mode) {
-      const oldDuration = saved.rules.durationSec === 120;
-      const loadedRules = rulesOf(oldDuration ? {...saved.rules, durationSec: defaults.durationSec} : saved.rules);
-      const remainingMs = oldDuration
-        ? Math.max(0, Math.min(loadedRules.durationSec * 1000, loadedRules.durationSec * 1000 - (120000 - (saved.remainingMs ?? 120000))))
+      const previousDuration = saved.rules.durationSec;
+      const legacyRules = previousDuration !== defaults.durationSec || saved.rules.fireMs !== defaults.fireMs || saved.rules.displayDurationSec !== defaults.displayDurationSec;
+      const loadedRules = rulesOf(legacyRules ? defaults : saved.rules);
+      const remainingMs = legacyRules
+        ? Math.max(0, Math.min(defaults.durationSec * 1000, defaults.durationSec * 1000 - (previousDuration * 1000 - (saved.remainingMs ?? previousDuration * 1000))))
         : saved.remainingMs;
       this.s={...this.s,...saved,remainingMs,phase:['ACTIVE','COUNTDOWN'].includes(saved.phase)?'PAUSED':saved.phase,pauseReason:['ACTIVE','COUNTDOWN'].includes(saved.phase)?'server_restart':saved.pauseReason??null,generation:saved.generation+1,rules:loadedRules};
       this.s.players=devices.map(d=>{const old=saved.players.find(p=>p.id===d.id)??{};return {...old,id:d.id,name:old.name??d.name,shooterId:d.shooterId,connected:false,armed:false,lastSeen:0,ack:null,bootId:null,lastShot:-1e15};});
@@ -45,9 +46,9 @@ export class Game {
   player(id){const p=this.s.players.find(p=>p.id===id);if(!p)throw Error('未登録端末');return p;}
   participants(){return this.s.players.filter(p=>this.s.participantIds.includes(p.id));}
   isParticipant(id){return this.s.participantIds.includes(id);}
-  testReady(p){return deviceReady(p,{allowLowBattery:true})||legacyMotorDemo(p);}
-  gameDeviceReady(p){return deviceReady(p,{allowLowBattery:this.s.testMode});}
-  batteryOverride(p){return this.s.testMode&&this.isParticipant(p.id)&&['COUNTDOWN','ACTIVE'].includes(this.s.phase);}
+  testReady(p){return deviceReady(p)||legacyMotorDemo(p);}
+  gameDeviceReady(p){return deviceReady(p);}
+  batteryOverride(){return false;}
   readyForMatch(p){return this.s.testMode?this.testReady(p):deviceReady(p);}
   current(p){return p.connected&&this.now()-p.lastSeen<=2500&&p.syncRtt!==null&&p.syncRtt<=400;}
   view(){return structuredClone({...this.s,serverMs:this.now(),soundEvents:this.soundEvents,activity:this.activity});}
@@ -88,9 +89,9 @@ export class Game {
     if(!selected.length)throw Error('接続・時刻同期した端末が1台以上必要です');
     if(!mode&&selected.some(receiverOnlyGame))throw Error('受信専用端末は「接続済み端末だけで動作確認」で使用してください');
     if(!mode&&selected.length!==4)throw Error('通常試合は4台必要です');
-    if(!mode&&selected.some(p=>!['0.8.0-4e42','0.8.1-4e42','0.8.0-sim'].includes(p.firmwareVersion)))throw Error('通常試合には4台とも個人戦用v0.8ファームウェアが必要です');
+    if(!mode&&selected.some(p=>!['0.8.0-4e42','0.8.1-4e42','0.8.2-4e42','0.8.0-sim'].includes(p.firmwareVersion)))throw Error('通常試合には4台とも個人戦用v0.8ファームウェアが必要です');
     if(selected.some(p=>!this.current(p)))throw Error('参加端末の接続・時刻同期を確認してください');
-    if(selected.some(p=>mode?!this.testReady(p):!deviceReady(p)))throw Error(mode?'参加端末の構成・通常モードを確認してください':'4台の個人戦対応・通常モード・電池状態を確認してください');
+    if(selected.some(p=>mode?!this.testReady(p):!deviceReady(p)))throw Error(mode?'参加端末の構成・通常モードを確認してください':'4台の個人戦対応・通常モードを確認してください');
     this.s.testMode=mode;this.s.participantIds=selected.map(p=>p.id);
     this.s.generation++;this.s.phase='COUNTDOWN';this.s.pauseReason=null;this.s.intermissionEndsAt=null;this.s.intermissionBlockedReason=null;this.s.startAt=this.now()+countdownDurationMs;this.s.countdownAudioStartAt=this.s.startAt-countdownDurationMs;this.s.commandId=randomUUID();this.s.startCommitted=selected.every(p=>!this.gameDeviceReady(p));this.s.media='score';this.s.videoPlayback=null;
     if(nextRound){for(const p of this.s.players)Object.assign(p,{hp:1,deadAt:0,respawnAt:0,respawnRemainingMs:0,lastShot:-1e15,reviveProgressMs:0});this.s.roundStart=Object.fromEntries(this.s.players.map(p=>[p.id,stats(p)]));this.s.remainingMs=this.s.rules.durationSec*1000;}
@@ -139,7 +140,7 @@ export class Game {
     const motorPulses=Number.isSafeInteger(data.motor_pulses)&&data.motor_pulses>=0?data.motor_pulses:null;
     if(p.motorPulses!==null&&motorPulses!==null&&motorPulses>p.motorPulses)p.lastMotorAt=this.now();
     p.motorPulses=motorPulses;
-    p.ledColor=typeof data.led_color==='string'&&/^(OFF|RED|BLUE|GREEN|CYAN|ORANGE|PURPLE|WHITE|MIXED)$/.test(data.led_color)?data.led_color:null;
+    p.ledColor=typeof data.led_color==='string'&&/^(OFF|RED|BLUE|GREEN|CYAN|ORANGE|PURPLE|WHITE|YELLOW|MIXED)$/.test(data.led_color)?data.led_color:null;
     p.motorPwmLimit=Number.isInteger(data.motor_pwm_limit)&&data.motor_pwm_limit>0&&data.motor_pwm_limit<=255?data.motor_pwm_limit:null;
     p.motorRunLimit=Number.isInteger(data.motor_run_limit)&&data.motor_run_limit>0&&data.motor_run_limit<=255?data.motor_run_limit:null;
     p.motorStartupMs=Number.isInteger(data.motor_startup_ms)&&data.motor_startup_ms>0&&data.motor_startup_ms<=100?data.motor_startup_ms:null;
@@ -163,7 +164,7 @@ export class Game {
     p.rxFrames=Object.fromEntries(receiverIds.map(k=>[k,Number.isSafeInteger(data.rx_frames?.[k])&&data.rx_frames[k]>=0?data.rx_frames[k]:null]));
     const decoded=decodeGameFrame(data.last_ir?.frame),source=decoded?this.s.players.find(x=>x.shooterId===decoded.shooterId):null;
     p.lastIr=decoded&&receiverIds.includes(data.last_ir?.receiver_id)?{...decoded,frame:data.last_ir.frame,receiverId:data.last_ir.receiver_id,sourceName:source?.name??null,relation:!source?'UNKNOWN':source.id===id?'SELF':'OPPONENT'}:null;
-    if(this.isParticipant(id)&&!this.readyForMatch(p)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause(p.lowBattery?'電池低下':'端末構成・机上モードを確認');}
+    if(this.isParticipant(id)&&!this.readyForMatch(p)&&['ACTIVE','COUNTDOWN'].includes(this.s.phase))this.pause('端末構成・机上モードを確認');}
   ack(id,payload){const p=this.player(id);if(this.s.phase==='COUNTDOWN'&&this.isParticipant(id)&&this.gameDeviceReady(p)&&payload.command_id===this.s.commandId&&payload.result==='ok'){p.ack=this.s.commandId;this.s.startCommitted=this.participants().every(p=>!this.gameDeviceReady(p)||p.ack===this.s.commandId);}}
   event(id,m){this.tick();const p=this.player(id),t=this.now();
     if(!m||m.device_id!==id||m.boot_id!==p.bootId||typeof m.message_id!=='string'||m.message_id.length>160||!Number.isSafeInteger(m.seq))return {ok:false,reason:'envelope'};

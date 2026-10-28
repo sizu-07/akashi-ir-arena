@@ -61,7 +61,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
    cb(!packet.retain&&packet.payload.length<=4096&&allowed.includes(packet.topic)?null:Error('publish denied'));};
  broker.authorizeSubscribe=(client,sub,cb)=>{cb(null,[`irgame/v1/device/${client.deviceId}/desired`,`irgame/v1/device/${client.deviceId}/command`].includes(sub.topic)?sub:null);};
  const publish=(id,suffix,payload,retain=false)=>broker.publish({topic:`irgame/v1/device/${id}/${suffix}`,payload:Buffer.from(JSON.stringify(payload)),qos:1,retain},err=>{if(err)console.error('MQTT publish:',err.message);});
- function desired(p){publish(p.id,'desired',{schema_version:1,hardware_profile:receiverOnlyGame(p)?receiverOnlyProfile:hardware.profile,damage_feedback:p.damageFeedback,game_id:game.s.id,game_generation:game.s.generation,server_time_ms:Date.now(),lease_ms:3000,phase:game.s.phase,test_mode:game.s.testMode,diagnostic_mode:diagnostics.enabled,battery_override:game.batteryOverride(p),armed:p.armed,hp:p.hp,respawn_at:p.respawnAt??0,round:game.s.round,shooter_id:p.shooterId,rules:game.s.rules,start_at:game.s.startAt??0,start_committed:!!game.s.startCommitted,command_id:game.s.commandId??'',media:game.s.media},true);}
+ function desired(p){const diagnostic=diagnostics.state(p.id);publish(p.id,'desired',{schema_version:1,hardware_profile:receiverOnlyGame(p)?receiverOnlyProfile:hardware.profile,damage_feedback:p.damageFeedback,game_id:game.s.id,game_generation:game.s.generation,server_time_ms:Date.now(),lease_ms:3000,phase:game.s.phase,test_mode:game.s.testMode,diagnostic_mode:diagnostics.enabled,diagnostic_hp:diagnostic?.hp??1,diagnostic_respawn_at:diagnostic?.respawnAt??0,battery_override:false,armed:p.armed,hp:p.hp,respawn_at:p.respawnAt??0,round:game.s.round,shooter_id:p.shooterId,rules:game.s.rules,start_at:game.s.startAt??0,start_committed:!!game.s.startCommitted,command_id:game.s.commandId??'',media:game.s.media},true);}
  function sync(){for(const p of game.s.players)desired(p);}
  broker.on('publish',(packet,client)=>{if(!client||switchingSource||client.simulation!==simulation)return;try{const id=client.deviceId,m=JSON.parse(packet.payload.toString()),suffix=packet.topic.split('/').at(-1);
    if(suffix==='hello'){game.hello(id,m.boot_id);desired(game.player(id));}
@@ -70,6 +70,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
      if(m.type==='diagnostic_shot'||m.type==='diagnostic_hit'){
        const result=diagnostics.receive(game,id,m);
        if(!result.ok)db.log({at:Date.now(),gameId:game.s.id,type:'diagnostic_event_rejected',deviceId:id,reason:result.reason});
+       if(result.changed)sync();
        return;
      }
      const player=game.player(id);
@@ -93,6 +94,22 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
  function session(req){const token=(req.headers.cookie??'').split(';').map(s=>s.trim()).find(s=>s.startsWith('arena='))?.slice(6);const s=sessions.get(token);if(s&&s.expires>Date.now()){s.seen=Date.now();return s;}return null;}
  const reply=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
  const soundFiles=()=>Object.fromEntries(Object.entries(availableEffects(effectsDir)).map(([kind,entry])=>[kind,entry.url]));
+ let checkingTicketMembers=false;
+ async function applyTicketMembers(){
+   const names=await ticketBridge.loadPlayerNicknames();
+   if(game.s.phase!=='LOBBY')return false;
+   game.setPlayerNames(names);
+   game.s.ticketRoundId=ticketBridge.currentRoundId;
+   preparedTicketGameId=game.s.id;
+   db.save(game.s);sync();
+   return true;
+ }
+ async function checkTicketMembers(){
+   if(!ticketBridge.enabled||checkingTicketMembers||game.s.phase!=='LOBBY'||preparedTicketGameId===game.s.id)return;
+   checkingTicketMembers=true;
+   try{await applyTicketMembers();}catch{/* Registration or check-in may still be in progress. */}
+   finally{checkingTicketMembers=false;}
+ }
  async function body(req){let data='';for await(const chunk of req){data+=chunk;if(data.length>16384)throw Error('本文が大きすぎます');}return JSON.parse(data||'{}');}
  const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.webm':'video/webm','.mp3':'audio/mpeg','.wav':'audio/wav','.ttf':'font/ttf'};
  const httpServer=http.createServer(async(req,res)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');
@@ -163,9 +180,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
           case 'sync_ticket_members':{
             if(game.s.phase!=='LOBBY')throw Error('整理券メンバーは新しい試合の待機中だけ反映できます');
             if(!ticketBridge.enabled)throw Error('公開整理券サーバーが未設定です');
-            game.setPlayerNames(await ticketBridge.loadPlayerNicknames());
-            game.s.ticketRoundId=ticketBridge.currentRoundId;
-            preparedTicketGameId=game.s.id;
+            await applyTicketMembers();
             operation={notice:`整理券メンバーを反映しました: ${game.s.players.map(player=>player.name).join(' / ')}`};
             break;
           }
@@ -174,7 +189,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
             if(!demo&&(b.testMode===true||game.s.testMode))throw Error('動作確認は「起動_デモ.cmd」で実行してください');
             const testMode=game.s.phase==='PAUSED'?game.s.testMode:b.testMode===true;
             if(demo&&!simulation&&!testMode)throw Error('デモ版の実機確認では「接続済み端末だけで動作確認」を選択してください');
-            if(!testMode&&game.s.phase==='LOBBY'&&ticketBridge.enabled&&preparedTicketGameId!==game.s.id)throw Error('先に「整理券メンバーを反映」を押してください');
+            if(!testMode&&game.s.phase==='LOBBY'&&ticketBridge.enabled&&preparedTicketGameId!==game.s.id)await applyTicketMembers();
             game.start(displayReady(),{testMode});break;
           }
           case 'pause':game.pause();break;
@@ -185,8 +200,8 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
           }
           case 'diagnostic_off':diagnostics.end(game);operation={notice:'一時診断を終了しました。停止中の試合は確認後に手動で再開してください。'};break;
           case 'demo_end_round':if(!demo)throw Error('デモ専用操作');if(diagnostics.enabled)throw Error('一時診断を終了してからゲームを進めてください');game.endRound('demo_skip');break;
-          case 'media':if(b.mode==='video'&&!existsSync(path.join(root,rulesVideo())))throw Error('ルール説明動画（assets/rules.webm）がありません');game.setMedia(b.mode);break;
-          case 'video':if(!existsSync(path.join(root,rulesVideo())))throw Error('ルール説明動画（assets/rules.webm）がありません');game.controlVideo(b.operation);break;
+          case 'media':if(b.mode==='video'&&!existsSync(path.join(root,rulesVideo())))throw Error('ルール説明動画がありません');game.setMedia(b.mode);break;
+          case 'video':if(!existsSync(path.join(root,rulesVideo())))throw Error('ルール説明動画がありません');game.controlVideo(b.operation);break;
           case 'demo_hit':if(!simulation)throw Error('仮想端末専用操作');simulators?.hit(b.shooter,b.victim,b.receiver??'rx1');break;
           case 'motor_demo_hit':
           case 'motor_demo_defeat':
@@ -254,13 +269,13 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
  catch(error){await closeServer(httpServer);await closeServer(mqttServer);await new Promise(resolve=>broker.close(resolve));throw error;}
  async function startSimulation(){const {simulate}=await import('./simulator.mjs');return simulate(config.devices.map(d=>({...d,clientId:`sim-${d.id}`,key:simulationKey})),mqttServer.address().port);}
  if(simulation)simulators=await startSimulation();
- let count=0,lastSavedPhase=game.s.phase;const timer=setInterval(()=>{game.tick(displayReady());if(game.s.phase==='COUNTDOWN'&&!displayReady())game.pause('投影画面切断');
+ let count=0,lastSavedPhase=game.s.phase;const timer=setInterval(()=>{game.tick(displayReady());if(diagnostics.tick())sync();if(game.s.phase==='COUNTDOWN'&&!displayReady())game.pause('投影画面切断');
    const ticketStartedBefore=game.s.ticketStarted,ticketPausedBefore=game.s.ticketPaused;
    ticketBridge.observe(game.s);
    if(game.s.phase!==lastSavedPhase||game.s.ticketStarted!==ticketStartedBefore||game.s.ticketPaused!==ticketPausedBefore){db.save(game.s);lastSavedPhase=game.s.phase;}
    const state={...game.view(),soundFiles:soundFiles(),owner,displayReady:displayReady(),demo,simulation,diagnostics:diagnostics.view(),ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}};
    for(const ws of wss.clients)if(ws.readyState===WebSocket.OPEN){if(ws.bufferedAmount>100000){ws.close();continue;}ws.send(JSON.stringify(state));}
-   if(++count%4===0){sync();db.save(game.s);}if(count%240===0){for(const [k,s] of sessions)if(s.expires<Date.now())sessions.delete(k);}
+   if(++count%4===0){sync();db.save(game.s);}if(count%8===0)void checkTicketMembers();if(count%240===0){for(const [k,s] of sessions)if(s.expires<Date.now())sessions.delete(k);}
  },250);
  return {game,broker,httpServer,mqttServer,ticketBridge,async close(){clearInterval(timer);await simulators?.close();await ticketBridge.close();for(const ws of wss.clients)ws.terminate();await new Promise(r=>wss.close(r));await new Promise(r=>httpServer.close(r));await new Promise(r=>broker.close(r));await new Promise(r=>mqttServer.close(r));db.save(game.s);}};
 }

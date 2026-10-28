@@ -18,6 +18,11 @@ const errors=[];
 try{
   browser=await chromium.launch({channel:'msedge',headless:true});
   const page=await browser.newPage({viewport:{width:1920,height:1080}});
+  const waitFor=async (predicate,arg,options={})=>{
+    const until=Date.now()+(options.timeout??15000);
+    while(Date.now()<until){if(await page.evaluate(predicate,arg))return;await page.waitForTimeout(100);}
+    throw Error('Timed out waiting for projector state');
+  };
   page.on('pageerror',e=>errors.push(e.message));
   await page.goto(`${base}/display`);
   await page.locator('.standby-slot').first().waitFor();
@@ -39,7 +44,7 @@ try{
   assert.equal(await mobileLobby.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'lobby 390px horizontal overflow');
   await mobileLobby.close();
   await page.locator('#prepare').click();
-  await page.waitForFunction(async()=>{const s=await(await fetch('/api/state')).json();return s.displayReady&&s.players.every(p=>p.connected&&p.syncRtt!==null);});
+  await waitFor(async()=>{const s=await(await fetch('/api/state')).json();return s.displayReady&&s.players.every(p=>p.connected&&p.syncRtt!==null);});
   const bgmDuration = await page.evaluate(async () => {
     const response = await fetch('/bgm.mp3');
     const context = new AudioContext();
@@ -50,33 +55,33 @@ try{
   assert.ok(bgmDuration > 88 && bgmDuration < 90, `BGM length ${bgmDuration}s`);
   app.game.start(true);
   for (const player of app.game.s.players) app.game.ack(player.id,{command_id:app.game.s.commandId,result:'ok'});
-  try{await page.waitForFunction(()=>document.body.dataset.phase==='ACTIVE',undefined,{timeout:15000});}
+  try{await waitFor(()=>document.body.dataset.phase==='ACTIVE',undefined,{timeout:15000});}
   catch(error){throw Error(`投影開始待ち: phase=${app.game.s.phase}, ACK=${app.game.s.startCommitted}, ready=${app.game.s.players.map(p=>p.connected).join(',')}: ${error.message}`);}
   assert.equal(await page.locator('#standby').isVisible(),false);
   assert.equal(await page.locator('.player').first().isVisible(),true);
   assert.equal(await page.locator('#clock').textContent(),'01:30');
-  await page.waitForFunction(()=>document.body.dataset.bgm==='playing');
+  await waitFor(()=>document.body.dataset.bgm==='playing');
   assert.ok(Number(await page.locator('body').getAttribute('data-bgm-offset-ms'))<2000);
   const shooter=app.game.player('gun-001'),victim=app.game.player('gun-002');
   shooter.kills=2;shooter.shots=3;shooter.hitShots=2;shooter.accuracy=66.7;
   victim.hp=0;victim.deaths=2;victim.respawnAt=Date.now()+7000;
-  await page.waitForFunction(()=>document.getElementById('leader').textContent==='プレイヤー1'&&document.querySelector('.is-out'));
+  await waitFor(()=>document.getElementById('leader').textContent==='プレイヤー1'&&document.querySelector('.is-out'));
   assert.equal(await page.locator('.player').first().locator('.hp').textContent(),'2');
   await page.screenshot({path:`${output}/active-1920.png`});
   app.game.s.endAt=Date.now()+70000;
   app.game.tick(true);
   app.game.pause();
-  await page.waitForFunction(()=>document.body.dataset.phase==='PAUSED');
-  await page.waitForFunction(()=>!document.body.dataset.bgm);
+  await waitFor(()=>document.body.dataset.phase==='PAUSED');
+  await waitFor(()=>!document.body.dataset.bgm);
   app.game.start(true);
   for (const player of app.game.s.players) app.game.ack(player.id,{command_id:app.game.s.commandId,result:'ok'});
-  await page.waitForFunction(()=>document.body.dataset.phase==='ACTIVE'&&document.body.dataset.bgm==='playing',undefined,{timeout:15000});
+  await waitFor(()=>document.body.dataset.phase==='ACTIVE'&&document.body.dataset.bgm==='playing',undefined,{timeout:15000});
   const resumedBgmOffset=Number(await page.locator('body').getAttribute('data-bgm-offset-ms'));
-  assert.ok(resumedBgmOffset>=19000&&resumedBgmOffset<23000,`BGM resumed at ${resumedBgmOffset} ms`);
+  assert.ok(resumedBgmOffset>=14000&&resumedBgmOffset<17000,`BGM resumed at ${resumedBgmOffset} ms`);
   app.game.pause();
-  await page.waitForFunction(()=>document.body.dataset.phase==='PAUSED');
+  await waitFor(()=>document.body.dataset.phase==='PAUSED');
   app.game.endRound('demo_skip');
-  await page.waitForFunction(()=>document.getElementById('overlayTitle').textContent==='途中経過');
+  await waitFor(()=>document.getElementById('overlayTitle').textContent==='途中経過');
   assert.equal(await page.locator('#round').textContent(),'2 / 4');
   assert.equal(await page.locator('#resultBoard .result-row').count(),4);
   assert.match(await page.locator('#resultBoard .result-row').first().innerText(),/プレイヤー1[\s\S]*2/);
@@ -86,7 +91,7 @@ try{
   app.game.s.round=4;
   app.game.s.phase='PAUSED';
   app.game.finish();
-  await page.waitForFunction(()=>document.body.dataset.phase==='FINISHED');
+  await waitFor(()=>document.body.dataset.phase==='FINISHED');
   assert.equal(await page.locator('#overlayTitle').textContent(),'優勝');
   assert.equal(await page.locator('#resultChampion').textContent(),'プレイヤー1');
   await page.waitForTimeout(700);
@@ -96,8 +101,15 @@ try{
     await page.screenshot({path:`${output}/winner-${width}.png`});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}px horizontal overflow`);
   }
+  await page.setViewportSize({width:1920,height:1080});
+  app.game.setMedia('video');
+  await waitFor(()=>!document.getElementById('video').hidden);
+  if(await page.locator('#prepare').isVisible())await page.locator('#prepare').click();
+  await waitFor(()=>document.getElementById('video').currentTime>0.2,undefined,{timeout:15000});
+  assert.equal(await page.evaluate(()=>document.getElementById('video').error),null);
+  await page.screenshot({path:`${output}/rules-video-1920.png`});
   assert.deepEqual(errors,[]);
-  writeFileSync(`${output}/result.json`,JSON.stringify({revision:'0.8',checkedAt:new Date().toISOString(),passed:true,checks:['four-player position guide','four-player ranking','kill and death display','intermediate standings','individual winner','1280 and 390 px layouts'],errors},null,2));
+  writeFileSync(`${output}/result.json`,JSON.stringify({revision:'0.8',checkedAt:new Date().toISOString(),passed:true,checks:['four-player position guide','four-player ranking','kill and death display','intermediate standings','individual winner','1280 and 390 px layouts','rules video plays'],errors},null,2));
   console.log('Projector browser: PASS');
 }finally{
   await browser?.close();

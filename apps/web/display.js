@@ -31,6 +31,7 @@ let countdownKey = '';
 let countdownVisual = '';
 let resultBoardKey = '';
 let connectionLost = false;
+let previousDeviceConnections = null;
 let mediaError = '';
 let burstTimer;
 let startTimer;
@@ -129,6 +130,10 @@ function playNewSoundEvents() {
 
 $('prepare').onclick = async () => {
   try {
+    // Start media playback inside this click's user activation. Audio loading
+    // and fullscreen requests below may finish after autoplay permission ends.
+    if (state?.media === 'video' && state.videoPlayback?.playing !== false)
+      await $('video').play();
     audio ??= new AudioContext();
     await audio.resume();
     if (!countdownBuffer) {
@@ -144,7 +149,6 @@ $('prepare').onclick = async () => {
     await syncSoundFiles(state?.soundFiles);
     if (!document.fullscreenElement)
       await document.documentElement.requestFullscreen?.();
-    if (state?.media === 'video' && state.videoPlayback?.playing !== false) await $('video').play();
     mediaError = '';
     ready = true;
     $('prepare').hidden = true;
@@ -269,13 +273,21 @@ function connect() {
     acknowledgeReady();
   };
   ws.onmessage = (event) => {
-    state = JSON.parse(event.data);
+    const nextState = JSON.parse(event.data);
+    if (previousDeviceConnections && ['ACTIVE', 'COUNTDOWN'].includes(nextState.phase)) {
+      const disconnected = nextState.players.some(player => previousDeviceConnections.get(player.id) === true && !player.connected);
+      if (disconnected) { tone(880, 0.18); setTimeout(() => tone(660, 0.18), 250); }
+    }
+    previousDeviceConnections = new Map(nextState.players.map(player => [player.id, player.connected]));
+    state = nextState;
     offset = state.serverMs - Date.now();
     render();
     void syncSoundFiles(state.soundFiles);
     playNewSoundEvents();
   };
   ws.onclose = () => {
+    tone(880, 0.18); setTimeout(() => tone(660, 0.18), 250);
+    previousDeviceConnections = null;
     connectionLost = true;
     document.body.classList.add('connection-lost');
     $('status').textContent = 'PCサーバーとの接続が切れました';
@@ -315,7 +327,8 @@ function syncVideo(now) {
     if (state.media !== 'video' || state.videoPlayback?.playing === false ||
         lastVideoCommand !== command || connectionLost) return;
     ready = false;
-    mediaError = '動画再生失敗。PCで表示を再準備してください';
+    mediaError = '動画の自動再生が止められました。投影画面の「動画を再生」を押してください';
+    $('prepare').textContent = '動画を再生';
     $('prepare').hidden = false;
     acknowledgeReady();
   });
@@ -525,7 +538,8 @@ function render() {
     state.phase === 'ACTIVE' && !connectionLost
       ? Math.max(0, state.endAt - now)
       : state.remainingMs;
-  const seconds = Math.ceil(milliseconds / 1000);
+  const displayMilliseconds = Math.ceil(milliseconds * (state.rules.displayDurationSec ?? state.rules.durationSec) / state.rules.durationSec);
+  const seconds = Math.ceil(displayMilliseconds / 1000);
   setText(
     'clock',
     `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`,
@@ -574,8 +588,8 @@ function render() {
     if (state.media !== 'video') $('video').pause();
     lastMedia = state.media;
   }
-  if (state.media === 'video' && !connectionLost) syncVideo(now);
   $('video').hidden = state.media !== 'video';
+  if (state.media === 'video' && !connectionLost) syncVideo(now);
   $('overlay').hidden = true;
 
   if (connectionLost) {
@@ -699,7 +713,7 @@ $('video').onerror = () => {
   ready = false;
   acknowledgeReady();
   $('prepare').hidden = false;
-  mediaError = '動画を読み込めません。assets/rules.webmを確認してください';
+  mediaError = '動画を読み込めません。PCの assets/rules-intro.webm または assets/rules.webm を確認してください';
   render();
 };
 $('pair').ontoggle = async () => {

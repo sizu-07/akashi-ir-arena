@@ -63,14 +63,14 @@ test('demo device MQTT supplies receiver profile and real web state',async()=>{
       const listener=(topic,body)=>{if(topic!==`${base}/desired`)return;const m=JSON.parse(body);if(predicate(m)){clearTimeout(timer);client.off('message',listener);resolve(m);}};
       client.on('message',listener);
     });
-    const testDesired=nextDesired(m=>m.battery_override===true);
+    const testDesired=nextDesired(m=>m.test_mode===true&&m.phase==='COUNTDOWN');
     const origin=`http://127.0.0.1:${app.httpServer.address().port}`;
     display=new WebSocket(`${origin.replace('http:','ws:')}/ws/display`,{headers:{Origin:origin}});
     await new Promise((resolve,reject)=>{display.once('open',resolve);display.once('error',reject);});
     display.send(JSON.stringify({type:'ready',ready:true}));
     await new Promise(resolve=>display.once('message',resolve));
     app.game.start(true,{testMode:true});
-    const testMessage=await testDesired;assert.equal(testMessage.test_mode,true);
+    const testMessage=await testDesired;assert.equal(testMessage.test_mode,true);assert.equal(testMessage.battery_override,false);
     assert.equal(testMessage.armed,false);assert.equal(app.game.s.startCommitted,false);
     const pausedDesired=nextDesired(m=>m.phase==='PAUSED');app.game.pause();
     assert.equal((await pausedDesired).battery_override,false);

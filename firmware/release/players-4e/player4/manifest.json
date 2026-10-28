@@ -1,5 +1,5 @@
 {
-  "firmwareVersion": "0.8.1-4e42",
+  "firmwareVersion": "0.8.2-4e42",
   "player": 4,
   "deviceId": "gun-004",
   "shooterId": 4,
@@ -24,7 +24,7 @@
   },
   "ledPixels": 8,
   "batteryReplacementVoltage": 7,
-  "builtAt": "2026-10-26T07:05:13.637Z",
+  "builtAt": "2026-10-28T10:35:28.006Z",
   "physicalTests": "4-player match and isolated diagnostics NOT PERFORMED on hardware; build and protocol tests only",
   "offsets": {
     "bootloader.bin": "0x0",
@@ -33,10 +33,10 @@
     "firmware.bin": "0x10000"
   },
   "sourceHashes": {
-    "firmware/src/main.cpp": "d22a6836495a48c382bfdb7f2a12e58afe03dc8932a364cdc35ba271acec082c",
+    "firmware/src/main.cpp": "d10fd3ac0bd4a2735766f2b716fd210ce1be00daee94da47e8137e88b5764478",
     "firmware/include/ir_protocol.h": "ffe80912667b419d9da5039bc3c7240a22da600fb34c0be52bb2f4207b41f69a",
     "firmware/include/feedback.h": "0d0e33cb1408ca7a84a8100bb547dc19cbdef33b9514e8ae23477e154b23978d",
-    "firmware/include/legacy_4e_profile.h": "1e7a300b461e80acfe84a6638bd8549dbfea1f28fb1caeda9fbbae56fb697b36",
+    "firmware/include/legacy_4e_profile.h": "a2500e5631a0a8b9e68bf205dfefa0f531e7210f250230f01542bfd7f2d60da3",
     "firmware/include/player_identity.h": "aa6bb73ded48cb49c82a024530d4f5c20755a3890141716f8de99969afe1c5c7",
     "firmware/include/serial_rx_gate.h": "46a492cae0b5178a894ddb74f081390344920bf445094536415bdcbf05091d84",
     "firmware/include/battery_gate.h": "ebff11d1913e417cd4f812880e46db17f259fddf6eba303faffb7c93c2b9a6e7",

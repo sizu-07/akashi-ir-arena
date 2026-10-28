@@ -427,6 +427,14 @@ progress::-moz-progress-bar {
 #diagnosticToggle { min-height: 46px; border-color: #466d87; color: #2b536d; background: white; font-weight: 800; }
 .is-active #diagnosticToggle { border-color: #aa6419; background: #aa6419; color: white; }
 .diagnostic-note { margin: 11px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.diagnostic-combat { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.diagnostic-fighter { display: grid; gap: 5px; padding: 12px; border: 2px solid #58956b; background: #eff9f1; }
+.diagnostic-fighter.is-defeated { border-color: #ba4949; background: #fff0f0; }
+.diagnostic-fighter strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
+.diagnostic-fighter span { font-size: 14px; font-weight: 700; }
+.diagnostic-fighter b { color: #1d6b37; font-size: 13px; }
+.diagnostic-fighter.is-defeated b { color: #a82727; }
+@media (max-width: 850px) { .diagnostic-combat { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .diagnostic-log-heading { display: flex; justify-content: space-between; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; }
 .diagnostic-log-heading span { color: var(--muted); font-size: 12px; }
 .diagnostic-log { display: grid; gap: 5px; max-height: 200px; overflow-y: auto; margin: 8px 0 0; padding: 0; list-style: none; }

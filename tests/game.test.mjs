@@ -20,15 +20,15 @@ function fixture(saved = null, options = {}) {
   return f;
 }
 
-test('four fixed 90-second games, one-second shots and seven-second respawn',()=>{
-  assert.deepEqual(defaults,{mode:'FFA_KILLS_V1',rounds:4,durationSec:90,fireMs:1000,respawnMs:7000});
+test('four 85-second games display 90 seconds, with 700 ms shots and seven-second respawn',()=>{
+  assert.deepEqual(defaults,{mode:'FFA_KILLS_V1',rounds:4,durationSec:85,displayDurationSec:90,fireMs:700,respawnMs:7000});
   assert.deepEqual(rulesOf(),defaults);
   assert.throws(()=>rulesOf({rounds:3}));
   assert.throws(()=>rulesOf({respawnMs:5000}));
   const f=fixture();f.start();
   assert.equal(f.fire('gun-001',1).ok,true);
   f.advance(500);assert.equal(f.fire('gun-001',2).reason,'rate');
-  f.advance(500);assert.equal(f.fire('gun-001',3).ok,true);
+  f.advance(200);assert.equal(f.fire('gun-001',3).ok,true);
   assert.equal(f.send('gun-001','shot_hold',{shot_seq:3}).reason,'unsupported');
 });
 
@@ -79,14 +79,15 @@ test('pause freezes round clock and respawn countdown until resumed',()=>{
   f.g.player('gun-001').lastSeen-=4000;f.g.tick();assert.equal(f.g.s.phase,'PAUSED');assert.equal(f.g.view().pauseReason,'端末通信断');
 });
 
-test('saved 120-second match resumes with the same elapsed time on the 90-second clock',()=>{
+test('saved 120-second match resumes with elapsed time on the 85-second clock',()=>{
   const f=fixture();f.start();f.advance(30000);f.g.pause();
   const saved=structuredClone(f.g.s);
   saved.rules.durationSec=120;
   saved.remainingMs=90000;
   const restored=new Game(devices,{saved,now:f.now});
-  assert.equal(restored.s.rules.durationSec,90);
-  assert.equal(restored.s.remainingMs,60000);
+  assert.equal(restored.s.rules.durationSec,85);
+  assert.equal(restored.s.rules.displayDurationSec,90);
+  assert.equal(restored.s.remainingMs,55000);
   assert.equal(restored.s.phase,'PAUSED');
 });
 

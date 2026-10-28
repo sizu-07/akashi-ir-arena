@@ -13,7 +13,7 @@ let previousDemoSource;
 const testRequested = () => state?.demo && ($('testMode')?.checked ?? false);
 
 function errorNext(text) {
-  if (/rules\.webm/.test(text)) return 'メインPCの assets フォルダーに説明動画を置いてから、もう一度操作してください。';
+  if (/rules(?:-intro)?\.webm/.test(text)) return 'メインPCの assets フォルダーに説明動画を置いてから、もう一度操作してください。';
   if (/投影画面|表示を準備/.test(text)) return '右上の「投影画面を開く」を押し、投影画面で「表示を準備」を押してください。';
   if (/整理券|メンバー/.test(text)) return '「整理券メンバーを反映」を押し、参加者名を確認してください。';
   if (/端末|4台|ファームウェア|電池|時刻同期/.test(text)) return '下の参加者・端末欄で該当端末を確認し、接続や設定を直してください。';
@@ -169,7 +169,7 @@ function disable() {
   $('newMatch').disabled = locked || state?.diagnostics?.enabled || !(['LOBBY', 'FINISHED'].includes(state?.phase) || state?.demo && state?.testMode && state?.phase === 'INTERMISSION');
   if ($('testMode')) $('testMode').disabled = locked || state?.phase !== 'LOBBY' || !state?.simulation;
   if ($('demoSource')) $('demoSource').disabled = locked || !['LOBBY', 'FINISHED'].includes(state?.phase) && !(state?.phase === 'INTERMISSION' && state?.testMode);
-  document.querySelector('[data-action=start]').disabled = locked || state?.diagnostics?.enabled || !['LOBBY', 'PAUSED', 'INTERMISSION'].includes(state?.phase) || (state?.phase === 'INTERMISSION' && !state.demo) || (state?.phase === 'LOBBY' && !testRequested() && state?.ticketBridge?.enabled && !state.ticketBridge.membersLoaded);
+  document.querySelector('[data-action=start]').disabled = locked || state?.diagnostics?.enabled || !['LOBBY', 'PAUSED', 'INTERMISSION'].includes(state?.phase) || (state?.phase === 'INTERMISSION' && !state.demo);
   document.querySelector('[data-action=pause]').disabled = locked || !['COUNTDOWN', 'ACTIVE'].includes(state?.phase);
   document.querySelector('[data-action=finish]').disabled = locked || !['COUNTDOWN', 'ACTIVE', 'PAUSED', 'INTERMISSION'].includes(state?.phase);
   $('demoEndRound').disabled = locked || state?.diagnostics?.enabled || !state?.demo || !['ACTIVE', 'PAUSED'].includes(state?.phase);
@@ -219,7 +219,7 @@ function textElement(tag, className, content) {
   return element;
 }
 
-const ledNames = {OFF:'消灯', RED:'赤', BLUE:'青', GREEN:'緑', CYAN:'水色', ORANGE:'オレンジ', PURPLE:'紫', WHITE:'白', MIXED:'混合'};
+const ledNames = {OFF:'消灯', RED:'赤', BLUE:'青', GREEN:'緑', CYAN:'水色', ORANGE:'オレンジ', PURPLE:'紫', WHITE:'白', YELLOW:'黄', MIXED:'混合'};
 const receiverNames = {rx1:'前', rx2:'左', rx3:'右'};
 const timeLabel = (at) => new Date(at).toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
 
@@ -235,6 +235,7 @@ function activityFor(player) {
     if (event.type === 'shot' && event.playerId === player.id) return [{at:event.at, text:'診断射撃（戦績対象外）'}];
     if (event.type === 'hit' && event.playerId === player.id) return [{at:event.at, text:`${event.shooterName}の診断信号を${receiverNames[event.receiverId]}で受信`}];
     if (event.type === 'hit' && event.shooterId === player.id) return [{at:event.at, text:`${event.playerName}が診断信号を受信`}];
+    if (event.type === 'respawn' && event.playerId === player.id) return [{at:event.at, text:'診断で自動復活'}];
     return [];
   });
   return [...gameEvents, ...diagnosticEvents].sort((a,b) => b.at-a.at).slice(0, 3);
@@ -253,7 +254,7 @@ function render() {
   $('phase').textContent = state.testMode && state.phase === 'ACTIVE' ? '動作確認中' : state.testMode && state.phase === 'FINISHED' ? '動作確認終了' : names[state.phase];
   $('clockLabel').textContent = state.diagnostics?.intermissionHeld ? '次ゲームまで（一時保留）' : state.phase === 'INTERMISSION' && !state.demo ? '次ゲームまで' : '残り時間';
   $('clock').textContent = state.diagnostics?.intermissionHeld ? '保留中' : state.phase === 'INTERMISSION' && !state.demo && state.intermissionEndsAt
-    ? time(Math.max(0, state.intermissionEndsAt - state.serverMs)) : time(state.remainingMs);
+    ? time(Math.max(0, state.intermissionEndsAt - state.serverMs)) : time(Math.ceil(state.remainingMs * (state.rules.displayDurationSec ?? state.rules.durationSec) / state.rules.durationSec));
   $('roundLabel').textContent = `第${state.round}ゲーム / 全${state.rules.rounds}ゲーム`;
   $('score').textContent = [...state.players].sort((a,b)=>b.kills-a.kills).map(p=>`${p.name} ${p.kills}`).join(' / ');
   $('role').textContent = state.owner === sessionId ? '主操作端末' : '閲覧専用';
@@ -263,7 +264,7 @@ function render() {
   $('demoEndRound').hidden = !state.demo;
   $('roundFlow').textContent = state.demo
     ? 'デモではこのゲームを途中で終了して次の途中経過を確認できます。次ゲームの開始と試合全体の終了も手動です。'
-    : '各ゲームは90秒。途中経過を15秒表示し、次ゲームのカウントダウンへ自動で進みます。';
+    : '各ゲームの実時間は85秒、投影時計は90秒表示。途中経過を15秒表示し、次ゲームのカウントダウンへ自動で進みます。';
   if ($('demoSource')) $('demoSource').value = state.demoSource;
   if ($('testMode')) {
     if (previousDemoSource !== state.demoSource) $('testMode').checked = !state.simulation;
@@ -289,7 +290,7 @@ function render() {
   $('nextStep').textContent = hints[state.phase];
   if (['LOBBY', 'PAUSED'].includes(state.phase)) {
     if (!state.displayReady) $('nextStep').textContent = '「投影画面を開く」から「表示を準備」を押してください。';
-    else if (testRequested() || state.testMode) $('nextStep').textContent = `接続中の${connectedPlayers}台で動作確認します。未接続の端末は参加しません。動作確認中は電池低下による停止を解除します。`;
+    else if (testRequested() || state.testMode) $('nextStep').textContent = `接続中の${connectedPlayers}台で動作確認します。未接続の端末は参加しません。`;
     else if (connectedPlayers < 4) $('nextStep').textContent = `端末が${connectedPlayers}/4台接続されています。通常試合には4台必要です。`;
   }
   if (state.simulation && state.phase === 'LOBBY') $('nextStep').textContent = 'デモモードです。表示中の4台は仮想端末です。実機を確認する場合は、確認対象を「接続した実機」に切り替えてください。';
@@ -329,7 +330,7 @@ function render() {
       `RSSI ${player.rssi ?? '—'} dBm\n` +
       `構成 ${
         player.hardwareProfile === 'xiao-s3-plus-3rx-6led-motor-trigger' && player.hardwareReady
-          ? ['0.8.0-4e42', '0.8.1-4e42', '0.8.0-sim'].includes(player.firmwareVersion) ? '個人戦v0.8対応' : '旧ゲーム版・要更新'
+          ? ['0.8.0-4e42', '0.8.1-4e42', '0.8.2-4e42', '0.8.0-sim'].includes(player.firmwareVersion) ? player.firmwareVersion === '0.8.2-4e42' ? '最新ゲーム版' : '個人戦旧版・更新推奨' : '旧ゲーム版・要更新'
           : player.firmwareVersion === '0.7.1-rx44' && player.hardwareReady ? 'ゲーム用・受信専用（GPIO44）' : '未確認・旧版'
       }${player.bench ? ' / 机上モード' : ''}${player.lowBattery ? ' / 電池低下' : ''}\n` +
       `受信数 前:${player.rxFrames?.rx1 ?? '—'} ` +
@@ -371,12 +372,19 @@ function render() {
   $('diagnosticBadge').textContent = state.diagnostics?.enabled ? '診断中・戦績対象外' : '停止中';
   $('diagnosticToggle').textContent = state.diagnostics?.enabled ? '一時診断を終了' : '一時診断を開始';
   $('diagnosticGuidance').textContent = state.diagnostics?.enabled
-    ? `接続した銃のリミットを押して相手の受信部へ向けてください。${state.phase === 'PAUSED' ? '診断を終えた後、確認してからゲームを再開します。' : state.diagnostics.intermissionHeld ? '次ゲームの自動開始は診断終了まで保留します。' : ''}`
+    ? `接続した銃のリミットを押して相手の受信部へ向けてください。命中すると相手の銃が振動し、7秒後に復活します。${state.phase === 'PAUSED' ? '診断後、確認してからゲームを再開します。' : state.diagnostics.intermissionHeld ? '次ゲームの自動開始は診断終了まで保留します。' : ''}`
     : state.players.some(player => player.connected && player.diagnosticCapable)
       ? '必要なときだけ開始してください。接続中の対応端末で射撃・受信・振動を確認できます。'
       : '診断対応ファームウェアの端末がまだ接続されていません。';
+  $('diagnosticCombat').replaceChildren(...(state.diagnostics?.players ?? []).map(player => {
+    const card=textElement('div','diagnostic-fighter','');
+    card.classList.toggle('is-defeated',player.hp===0);
+    const left=player.hp===0?Math.max(0,Math.ceil((player.respawnAt-state.serverMs)/1000)):0;
+    card.append(textElement('strong','',player.name),textElement('span','',`${player.kills} キル ／ ${player.deaths} デス`),textElement('b','',player.hp===0?`撃破・${left}秒で復活`:'生存・射撃可能'));
+    return card;
+  }));
   const diagnosticEntries = [...(state.diagnostics?.events ?? [])].reverse();
-  $('diagnosticLog').replaceChildren(...(diagnosticEntries.length ? diagnosticEntries.map(entry => textElement('li', '', `${timeLabel(entry.at)}　${entry.type === 'shot' ? `${entry.playerName} が診断射撃` : `${entry.shooterName} → ${entry.playerName} の${receiverNames[entry.receiverId]}で受信`}`)) : [textElement('li', 'empty', '診断ログはまだありません')]));
+  $('diagnosticLog').replaceChildren(...(diagnosticEntries.length ? diagnosticEntries.map(entry => textElement('li', '', `${timeLabel(entry.at)}　${entry.type === 'shot' ? `${entry.playerName} が診断射撃` : entry.type === 'respawn' ? `${entry.playerName} が自動復活` : `${entry.shooterName} → ${entry.playerName} の${receiverNames[entry.receiverId]}で撃破`}`)) : [textElement('li', 'empty', '診断ログはまだありません')]));
   $('demoPanel').hidden = !state.simulation;
   $('motorDemoPanel').hidden = !state.demo || state.simulation;
   const motorTarget = state.players.find((player) => player.id === $('motorDemoTarget').value);

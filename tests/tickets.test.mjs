@@ -889,7 +889,7 @@ test('Supabase Secret KeyはJWT用Authorizationヘッダーへ設定しない', 
   }
 });
 
-test('整理券メンバー反映とゲーム開始を別操作として扱う', async () => {
+test('入場受付後に整理券メンバーを自動反映し、手動更新もできる', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-member-sync-test-'));
   let currentRoundReads = 0;
   const ticketServer = (await import('node:http')).createServer((request, response) => {
@@ -921,10 +921,11 @@ test('整理券メンバー反映とゲーム開始を別操作として扱う',
     const headers = {'Content-Type': 'application/json', Cookie: loginResponse.headers.get('set-cookie').split(';')[0], 'X-CSRF-Token': login.csrf};
     const operate = (action, commandId, extra = {}) => fetch(`${base}/api/action`, {method: 'POST', headers, body: JSON.stringify({action, commandId, ...extra})});
 
-    const prematureStart = await operate('start', 'start-before-member-sync');
-    assert.equal(prematureStart.status, 400);
-    assert.match((await prematureStart.json()).error, /整理券メンバーを反映/);
-    assert.equal(currentRoundReads, 0);
+    for (let attempt = 0; attempt < 35 && !app.game.s.players.some((player) => player.name === '春'); attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.deepEqual(app.game.s.players.map((player) => player.name), ['春', '夏', '秋', '冬']);
+    assert.equal((await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersLoaded, true);
+    assert.ok(currentRoundReads >= 1);
 
     const syncResponse = await operate('sync_ticket_members', 'sync-members-once');
     const syncResult = await syncResponse.json();
@@ -932,20 +933,20 @@ test('整理券メンバー反映とゲーム開始を別操作として扱う',
     assert.match(syncResult.notice, /春 \/ 夏 \/ 秋 \/ 冬/);
     assert.deepEqual(app.game.s.players.map((player) => player.name), ['春', '夏', '秋', '冬']);
     assert.equal(app.game.s.phase, 'LOBBY');
-    assert.equal(currentRoundReads, 1);
     assert.equal((await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersLoaded, true);
 
     assert.equal((await operate('new', 'create-next-game', {rules: app.game.s.rules})).status, 200);
-    assert.equal((await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersLoaded, false);
+    for (let attempt = 0; attempt < 35 && !(await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersLoaded; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal((await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersLoaded, true);
     const newGameStart = await operate('start', 'start-new-game-before-sync');
-    assert.match((await newGameStart.json()).error, /整理券メンバーを反映/);
+    assert.match((await newGameStart.json()).error, /投影画面/);
     assert.equal((await operate('sync_ticket_members', 'sync-next-game')).status, 200);
-    assert.equal(currentRoundReads, 2);
+    assert.ok(currentRoundReads >= 2);
 
     const startResponse = await operate('start', 'start-without-display');
     assert.equal(startResponse.status, 400);
     assert.match((await startResponse.json()).error, /投影画面/);
-    assert.equal(currentRoundReads, 2);
   } finally {
     await app.close();
     await new Promise((resolve) => ticketServer.close(resolve));

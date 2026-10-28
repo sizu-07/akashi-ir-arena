@@ -18,7 +18,7 @@ for(let player=1;player<=4;player++){
   if(!readFileSync(path.join(root,dest,'firmware.bin')).includes(Buffer.from(`gun-00${player}`)))throw Error(`Missing player${player} identity`);
   const hashes=Object.fromEntries(files.map(file=>[file,sha(`${dest}/${file}`)]));
   writeFileSync(path.join(root,dest,'sha256.json'),JSON.stringify(hashes,null,2)+'\n');
-  writeFileSync(path.join(root,dest,'manifest.json'),JSON.stringify({firmwareVersion:'0.8.1-4e42',player,deviceId:`gun-00${player}`,
+  writeFileSync(path.join(root,dest,'manifest.json'),JSON.stringify({firmwareVersion:'0.8.2-4e42',player,deviceId:`gun-00${player}`,
     shooterId:player,environment,hardwareProfile:'xiao-s3-plus-3rx-6led-motor-trigger',
     physicalBoard:'assembled-4e-led42',chip:'esp32s3',flashMB:16,platform:'espressif32@6.9.0',arduino:'2.0.17',
     pins:{trigger:2,irTx:6,irRx:[44,7,8],motor:9,led:42,battery:1},ledPixels:8,batteryReplacementVoltage:7.0,

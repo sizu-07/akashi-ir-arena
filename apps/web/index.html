@@ -118,10 +118,10 @@
               </select>
             </label>
             <p class="hint">確認対象を切り替えると戦績・残り時間を戻します。実機のWi-Fi設定・端末キーは本番と共通です。デモから整理券の試合進行は更新しません。</p>
-            <label class="hint"><input id="testMode" type="checkbox" /> 接続済み端末だけで動作確認（1台から開始・電池低下でも動作できます。通常試合の判定は行いません）</label>
+            <label class="hint"><input id="testMode" type="checkbox" /> 接続済み端末だけで動作確認（実機同士で射撃・撃破・振動・自動復活を試せます。整理券の進行には反映しません）</label>
           </div>
           <div class="match-secondary">
-            <p id="roundFlow">各ゲームは90秒。本番では途中経過を15秒表示して次のゲームへ自動で進みます。デモでは手動で進められます。</p>
+            <p id="roundFlow">各ゲームの実時間は85秒、投影時計は90秒表示。本番では途中経過を15秒表示して次のゲームへ自動で進みます。デモでは手動で進められます。</p>
             <div class="actions">
               <button data-action="pause" class="warning">一時停止</button
               ><button id="demoEndRound" data-action="demo_end_round" hidden>このゲームを終了して途中経過へ</button
@@ -163,7 +163,8 @@
             </div>
             <p id="diagnosticGuidance">診断対応の端末が接続されると使用できます。</p>
             <button id="diagnosticToggle" type="button">一時診断を開始</button>
-            <p class="diagnostic-note">診断中の射撃・受信は戦績に加算されません。試合中に開始するとゲームの残り時間を保持して一時停止します。中間発表の自動進行も保留します。</p>
+            <p class="diagnostic-note">接続した銃同士で撃ち合い、撃破時の振動と7秒後の復活まで確認できます。診断中の戦績は試合に加算されません。試合中は残り時間を保持し、中間発表の自動進行も保留します。</p>
+            <div id="diagnosticCombat" class="diagnostic-combat" aria-label="診断用のキル数と生存状態"></div>
             <div class="diagnostic-log-heading"><strong>診断ログ</strong><span>新しい順・最大40件</span></div>
             <ol id="diagnosticLog" class="diagnostic-log"></ol>
           </div>
@@ -176,7 +177,7 @@
         <h2 class="maintenance-title">補正・設定</h2>
         <section class="panel">
           <h2>固定ルール</h2>
-          <p>1対1対1対1・90秒×4ゲーム。1発で撃破、7秒後に自動復活。4ゲームの合計キル数で優勝者を決めます。</p>
+          <p>1対1対1対1・実時間85秒（画面表示90秒）×4ゲーム。1発で撃破、7秒後に自動復活。4ゲームの合計キル数で優勝者を決めます。</p>
         </section>
 
         <section id="demoPanel" class="panel" hidden>

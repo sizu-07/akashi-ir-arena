@@ -32,10 +32,31 @@ test('一時診断の射撃と受信は試合を止め、戦績を一切変更�
   assert.equal(diagnostics.receive(game,'gun-002',hit).ok,true);
   assert.equal(diagnostics.receive(game,'gun-002',hit).reason,'duplicate');
   assert.deepEqual(game.s.players.map(p=>[p.kills,p.deaths,p.shots,p.hits,p.hp]),Array.from({length:4},()=>[0,0,0,0,1]));
-  assert.equal(diagnostics.view().events.length,2);
+  assert.equal(diagnostics.state('gun-002').hp,0);
+  assert.equal(diagnostics.state('gun-001').kills,1);
+  now+=6999;diagnostics.tick();assert.equal(diagnostics.state('gun-002').hp,0);
+  now+=1;diagnostics.tick();assert.equal(diagnostics.state('gun-002').hp,1);
+  assert.equal(diagnostics.view().events.length,3);
   diagnostics.end(game);
   assert.equal(game.s.phase,'PAUSED');
   assert.equal(diagnostics.receive(game,'gun-001',envelope('gun-001','diagnostic_shot',{shooter_id:1,shot_seq:9},'shot-2')).reason,'diagnostic_off');
+});
+
+test('診断中は受信報告が射撃報告より先でも命中を照合する',()=>{
+  let now=200000;
+  const game=new Game(devices,{now:()=>now});
+  for(const player of game.s.players){player.connected=true;player.diagnosticCapable=true;player.bootId=`boot-${player.id}`;}
+  const diagnostics=new Diagnostics({now:()=>now});diagnostics.begin(game);
+  const envelope=(id,type,payload,messageId)=>({device_id:id,boot_id:`boot-${id}`,game_id:game.s.id,game_generation:game.s.generation,message_id:messageId,seq:1,server_time_ms:now,type,payload});
+  const hit=envelope('gun-002','diagnostic_hit',{frame:diagnosticFrame(1,5),shooter_id:1,shot_seq:5,receiver_id:'rx2'},'hit-first');
+  assert.equal(diagnostics.receive(game,'gun-002',hit).pending,true);
+  assert.equal(diagnostics.state('gun-002').hp,1);
+  now+=100;
+  const shot=envelope('gun-001','diagnostic_shot',{shooter_id:1,shot_seq:5},'shot-later');
+  assert.equal(diagnostics.receive(game,'gun-001',shot).changed,true);
+  assert.equal(diagnostics.state('gun-002').hp,0);
+  assert.equal(diagnostics.state('gun-001').kills,1);
+  assert.deepEqual(game.s.players.map(player=>player.kills),[0,0,0,0]);
 });
 
 test('本番APIで中間発表の自動進行を保留し、診断終了後に復元する',async()=>{

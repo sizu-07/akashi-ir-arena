@@ -46,11 +46,13 @@ volatile uint32_t netDropped=0,mqttError=0;
 String id,key,ssid,password,host,boot,gameId,phase="OFFLINE",lastCommand;
 uint32_t sequence=0,generation=0,lastDesired=0,lastTelemetry=0,lastWifi=0,lastShotLocal=0,lastRender=0,lastDebounce=0;
 uint32_t cooldownUntil=0,countdownPulseMask=0;
-uint8_t shotSeq=0,shooter=0;int hp=0,fireMs=1000;int64_t respawnAt=0;
+uint8_t shotSeq=0,shooter=0;int hp=0,diagnosticHp=1,fireMs=700;int64_t respawnAt=0,diagnosticRespawnAt=0;
 int64_t clockOffset=0,startAt=0;int syncRtt=-1;bool synced=false,armed=false,bench=false,lowBattery=false,batteryLatched=false,startCommitted=false;
 bool testMode=false,batteryOverrideRequested=false,diagnosticMode=false;
 bool batteryOverrideActive(){return batteryOverrideAllowed(testMode,batteryOverrideRequested,phase=="COUNTDOWN"||phase=="ACTIVE",millis()-lastDesired<3000);}
-bool batteryBlocked(){return batteryGateBlocked(lowBattery,batteryLatched,batteryOverrideActive());}
+// Keep reporting voltage to the operator; an uncertain ADC reading must not
+// disable shooting or override the player's color.
+bool batteryBlocked(){return false;}
 volatile bool mqttOnline=false,needHello=false;bool triggerRaw=false,triggerDown=false,triggerConsumed=false;float battery=0,adcScale=2.0f;
 bool diagnosticActive(){return diagnosticMode&&mqttOnline&&synced&&profileMatched&&hardwareReady&&!bench&&!batteryBlocked()&&millis()-lastDesired<3000;}
 uint32_t lowSince=0,flashUntil=0,reviveFlashUntil=0,lastMotorStart=0,cueNextAt=0,shotLedUntil=0,lastDefeatPulseAt=0;uint16_t cuePulseMs=0,cueGapMs=0;uint8_t cueRemaining=0,cuePriority=0,cueDuty=255;String serialLine;
@@ -167,7 +169,8 @@ void receiveIr(int receiver){size_t bytes=0;auto ring=rxRings[receiver];auto ite
  if(diagnosticActive()&&((frame>>8)&3)==1&&((frame>>22)&255)!=shooter){
    StaticJsonDocument<256> payload;char hex[11];snprintf(hex,sizeof(hex),"0x%08lX",(unsigned long)frame);
    payload["frame"]=hex;payload["shooter_id"]=(frame>>22)&255;payload["shot_seq"]=(frame>>14)&255;payload["receiver_id"]=RX_IDS[receiver];
-   event("diagnostic_hit",payload);flashUntil=millis()+600;cue(HIT_PULSE_MS,1,0,2,HIT_FEEDBACK_DUTY);return;
+   if(diagnosticHp>0)event("diagnostic_hit",payload);
+   return;
  }
  if(phase!="ACTIVE"||!armed||!synced||!mqttOnline||!profileMatched||bench||batteryBlocked()||millis()-lastDesired>=3000)return;
  uint8_t sender=(frame>>22)&255;if(sender==shooter||((frame>>8)&3)!=0)return;StaticJsonDocument<256> payload;payload["shooter_id"]=sender;payload["shot_seq"]=(frame>>14)&255;payload["weapon_id"]=1;payload["flags"]=0;payload["receiver_id"]=RX_IDS[receiver];event("hit_candidate",payload);
@@ -181,15 +184,19 @@ void leds(const uint8_t colors[LED_COUNT][3]){
  rmt_write_items(LED_CH,items,LED_COUNT*24,true);delayMicroseconds(300);
 }
 void renderLeds(uint32_t now,bool safe){uint8_t colors[LED_COUNT][3]{};constexpr int hpLeds=LED_COUNT-1;auto fill=[&](int count,uint8_t r,uint8_t g,uint8_t b){for(int i=1;i<LED_COUNT&&i<=count;i++){colors[i][0]=r;colors[i][1]=g;colors[i][2]=b;}};
- if(!safe){if(now/500%2)fill(hpLeds,20,10,0);else fill(hpLeds,0,0,20);}
+ const uint8_t palette[4][3]={{0,20,30},{30,8,0},{12,26,0},{24,0,24}};
+ const auto &team=palette[shooter>=1&&shooter<=4?shooter-1:0];
+ const bool networkLost=WiFi.status()!=WL_CONNECTED||!mqttOnline||now-lastDesired>=3000;
+ if(networkLost){const uint32_t beat=now%2400;if(beat<170||(beat>=340&&beat<510))fill(hpLeds,34,34,0);else fill(hpLeds,team[0],team[1],team[2]);}
+ else if(!safe){fill(hpLeds,team[0],team[1],team[2]);}
  else if(phase=="COUNTDOWN"){
    int64_t remaining=startAt-serverNow();int bars=remaining>5550?5:remaining>3930?5:remaining>2930?4:remaining>1910?3:remaining>870?2:1;
    if(remaining<=5550||now/500%2)fill(1+(bars-1)*(hpLeds-1)/4,15,15,15);
  }
  else if(diagnosticActive()){
-   if(int32_t(now-flashUntil)<0)fill(hpLeds,36,0,0);
+   if(diagnosticHp<=0){if(now/250%2){const int left=diagnosticRespawnAt>serverNow()?int((diagnosticRespawnAt-serverNow()+999)/1000):1;fill(constrain(left,1,hpLeds),36,0,0);}}
    else if(int32_t(now-shotLedUntil)<0)fill(hpLeds,30,30,30);
-   else fill(hpLeds,8,8,28);
+   else fill(hpLeds,team[0],team[1],team[2]);
  }
  else if(phase=="PAUSED")fill(now/500%2?hpLeds:1,0,0,20);
  else if(hp<=0){
@@ -204,14 +211,13 @@ void renderLeds(uint32_t now,bool safe){uint8_t colors[LED_COUNT][3]{};constexpr
  else if(phase=="ACTIVE"&&hp>0&&int32_t(now-shotLedUntil)<0){for(auto &color:colors){color[0]=51;color[1]=51;color[2]=51;}}
 #endif
  else {
-   const uint8_t palette[4][3]={{0,20,30},{30,8,0},{12,26,0},{24,0,24}};
-   const auto &color=palette[shooter>=1&&shooter<=4?shooter-1:0];
-   fill(hpLeds,color[0],color[1],color[2]);
+   fill(hpLeds,team[0],team[1],team[2]);
  }
- if(safe&&phase=="ACTIVE"&&hp>0&&!triggerDown&&int32_t(now-cooldownUntil)>=0&&int32_t(now-shotLedUntil)>=0)colors[0][0]=28;
+ if(safe&&((phase=="ACTIVE"&&hp>0)||diagnosticActive()&&diagnosticHp>0)&&!triggerDown&&int32_t(now-cooldownUntil)>=0&&int32_t(now-shotLedUntil)>=0){colors[0][0]=28;colors[0][1]=28;colors[0][2]=28;}
  const auto &c=colors[1];
  if(c[0]==0&&c[1]==0&&c[2]==0)ledColor="OFF";
  else if(c[0]==c[1]&&c[1]==c[2])ledColor="WHITE";
+ else if(c[0]==c[1]&&c[2]==0)ledColor="YELLOW";
  else if(c[0]>c[1]*2&&c[0]>c[2]*2)ledColor="RED";
  else if(c[2]>c[0]*2&&c[2]>c[1]*2)ledColor="BLUE";
  else if(c[1]>c[0]*2&&c[1]>c[2]*2)ledColor="GREEN";
@@ -225,9 +231,9 @@ void netMessages(){static NetMessage m;while(xQueueReceive(incoming,&m,0)==pdTRU
   if(String(m.topic).endsWith("/command")){String type=doc["type"]|"";if(type=="time_sync"){uint32_t echo=doc["echo"]|0;int rtt=millis()-echo;if(rtt>=0&&rtt<=400){clockOffset=doc["server_time_ms"].as<int64_t>()+rtt/2-esp_timer_get_time()/1000;syncRtt=rtt;synced=true;}}continue;}
   String newGame=doc["game_id"]|"";uint32_t newGen=doc["game_generation"]|0;
   if(newGame==gameId&&newGen<generation)continue;
-  const bool sameRound=newGame==gameId&&newGen==generation;const int previousHp=hp;
+  const bool sameRound=newGame==gameId&&newGen==generation;const int previousHp=hp,previousDiagnosticHp=diagnosticHp;const bool previousDiagnosticMode=diagnosticMode;
   gameId=newGame;generation=newGen;lastDesired=millis();phase=doc["phase"]|"OFFLINE";hp=doc["hp"]|0;respawnAt=doc["respawn_at"]|int64_t(0);shooter=doc["shooter_id"]|0;
-  testMode=doc["test_mode"]|false;diagnosticMode=doc["diagnostic_mode"]|false;batteryOverrideRequested=doc["battery_override"]|false;
+  testMode=doc["test_mode"]|false;diagnosticMode=doc["diagnostic_mode"]|false;diagnosticHp=doc["diagnostic_hp"]|1;diagnosticRespawnAt=doc["diagnostic_respawn_at"]|int64_t(0);batteryOverrideRequested=doc["battery_override"]|false;
   profileMatched=String(doc["hardware_profile"]|"")==HARDWARE_PROFILE&&playerShooterMatches(shooter);
   bool allowFeedback=phase=="ACTIVE"&&mqttOnline&&synced&&profileMatched&&hardwareReady&&!bench&&!batteryBlocked();
   // PC-issued IDs prevent retained/repeated messages and rejected hits from vibrating.
@@ -235,8 +241,10 @@ void netMessages(){static NetMessage m;while(xQueueReceive(incoming,&m,0)==pdTRU
   if(allowFeedback&&sameRound&&previousHp>0&&hp==0)cue(180,2,370,3,HIT_FEEDBACK_DUTY);
   else if(allowFeedback&&sameRound&&previousHp==0&&hp>0){reviveFlashUntil=millis()+1200;cue(80,3,330,3,REVIVE_FEEDBACK_DUTY);}
   else if(confirmedHit){flashUntil=millis()+250;cue(HIT_PULSE_MS,1,0,2,HIT_FEEDBACK_DUTY);}
-  if(!allowFeedback&&phase!="COUNTDOWN")cancelCue();
-  armed=(doc["armed"]|false)&&synced&&profileMatched&&!bench&&!diagnosticMode;fireMs=max(1000,doc["rules"]["fireMs"]|1000);startAt=doc["start_at"]|int64_t(0);startCommitted=doc["start_committed"]|false;
+  if(diagnosticActive()&&previousDiagnosticMode&&sameRound&&previousDiagnosticHp>0&&diagnosticHp==0)cue(180,2,370,3,HIT_FEEDBACK_DUTY);
+  else if(diagnosticActive()&&previousDiagnosticMode&&sameRound&&previousDiagnosticHp==0&&diagnosticHp>0)cue(80,3,330,3,REVIVE_FEEDBACK_DUTY);
+  if(!allowFeedback&&!diagnosticActive()&&phase!="COUNTDOWN")cancelCue();
+  armed=(doc["armed"]|false)&&synced&&profileMatched&&!bench&&!diagnosticMode;fireMs=max(700,doc["rules"]["fireMs"]|700);startAt=doc["start_at"]|int64_t(0);startCommitted=doc["start_committed"]|false;
   String command=doc["command_id"]|"";if(phase=="COUNTDOWN"&&command!=lastCommand)countdownPulseMask=0;
   if(phase=="COUNTDOWN"&&synced&&profileMatched&&hardwareReady&&!bench&&!batteryBlocked()&&command.length()&&command!=lastCommand){StaticJsonDocument<256> p;p["command_id"]=command;p["result"]="ok";event("command_ack",p);lastCommand=command;}
  }}
@@ -352,7 +360,7 @@ d["lowBattery"]=lowBattery||batteryLatched;d["rssi"]=WiFi.RSSI();d["hp"]=hp;
  if(triggerDown&&!triggerConsumed){
    triggerConsumed=true;
    triggerPresses++;
-   if(diagnosticActive()&&int32_t(now-cooldownUntil)>=0){
+   if(diagnosticActive()&&diagnosticHp>0&&int32_t(now-cooldownUntil)>=0){
      cooldownUntil=now+fireMs;const uint8_t seq=shotSeq++;
      StaticJsonDocument<128>p;p["shot_seq"]=seq;p["shooter_id"]=shooter;event("diagnostic_shot",p);
      sendIr(irFrame(shooter,seq,1));cue(SHOT_PULSE_MS,1,0,1,SHOT_FEEDBACK_DUTY);
@@ -368,7 +376,7 @@ d["lowBattery"]=lowBattery||batteryLatched;d["rssi"]=WiFi.RSSI();d["hp"]=hp;
 #endif
    }
  }
- if(safe&&phase=="ACTIVE"&&hp==0&&now-lastDefeatPulseAt>=700){
+ if(safe&&((phase=="ACTIVE"&&hp==0&&!diagnosticActive())||(diagnosticActive()&&diagnosticHp==0))&&now-lastDefeatPulseAt>=700){
    lastDefeatPulseAt=now;cue(180,1,0,1,HIT_FEEDBACK_DUTY);
  }
 #endif
