@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "start",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "demo"
+      ],
+      "port": 8080
+    },
+    {
+      "name": "attach",
+      "url": "http://localhost:8080",
+      "port": 8080
+    }
+  ]
+}

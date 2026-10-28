@@ -1,0 +1,13 @@
+{
+  "name": "akashi-intro-video",
+  "private": true,
+  "type": "module",
+  "description": "ルール説明動画（ナレーション付き）の生成ツール",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.48.2",
+    "webm-muxer": "5.0.3"
+  }
+}

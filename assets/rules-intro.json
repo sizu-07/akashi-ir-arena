@@ -1,0 +1,166 @@
+{
+  "output": "assets/rules-intro.webm",
+  "bytes": 53555826,
+  "sha256": "ae2f71246e93efeb788b9347bedc1275fb27537065385aca5c09fa70b707dca5",
+  "voice": {
+    "engine": "haruka",
+    "speaker": null,
+    "credit": ""
+  },
+  "durationSeconds": 132.199375,
+  "size": [
+    1920,
+    1080
+  ],
+  "fps": 30,
+  "video": "VP9 WebM",
+  "audio": "Opus 48kHz stereo",
+  "frames": 3966,
+  "encodeSeconds": 31.534699999988078,
+  "scenes": [
+    {
+      "start": 0,
+      "duration": 1.7,
+      "kind": "section",
+      "name": "rules"
+    },
+    {
+      "start": 1.7,
+      "duration": 5.65,
+      "kind": "scene",
+      "name": "title"
+    },
+    {
+      "start": 7.35,
+      "duration": 5.54,
+      "kind": "scene",
+      "name": "versus"
+    },
+    {
+      "start": 12.89,
+      "duration": 8.12,
+      "kind": "scene",
+      "name": "rounds"
+    },
+    {
+      "start": 21.02,
+      "duration": 6.08,
+      "kind": "scene",
+      "name": "oneShot"
+    },
+    {
+      "start": 27.1,
+      "duration": 4.02,
+      "kind": "scene",
+      "name": "hype"
+    },
+    {
+      "start": 31.11,
+      "duration": 1.7,
+      "kind": "section",
+      "name": "flow"
+    },
+    {
+      "start": 32.81,
+      "duration": 7.37,
+      "kind": "scene",
+      "name": "field"
+    },
+    {
+      "start": 40.19,
+      "duration": 7.86,
+      "kind": "scene",
+      "name": "moves"
+    },
+    {
+      "start": 48.05,
+      "duration": 4,
+      "kind": "scene",
+      "name": "swing"
+    },
+    {
+      "start": 52.05,
+      "duration": 7.2,
+      "kind": "scene",
+      "name": "receiver"
+    },
+    {
+      "start": 59.25,
+      "duration": 4.68,
+      "kind": "scene",
+      "name": "cover"
+    },
+    {
+      "start": 63.92,
+      "duration": 7.66,
+      "kind": "scene",
+      "name": "ready"
+    },
+    {
+      "start": 71.58,
+      "duration": 5.35,
+      "kind": "scene",
+      "name": "hit"
+    },
+    {
+      "start": 76.93,
+      "duration": 8.5,
+      "kind": "scene",
+      "name": "respawn"
+    },
+    {
+      "start": 85.43,
+      "duration": 5,
+      "kind": "scene",
+      "name": "report"
+    },
+    {
+      "start": 90.43,
+      "duration": 1.7,
+      "kind": "section",
+      "name": "caution"
+    },
+    {
+      "start": 92.13,
+      "duration": 8.52,
+      "kind": "scene",
+      "name": "noRun"
+    },
+    {
+      "start": 100.66,
+      "duration": 4.89,
+      "kind": "scene",
+      "name": "noSwing"
+    },
+    {
+      "start": 105.55,
+      "duration": 4.01,
+      "kind": "scene",
+      "name": "goBack"
+    },
+    {
+      "start": 109.56,
+      "duration": 7.05,
+      "kind": "scene",
+      "name": "trouble"
+    },
+    {
+      "start": 116.61,
+      "duration": 7.79,
+      "kind": "scene",
+      "name": "stop"
+    },
+    {
+      "start": 124.4,
+      "duration": 1.7,
+      "kind": "section",
+      "name": "try"
+    },
+    {
+      "start": 126.1,
+      "duration": 5.5,
+      "kind": "scene",
+      "name": "tryIt"
+    }
+  ]
+}

@@ -3,7 +3,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {readFileSync,existsSync,mkdirSync,writeFileSync} from 'node:fs';
+import {readFileSync,existsSync,mkdirSync,writeFileSync,statSync,createReadStream} from 'node:fs';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import aedesFactory from 'aedes';
@@ -16,6 +16,8 @@ import {storage} from './store.mjs';
 import {createTicketBridge} from './ticket-bridge.mjs';
 import {availableEffects,effectNames} from './sounds.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
+// ナレーション付きのルール説明動画（tools/intro-video で生成）があれば優先し、なければ従来のスライド動画を使う。
+const rulesVideo=()=>existsSync(path.join(root,'assets/rules-intro.webm'))?'assets/rules-intro.webm':'assets/rules.webm';
 const openBrowser=(url)=>{
  try{
   const command=process.platform==='win32'
@@ -183,8 +185,8 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
           }
           case 'diagnostic_off':diagnostics.end(game);operation={notice:'一時診断を終了しました。停止中の試合は確認後に手動で再開してください。'};break;
           case 'demo_end_round':if(!demo)throw Error('デモ専用操作');if(diagnostics.enabled)throw Error('一時診断を終了してからゲームを進めてください');game.endRound('demo_skip');break;
-          case 'media':if(b.mode==='video'&&!existsSync(path.join(root,'assets/rules.webm')))throw Error('assets/rules.webmがありません');game.setMedia(b.mode);break;
-          case 'video':if(!existsSync(path.join(root,'assets/rules.webm')))throw Error('assets/rules.webmがありません');game.controlVideo(b.operation);break;
+          case 'media':if(b.mode==='video'&&!existsSync(path.join(root,rulesVideo())))throw Error('ルール説明動画（assets/rules.webm）がありません');game.setMedia(b.mode);break;
+          case 'video':if(!existsSync(path.join(root,rulesVideo())))throw Error('ルール説明動画（assets/rules.webm）がありません');game.controlVideo(b.operation);break;
           case 'demo_hit':if(!simulation)throw Error('仮想端末専用操作');simulators?.hit(b.shooter,b.victim,b.receiver??'rx1');break;
           case 'motor_demo_hit':
           case 'motor_demo_defeat':
@@ -222,7 +224,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
       res.writeHead(200,{'Content-Type':types[`.${effectMatch[2]}`],'Content-Length':file.length,'Cache-Control':'no-store'});
       return res.end(file);
     }
-    const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.webm':'assets/rules.webm','/countdown.wav':'assets/audio/countdown/countdown.wav','/bgm.mp3':'assets/audio/bgm/bgm.mp3'};
+    const files={'/':'apps/web/index.html','/display':'apps/web/display.html','/style.css':'apps/web/style.css','/app.js':'apps/web/app.js','/display.js':'apps/web/display.js','/rules-content.js':'apps/web/rules-content.js','/rules.webm':rulesVideo(),'/countdown.wav':'assets/audio/countdown/countdown.wav','/bgm.mp3':'assets/audio/bgm/bgm.mp3'};
     files['/battery-status.js']='apps/web/battery-status.js';
     files['/operation-status.js']='apps/web/operation-status.js';
     files['/operator-shared.css']='apps/ticket-web/operator-shared.css';
@@ -230,7 +232,17 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
     files['/display-icon.svg']='apps/web/display-icon.svg';
     for(const font of ['Anton-Regular.ttf','BarlowCondensed-Bold.ttf','NotoSansJP.ttf'])files[`/fonts/${font}`]=`apps/web/fonts/${font}`;
     if(url.pathname==='/display'&&!local(req))return reply(res,403,{error:'投影画面はメインPCのlocalhostで開いてください'});
-    const rel=files[url.pathname];if(!rel||!existsSync(path.join(root,rel)))return reply(res,404,{});const file=readFileSync(path.join(root,rel));
+    const rel=files[url.pathname];if(!rel||!existsSync(path.join(root,rel)))return reply(res,404,{});
+    if(path.extname(rel)==='.webm'){
+     // 大きな動画は途中位置からの再生・再開ができるよう Range 要求に応える。
+     const size=statSync(path.join(root,rel)).size,range=/^bytes=(\d*)-(\d*)$/.exec(req.headers.range??'');
+     let start=0,end=size-1;
+     if(range){start=range[1]?Number(range[1]):Math.max(0,size-Number(range[2]));end=range[1]&&range[2]?Math.min(Number(range[2]),size-1):size-1;
+      if(start>end||start>=size){res.writeHead(416,{'Content-Range':`bytes */${size}`});return res.end();}}
+     res.writeHead(range?206:200,{'Content-Type':types['.webm'],'Content-Length':end-start+1,'Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${start}-${end}/${size}`}:{})});
+     return createReadStream(path.join(root,rel),{start,end}).pipe(res);
+    }
+    const file=readFileSync(path.join(root,rel));
     res.writeHead(200,{'Content-Type':types[path.extname(rel)]??'application/octet-stream','Content-Length':file.length});res.end(file);
    }catch(e){reply(res,400,{error:e.message});}
  });

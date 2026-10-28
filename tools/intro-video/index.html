@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ルール説明動画</title>
+<style>
+  body { margin: 0; background: #141414; color: #f4f1e9; font: 14px/1.4 'Yu Gothic', sans-serif; }
+  canvas { display: block; width: 100vw; max-width: calc(100vh * 16 / 9 - 60px); margin: 0 auto; }
+  .bar { display: flex; gap: 12px; align-items: center; padding: 10px 16px; }
+  .bar input { flex: 1; }
+  body.render .bar { display: none; }
+  body.render canvas { width: 1920px; max-width: none; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div class="bar"><button id="play">再生</button><input id="seek" type="range" min="0" max="1" step="0.01" value="0"><span id="time">0.0</span></div>
+<script type="module">
+import {W, H, FPS, buildTimeline, drawFrame, loadSounds, scheduleAudio} from './scenes.js';
+import {Muxer, ArrayBufferTarget} from './node_modules/webm-muxer/build/webm-muxer.mjs';
+
+const render = new URLSearchParams(location.search).get('mode') === 'render';
+if (render) document.body.classList.add('render');
+const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+for (const [family, file, weight] of [['Anton', 'Anton-Regular.ttf', '400'], ['Barlow', 'BarlowCondensed-Bold.ttf', '700'], ['Noto', 'NotoSansJP.ttf', '100 900']]) {
+  const face = new FontFace(family, `url(/apps/web/fonts/${file})`, {weight});
+  document.fonts.add(await face.load());
+}
+const manifest = await (await fetch('./build/voice/manifest.json', {cache: 'no-store'})).json();
+const tl = buildTimeline(manifest);
+window.timeline = tl;
+window.show = t => drawFrame(ctx, tl, t);
+drawFrame(ctx, tl, 0);
+
+window.renderVideo = async () => {
+  const frames = Math.ceil(tl.duration * FPS), sampleRate = 48000;
+  const muxer = new Muxer({target: new ArrayBufferTarget(), video: {codec: 'V_VP9', width: W, height: H, frameRate: FPS}, audio: {codec: 'A_OPUS', numberOfChannels: 2, sampleRate}, firstTimestampBehavior: 'offset'});
+  let failure = null;
+  const offline = new OfflineAudioContext(2, Math.ceil(tl.duration * sampleRate), sampleRate);
+  scheduleAudio(offline, tl, await loadSounds(offline, tl), 0, 0);
+  const mix = await offline.startRendering();
+  const audioEncoder = new AudioEncoder({output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: e => { failure = e; }});
+  audioEncoder.configure({codec: 'opus', sampleRate, numberOfChannels: 2, bitrate: 128000});
+  const left = mix.getChannelData(0), right = mix.getChannelData(1), block = 4800;
+  for (let i = 0; i < mix.length; i += block) {
+    const n = Math.min(block, mix.length - i), data = new Float32Array(n * 2);
+    data.set(left.subarray(i, i + n), 0); data.set(right.subarray(i, i + n), n);
+    const audio = new AudioData({format: 'f32-planar', sampleRate, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(i / sampleRate * 1e6), data});
+    audioEncoder.encode(audio); audio.close();
+  }
+  await audioEncoder.flush();
+  const videoEncoder = new VideoEncoder({output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { failure = e; }});
+  videoEncoder.configure({codec: 'vp09.00.10.08', width: W, height: H, bitrate: 3_500_000, framerate: FPS});
+  const started = performance.now();
+  for (let i = 0; i < frames; i++) {
+    if (failure) throw failure;
+    drawFrame(ctx, tl, i / FPS);
+    const frame = new VideoFrame(canvas, {timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS)});
+    videoEncoder.encode(frame, {keyFrame: i % (FPS * 2) === 0});
+    frame.close();
+    while (videoEncoder.encodeQueueSize > 4) await new Promise(resolve => videoEncoder.addEventListener('dequeue', resolve, {once: true}));
+    if (i % (FPS * 10) === 0) console.log(`frame ${i}/${frames}`);
+  }
+  await videoEncoder.flush();
+  if (failure) throw failure;
+  muxer.finalize();
+  await fetch('/__output', {method: 'POST', body: muxer.target.buffer});
+  return {durationSeconds: tl.duration, size: [W, H], fps: FPS, video: 'VP9 WebM', audio: 'Opus 48kHz stereo', frames, encodeSeconds: (performance.now() - started) / 1000,
+    scenes: tl.items.map(item => ({start: Number(item.start.toFixed(2)), duration: Number(item.duration.toFixed(2)), kind: item.kind, name: item.kind === 'scene' ? item.scene.visual : item.section.id}))};
+};
+
+if (!render) {
+  const seek = document.getElementById('seek'), time = document.getElementById('time'), play = document.getElementById('play');
+  seek.max = tl.duration;
+  let ac = null, sounds = null, stopAudio = null, playing = false, origin = 0, from = 0;
+  const now = () => playing ? from + (ac.currentTime - origin) : Number(seek.value);
+  const stop = () => { playing = false; stopAudio?.(); stopAudio = null; play.textContent = '再生'; };
+  play.onclick = async () => {
+    if (playing) { seek.value = now(); stop(); return; }
+    ac ??= new AudioContext(); sounds ??= await loadSounds(ac, tl);
+    from = Number(seek.value) >= tl.duration - 0.1 ? 0 : Number(seek.value); origin = ac.currentTime + 0.05;
+    stopAudio = scheduleAudio(ac, tl, sounds, from, origin); playing = true; play.textContent = '停止';
+  };
+  seek.oninput = () => { if (playing) stop(); };
+  const loop = () => {
+    const t = Math.min(now(), tl.duration);
+    if (playing) { seek.value = t; if (t >= tl.duration) stop(); }
+    drawFrame(ctx, tl, Math.max(0, t)); time.textContent = `${t.toFixed(1)} / ${tl.duration.toFixed(1)} 秒`;
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
+</script>
+</body>
+</html>
