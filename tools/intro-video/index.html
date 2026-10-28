@@ -56,7 +56,7 @@ window.renderVideo = async () => {
     if (failure) throw failure;
     drawFrame(ctx, tl, i / FPS);
     const frame = new VideoFrame(canvas, {timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS)});
-    videoEncoder.encode(frame, {keyFrame: i % (FPS * 2) === 0});
+    videoEncoder.encode(frame, {keyFrame: i % (FPS * 6) === 0});
     frame.close();
     while (videoEncoder.encodeQueueSize > 4) await new Promise(resolve => videoEncoder.addEventListener('dequeue', resolve, {once: true}));
     if (i % (FPS * 10) === 0) console.log(`frame ${i}/${frames}`);

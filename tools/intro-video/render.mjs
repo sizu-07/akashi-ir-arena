@@ -1,6 +1,6 @@
 // ルール説明動画を生成する。
-//   node render.mjs                         Windows標準のHarukaで音声を作って書き出す
-//   node render.mjs --voice voicevox --speaker 3   VOICEVOX（起動しておく）で作る
+//   node render.mjs                         VOICEVOX（起動しておく）の春日部つむぎで書き出す
+//   node render.mjs --voice haruka          Windows標準のHarukaで書き出す
 //   node render.mjs --preview               書き出さずにブラウザ確認用のURLを開いたままにする
 import http from 'node:http';
 import path from 'node:path';
@@ -18,8 +18,8 @@ const arg = (name, fallback) => {
   return index < 0 ? fallback : process.argv[index + 1];
 };
 const flag = name => process.argv.includes(`--${name}`);
-const engine = arg('voice', 'haruka');
-const speaker = Number(arg('speaker', 3));
+const engine = arg('voice', 'voicevox');
+const speaker = Number(arg('speaker', 8)); // 8 = 春日部つむぎ（ノーマル）
 const speed = Number(arg('speed', engine === 'haruka' ? 1.2 : 1.15));
 const output = path.resolve(root, arg('out', 'assets/rules-intro.webm'));
 const voiceDir = path.join(here, 'build/voice');
