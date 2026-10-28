@@ -31,7 +31,7 @@ try{
   assert.equal(await page.locator('.standby-intro h2').textContent(),'STAND HERE.');
   assert.equal(await page.locator('.player').count(),4);
   assert.equal(await page.locator('.player').first().isVisible(),false);
-  assert.equal(await page.locator('#round').textContent(),'1 / 4');
+  assert.equal(await page.locator('#round').textContent(),'1 / 3');
   await page.screenshot({path:`${output}/lobby-1920.png`});
   await page.setViewportSize({width:1280,height:720});
   await page.screenshot({path:`${output}/lobby-1280.png`});
@@ -82,13 +82,13 @@ try{
   await waitFor(()=>document.body.dataset.phase==='PAUSED');
   app.game.endRound('demo_skip');
   await waitFor(()=>document.getElementById('overlayTitle').textContent==='途中経過');
-  assert.equal(await page.locator('#round').textContent(),'2 / 4');
+  assert.equal(await page.locator('#round').textContent(),'2 / 3');
   assert.equal(await page.locator('#resultBoard .result-row').count(),4);
   assert.match(await page.locator('#resultBoard .result-row').first().innerText(),/プレイヤー1[\s\S]*2/);
   await page.waitForTimeout(700);
   assert.ok(Number((await page.locator('#resultBoard .result-stats strong').first().evaluate(node=>getComputedStyle(node).fontSize)).replace('px',''))>=32);
   await page.screenshot({path:`${output}/intermission-1920.png`});
-  app.game.s.round=4;
+  app.game.s.round=3;
   app.game.s.phase='PAUSED';
   app.game.finish();
   await waitFor(()=>document.body.dataset.phase==='FINISHED');

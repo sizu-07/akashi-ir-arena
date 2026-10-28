@@ -1,13 +1,13 @@
 {
   "output": "assets/rules-intro.webm",
-  "bytes": 72078348,
-  "sha256": "803e52b813d246d205a3456f02eb0b0ccb05040cadf3a96bafaa4e893351ee4e",
+  "bytes": 70800337,
+  "sha256": "6744cb6614489e7b39c813deed96b8a5aaa6a1e39719604f597632348a1d27a5",
   "voice": {
     "engine": "voicevox",
     "speaker": 8,
     "credit": "VOICEVOX:春日部つむぎ"
   },
-  "durationSeconds": 212.572,
+  "durationSeconds": 212.46533333333335,
   "size": [
     1920,
     1080
@@ -15,8 +15,8 @@
   "fps": 30,
   "video": "VP9 WebM",
   "audio": "Opus 48kHz stereo",
-  "frames": 6378,
-  "encodeSeconds": 67.55310000002385,
+  "frames": 6374,
+  "encodeSeconds": 55.241200000047684,
   "scenes": [
     {
       "start": 0,
@@ -38,150 +38,150 @@
     },
     {
       "start": 12.13,
-      "duration": 7.88,
+      "duration": 7.92,
       "kind": "scene",
       "name": "rounds"
     },
     {
-      "start": 20.01,
+      "start": 20.05,
       "duration": 5.66,
       "kind": "scene",
       "name": "oneShot"
     },
     {
-      "start": 25.66,
+      "start": 25.71,
       "duration": 3.64,
       "kind": "scene",
       "name": "hype"
     },
     {
-      "start": 29.3,
+      "start": 29.35,
       "duration": 1.7,
       "kind": "section",
       "name": "flow"
     },
     {
-      "start": 31,
+      "start": 31.05,
       "duration": 6.98,
       "kind": "scene",
       "name": "field"
     },
     {
-      "start": 37.98,
+      "start": 38.03,
       "duration": 7.52,
       "kind": "scene",
       "name": "moves"
     },
     {
-      "start": 45.51,
+      "start": 45.55,
       "duration": 4,
       "kind": "scene",
       "name": "swing"
     },
     {
-      "start": 49.51,
+      "start": 49.55,
       "duration": 6.93,
       "kind": "scene",
       "name": "receiver"
     },
     {
-      "start": 56.43,
+      "start": 56.48,
       "duration": 4.47,
       "kind": "scene",
       "name": "cover"
     },
     {
-      "start": 60.91,
-      "duration": 7.46,
+      "start": 60.95,
+      "duration": 7.31,
       "kind": "scene",
       "name": "ready"
     },
     {
-      "start": 68.37,
+      "start": 68.26,
       "duration": 5.16,
       "kind": "scene",
       "name": "hit"
     },
     {
-      "start": 73.52,
+      "start": 73.42,
       "duration": 8.5,
       "kind": "scene",
       "name": "respawn"
     },
     {
-      "start": 82.02,
+      "start": 81.92,
       "duration": 5,
       "kind": "scene",
       "name": "report"
     },
     {
-      "start": 87.02,
+      "start": 86.92,
       "duration": 1.7,
       "kind": "section",
       "name": "caution"
     },
     {
-      "start": 88.72,
+      "start": 88.62,
       "duration": 7.65,
       "kind": "scene",
       "name": "noRun"
     },
     {
-      "start": 96.38,
+      "start": 96.27,
       "duration": 4.5,
       "kind": "scene",
       "name": "noSwing"
     },
     {
-      "start": 100.88,
+      "start": 100.77,
       "duration": 6.93,
       "kind": "scene",
       "name": "noContact"
     },
     {
-      "start": 107.8,
+      "start": 107.7,
       "duration": 4,
       "kind": "scene",
       "name": "goBack"
     },
     {
-      "start": 111.8,
+      "start": 111.7,
       "duration": 6.66,
       "kind": "scene",
       "name": "trouble"
     },
     {
-      "start": 118.46,
+      "start": 118.36,
       "duration": 7.61,
       "kind": "scene",
       "name": "stop"
     },
     {
-      "start": 126.07,
+      "start": 125.97,
       "duration": 1.7,
       "kind": "section",
       "name": "try"
     },
     {
-      "start": 127.77,
+      "start": 127.67,
       "duration": 5.5,
       "kind": "scene",
       "name": "tryIt"
     },
     {
-      "start": 133.27,
+      "start": 133.17,
       "duration": 64,
       "kind": "scene",
       "name": "practice"
     },
     {
-      "start": 197.27,
+      "start": 197.17,
       "duration": 1.7,
       "kind": "section",
       "name": "standby"
     },
     {
-      "start": 198.97,
+      "start": 198.87,
       "duration": 13,
       "kind": "scene",
       "name": "toStart"

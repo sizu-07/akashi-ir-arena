@@ -3,7 +3,7 @@ import {hardware,receiverIds,deviceReady,legacyMotorDemo,receiverOnlyGame} from 
 import {decodeGameFrame} from './ir-frame.mjs';
 export const countdownDurationMs = 7010;
 export const intermissionDurationMs = 15000;
-export const defaults = Object.freeze({mode:'FFA_KILLS_V1', rounds:4, durationSec:85, displayDurationSec:90, fireMs:700, respawnMs:7000});
+export const defaults = Object.freeze({mode:'FFA_KILLS_V1', rounds:3, durationSec:85, displayDurationSec:90, fireMs:700, respawnMs:7000});
 export function rulesOf(input={}) {
   for(const [key,value] of Object.entries(defaults))
     if(input[key]!==undefined&&input[key]!==value)throw Error(`${key} は固定ルールです`);
@@ -21,7 +21,7 @@ export class Game {
     this.s.roundStart=Object.fromEntries(this.s.players.map(p=>[p.id,stats(p)]));
     if(saved?.players?.length===4&&saved.rules?.mode===defaults.mode) {
       const previousDuration = saved.rules.durationSec;
-      const legacyRules = previousDuration !== defaults.durationSec || saved.rules.fireMs !== defaults.fireMs || saved.rules.displayDurationSec !== defaults.displayDurationSec;
+      const legacyRules = previousDuration !== defaults.durationSec || saved.rules.fireMs !== defaults.fireMs || saved.rules.displayDurationSec !== defaults.displayDurationSec || saved.rules.rounds !== defaults.rounds;
       const loadedRules = rulesOf(legacyRules ? defaults : saved.rules);
       const remainingMs = legacyRules
         ? Math.max(0, Math.min(defaults.durationSec * 1000, defaults.durationSec * 1000 - (previousDuration * 1000 - (saved.remainingMs ?? previousDuration * 1000))))
@@ -30,6 +30,17 @@ export class Game {
       this.s.players=devices.map(d=>{const old=saved.players.find(p=>p.id===d.id)??{};return {...old,id:d.id,name:old.name??d.name,shooterId:d.shooterId,connected:false,armed:false,lastSeen:0,ack:null,bootId:null,lastShot:-1e15};});
       this.s.testMode= saved.testMode===true;
       this.s.participantIds=Array.isArray(saved.participantIds)?saved.participantIds:devices.map(d=>d.id);
+      if(saved.rules.rounds>defaults.rounds && this.s.round>defaults.rounds){
+        const completed=Array.isArray(this.s.roundResults)&&this.s.roundResults.some(result=>result.round===defaults.rounds);
+        const totals=this.s.roundStart;
+        if(completed&&totals&&this.s.players.every(p=>totals[p.id])){
+          this.s.roundResults=this.s.roundResults.filter(result=>result.round<=defaults.rounds);
+          for(const p of this.s.players){Object.assign(p,stats(totals[p.id]));p.accuracy=accuracy(p.hitShots,p.shots);p.hp=1;p.respawnAt=0;p.respawnRemainingMs=0;p.armed=false;}
+          this.s.round=defaults.rounds;this.s.phase='FINISHED';this.s.pauseReason=null;this.s.remainingMs=0;this.s.intermissionEndsAt=null;this.s.intermissionBlockedReason=null;
+          const leaders=[...this.s.players].sort((a,b)=>b.kills-a.kills);
+          this.s.winner=this.s.testMode?null:leaders[0].kills===leaders[1].kills?'DRAW':leaders[0].id;
+        }else{this.s.phase='FINISHED';this.reset(defaults);}
+      }
       if(this.s.phase==='INTERMISSION'&&autoAdvanceRounds&&!this.s.testMode&&!Number.isFinite(this.s.intermissionEndsAt))this.s.intermissionEndsAt=this.now()+intermissionDurationMs;
       this.record('recovery',{phase:this.s.phase});
     } else if(saved?.players?.length===4) {

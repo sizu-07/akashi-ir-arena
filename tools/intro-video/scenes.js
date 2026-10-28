@@ -4,10 +4,10 @@ import {sections, scenes} from './script.js';
 export const W = 1920, H = 1080, FPS = 30;
 const C = {red: '#ed2335', ink: '#141414', paper: '#f4f1e9', grey: '#8a8780', led: '#2b2b2b'};
 const TEAM = [
+  {ja: '赤', en: 'RED', color: '#ed2335'},
   {ja: '青', en: 'BLUE', color: '#1684a7'},
-  {ja: '橙', en: 'ORANGE', color: '#c45e28'},
   {ja: '緑', en: 'GREEN', color: '#6b9c31'},
-  {ja: '紫', en: 'PURPLE', color: '#9a58a7'},
+  {ja: '黄', en: 'YELLOW', color: '#e0a90f'},
 ];
 const SECTION_SEC = 1.7, VOICE_LEAD = 0.35, TAIL = 0.55;
 
@@ -361,16 +361,16 @@ V.versus = (ctx, t) => {
   text(ctx, '全員が敵！', lerp(W, 560, easeOut(k)) + 690, 690, {size: 54, color: C.red, skew: -9, alpha: k, align: 'center'});
 };
 V.rounds = (ctx, t) => {
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) {
     const p = back(prog(t, 0.4 + i * 0.4, 0.4)); if (p <= 0) continue;
-    const x = 180 + i * 410;
-    ctx.save(); ctx.translate(x + 165, 420); ctx.scale(p, p);
-    ctx.fillStyle = C.ink; ctx.fillRect(-165, -210, 330, 330);
-    ctx.fillStyle = C.red; ctx.fillRect(-165, -210, 330, 70);
-    text(ctx, `ROUND ${i + 1}`, 0, -155, {family: 'display', size: 45, color: C.paper, align: 'center', spacing: 3});
-    text(ctx, '1:30', 0, 60, {family: 'display', size: 140, color: C.paper, align: 'center', skew: -9});
+    const x = 250 + i * 480;
+    ctx.save(); ctx.translate(x + 190, 420); ctx.scale(p, p);
+    ctx.fillStyle = C.ink; ctx.fillRect(-190, -210, 380, 330);
+    ctx.fillStyle = C.red; ctx.fillRect(-190, -210, 380, 70);
+    text(ctx, `ROUND ${i + 1}`, 0, -155, {family: 'display', size: 50, color: C.paper, align: 'center', spacing: 3});
+    text(ctx, '1:30', 0, 60, {family: 'display', size: 170, color: C.paper, align: 'center', skew: -9});
     ctx.restore();
-    if (i < 3) text(ctx, '+', x + 370, 450, {family: 'display', size: 90, align: 'center', alpha: p});
+    if (i < 2) text(ctx, '+', x + 430, 450, {family: 'display', size: 90, align: 'center', alpha: p});
   }
   const k = easeOut(prog(t, 2.5, 0.5));
   ctx.save(); ctx.globalAlpha = k;
@@ -520,7 +520,7 @@ V.ready = (ctx, t) => {
   const shots = [1.6, 4.6];
   const last = shots.filter(s => t >= s).at(-1);
   const since = last === undefined ? 99 : t - last;
-  const state = since < 0.31 ? 'flash' : since < 0.7 ? 'cool' : 'ready';
+  const state = since < 0.31 ? 'flash' : since < 1 ? 'cool' : 'ready';
   gunSide(ctx, 640, 560, 1.15, {leds: ledsFor(state, t), beam: since < 0.25 ? 1 - since / 0.25 : 0});
   const lx = 640 - 235 * 1.15 + 21 * 1.15, ly = 560 - 120 * 1.15;
   if (state === 'ready') {
@@ -531,13 +531,13 @@ V.ready = (ctx, t) => {
   } else {
     text(ctx, state === 'flash' ? 'SHOT!' : 'WAIT…', lx + 190, 245, {family: 'display', size: 60, color: C.ink, skew: -9});
   }
-  const cool = clamp(since / 0.7, 0, 1);
+  const cool = since < 1 ? since : 1;
   const bx = 1220, by = 640;
   text(ctx, 'COOL DOWN', bx, by - 30, {family: 'display', size: 44, spacing: 3});
   ctx.fillStyle = '#14141420'; ctx.fillRect(bx, by, 520, 40);
   ctx.fillStyle = cool < 1 ? C.ink : C.red; ctx.fillRect(bx, by, 520 * (last === undefined ? 1 : cool), 40);
-  text(ctx, '0.7s', bx + 540, by + 36, {family: 'display', size: 40});
-  text(ctx, '撃ったら0.7秒待ってから次の1発', bx, by + 100, {size: 34});
+  text(ctx, '1.0s', bx + 540, by + 36, {family: 'display', size: 40});
+  text(ctx, '撃ったら約1秒待ってから次の1発', bx, by + 100, {size: 34});
 };
 V.hit = (ctx, t) => {
   const shake = Math.sin(t * 70) * 14 * (t > 0.3 ? 1 : 0) * (0.6 + 0.4 * Math.sin(t * 5));
@@ -584,7 +584,7 @@ V.respawn = (ctx, t) => {
 V.report = (ctx, t) => {
   const rows = [[0, 6, 2, 46], [1, 5, 3, 41], [2, 3, 4, 30], [3, 2, 7, 22]];
   para(ctx, 260, 170, 1400, 100, -9, C.ink);
-  text(ctx, 'ROUND 1 / 4', 300, 245, {family: 'display', size: 64, color: C.paper, skew: -9, spacing: 3});
+  text(ctx, 'ROUND 1 / 3', 300, 245, {family: 'display', size: 64, color: C.paper, skew: -9, spacing: 3});
   text(ctx, '中間報告', 740, 242, {size: 58, color: C.red, skew: -9});
   text(ctx, 'INTERIM RESULT', 1620, 240, {family: 'cond', size: 30, color: C.paper, align: 'right', spacing: 4});
   text(ctx, 'KILLS', 1150, 315, {family: 'cond', size: 28, spacing: 3, align: 'center'});

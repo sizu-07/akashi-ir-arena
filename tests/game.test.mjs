@@ -20,10 +20,10 @@ function fixture(saved = null, options = {}) {
   return f;
 }
 
-test('four 85-second games display 90 seconds, with 700 ms shots and seven-second respawn',()=>{
-  assert.deepEqual(defaults,{mode:'FFA_KILLS_V1',rounds:4,durationSec:85,displayDurationSec:90,fireMs:700,respawnMs:7000});
+test('three 85-second games display 90 seconds, with 700 ms shots and seven-second respawn',()=>{
+  assert.deepEqual(defaults,{mode:'FFA_KILLS_V1',rounds:3,durationSec:85,displayDurationSec:90,fireMs:700,respawnMs:7000});
   assert.deepEqual(rulesOf(),defaults);
-  assert.throws(()=>rulesOf({rounds:3}));
+  assert.throws(()=>rulesOf({rounds:4}));
   assert.throws(()=>rulesOf({respawnMs:5000}));
   const f=fixture();f.start();
   assert.equal(f.fire('gun-001',1).ok,true);
@@ -91,20 +91,39 @@ test('saved 120-second match resumes with elapsed time on the 85-second clock',(
   assert.equal(restored.s.phase,'PAUSED');
 });
 
-test('three intermediate standings and winner from four-game total kills',()=>{
+test('saved four-game match ends at round three without counting round four',()=>{
   const f=fixture();f.start();
-  for(let round=1;round<=4;round++){
+  for(let round=1;round<=3;round++){
+    f.fire('gun-001',round);f.hit('gun-002',1,round);
+    f.advance(f.g.s.remainingMs);
+    if(round<3)f.start();
+  }
+  const saved=structuredClone(f.g.s);
+  saved.rules.rounds=4;saved.round=4;saved.phase='ACTIVE';saved.roundStart=Object.fromEntries(saved.players.map(p=>[p.id,{kills:p.kills,deaths:p.deaths,shots:p.shots,hits:p.hits,hitShots:p.hitShots}]));
+  saved.players[2].kills=9;
+  const restored=new Game(devices,{saved,now:f.now});
+  assert.equal(restored.s.rules.rounds,3);
+  assert.equal(restored.s.phase,'FINISHED');
+  assert.equal(restored.s.round,3);
+  assert.equal(restored.s.roundResults.length,3);
+  assert.equal(restored.s.players[2].kills,0);
+  assert.equal(restored.s.winner,'gun-001');
+});
+
+test('two intermediate standings and winner from three-game total kills',()=>{
+  const f=fixture();f.start();
+  for(let round=1;round<=3;round++){
     f.fire('gun-001',round);f.hit('gun-002',1,round);
     f.advance(f.g.s.remainingMs);
     assert.equal(f.g.s.roundResults.length,round);
     assert.equal(f.g.s.roundResults.at(-1).players[0].kills,1);
-    if(round<4){assert.equal(f.g.s.phase,'INTERMISSION');assert.equal(f.g.s.round,round+1);f.start();}
+    if(round<3){assert.equal(f.g.s.phase,'INTERMISSION');assert.equal(f.g.s.round,round+1);f.start();}
   }
   assert.equal(f.g.s.phase,'FINISHED');
   assert.equal(f.g.s.winner,'gun-001');
-  assert.equal(f.g.player('gun-001').kills,4);
-  assert.equal(f.g.player('gun-002').deaths,4);
-  assert.equal(f.g.player('gun-001').shots,4);
+  assert.equal(f.g.player('gun-001').kills,3);
+  assert.equal(f.g.player('gun-002').deaths,3);
+  assert.equal(f.g.player('gun-001').shots,3);
   assert.equal(f.g.player('gun-001').accuracy,100);
 });
 
@@ -149,9 +168,9 @@ test('equal top kill totals produce a draw; deaths do not break the tie',()=>{
   const f=fixture();f.start();
   f.fire('gun-001',1);f.hit('gun-002',1,1);
   f.fire('gun-003',1);f.hit('gun-001',3,1);
-  for(let round=1;round<=4;round++){
+  for(let round=1;round<=3;round++){
     f.advance(f.g.s.remainingMs);
-    if(round<4)f.start();
+    if(round<3)f.start();
   }
   assert.equal(f.g.s.winner,'DRAW');
 });

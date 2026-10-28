@@ -84,7 +84,7 @@ async function action(actionName, extra = {}) {
     commandId: commandId(),
     ...extra,
   });
-  const notices = {start: '開始操作を受け付けました。', pause: 'ゲームを一時停止しました。', finish: '試合全体を終了しました。', demo_end_round: '現在のゲームを終了しました。', new: '新しい4ゲーム戦を準備しました。', sync_ticket_members: '整理券メンバーを反映しました。名前を確認してください。', media: '投影画面を切り替えました。', diagnostic_on:'一時診断を開始しました。', diagnostic_off:'一時診断を終了しました。', demo_hit: '発射・命中を送信しました。', motor_demo_hit: '被弾振動を送信しました。', motor_demo_defeat: '撃破振動を送信しました。', motor_demo_revive: '復活振動を送信しました。'};
+  const notices = {start: '開始操作を受け付けました。', pause: 'ゲームを一時停止しました。', finish: '試合全体を終了しました。', demo_end_round: '現在のゲームを終了しました。', new: '新しい3ゲーム戦を準備しました。', sync_ticket_members: '整理券メンバーを反映しました。名前を確認してください。', media: '投影画面を切り替えました。', diagnostic_on:'一時診断を開始しました。', diagnostic_off:'一時診断を終了しました。', demo_hit: '発射・命中を送信しました。', motor_demo_hit: '被弾振動を送信しました。', motor_demo_defeat: '撃破振動を送信しました。', motor_demo_revive: '復活振動を送信しました。'};
   const videoNotices = {play: '動画を開始しました。', pause: '動画を停止しました。', restart: '動画を最初から再生しました。'};
   message(result.notice || (actionName === 'video' ? videoNotices[extra.operation] : notices[actionName]) || '操作を反映しました。');
 }
@@ -285,7 +285,7 @@ function render() {
     ACTIVE: '試合中です。異常時は「一時停止」、打ち切る場合は「試合全体を強制終了」を押してください。',
     PAUSED: '一時停止中です。端末と参加者を確認して「試合を再開」を押してください。',
     INTERMISSION: state.demo ? `第${state.round-1}ゲームの途中経過を確認し、第${state.round}ゲームを開始してください。` : state.intermissionBlockedReason ? `第${state.round}ゲームの自動開始待ち: ${state.intermissionBlockedReason}` : `途中経過を15秒表示後、第${state.round}ゲームのカウントダウンを自動開始します。`,
-    FINISHED: '合計キル数で結果を表示しています。次の4ゲーム戦を準備できます。',
+    FINISHED: '合計キル数で結果を表示しています。次の3ゲーム戦を準備できます。',
   };
   $('nextStep').textContent = hints[state.phase];
   if (['LOBBY', 'PAUSED'].includes(state.phase)) {
@@ -465,7 +465,7 @@ $('takeover').onclick = guarded(async () => {
 });
 
 $('newMatch').onclick = guarded(async () => {
-  if (state.phase === 'LOBBY' && !confirm('待機中の4ゲーム戦を作り直します。メンバーを確認し直してください。よろしいですか？')) return;
+  if (state.phase === 'LOBBY' && !confirm('待機中の3ゲーム戦を作り直します。メンバーを確認し直してください。よろしいですか？')) return;
   await action('new');
 });
 

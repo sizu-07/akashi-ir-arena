@@ -1,4 +1,4 @@
-// Single wording source for live projector slides and the bundled WebM.
+// Wording for live projector slides. The bundled WebM is an independent, unmodified asset.
 export const slides = [
   [
     '4人個人戦',
@@ -12,7 +12,7 @@ export const slides = [
   ],
   [
     '射撃',
-    '1回押すと1発。0.7秒後、LEDの1個目が白なら次を撃てます。',
+    '1回押すと1発。撃った後は約1秒待ち、LEDの1個目が白なら次を撃てます。',
     '弾数は無限。1発の命中で相手を撃破できます。',
   ],
   [
@@ -21,9 +21,9 @@ export const slides = [
     '7秒後に自動復活します。復活回数に制限はありません。',
   ],
   [
-    '全4ゲーム',
+    '全3ゲーム',
     '画面の表示は1ゲーム90秒。実際のゲームは85秒で、途中経過を15秒表示して次へ自動で進みます。',
-    '4ゲームの合計キル数が最も多い人の勝ちです。',
+    '3ゲームの合計キル数が最も多い人の勝ちです。',
   ],
   [
     '開始まで待機',
