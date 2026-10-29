@@ -276,11 +276,11 @@ function render() {
     `投影: ${state.displayReady ? '準備完了' : '準備が必要'} ／ ` +
     `${state.simulation ? '仮想端末' : '実機接続'}: ${connectedPlayers}/4 ／ ` +
     `整理券: ${!state.ticketBridge?.enabled ? '未設定' : state.ticketBridge.connected ? '同期済み' : `未同期（再送待ち${state.ticketBridge.pending}件）`} ／ ` +
-    `メンバー: ${!state.ticketBridge?.enabled ? '手動名' : state.ticketBridge.membersLoaded ? '反映済み' : '未反映'}`;
-  $('syncTicketMembers').textContent = state.ticketBridge?.membersLoaded ? '整理券メンバーを更新' : '整理券メンバーを反映';
+    `メンバー: ${!state.ticketBridge?.enabled ? '手動名' : state.ticketBridge.membersLoaded ? '反映済み' : state.ticketBridge.membersProvisional ? '仮名表示中・入場待ち' : '未反映'}`;
+  $('syncTicketMembers').textContent = state.ticketBridge?.membersLoaded ? '整理券メンバーを更新' : state.ticketBridge?.membersProvisional ? '整理券メンバーを再確認' : '整理券メンバーを反映';
   document.querySelector('[data-action=start]').textContent = state.phase === 'PAUSED' ? 'ゲームを再開' : state.phase === 'INTERMISSION' ? state.demo ? `第${state.round}ゲームを開始` : '次ゲームは自動開始' : state.phase === 'COUNTDOWN' ? '開始カウントダウン中' : testRequested() ? '動作確認を開始' : '第1ゲームを開始';
   const hints = {
-    LOBBY: state.ticketBridge?.enabled && !state.ticketBridge.membersLoaded ? '整理券メンバーを反映し、参加者の名前を確認してください。' : '参加者・端末を確認し、準備が整ったら「試合を開始」を押してください。',
+    LOBBY: state.ticketBridge?.membersProvisional ? '未入場の席は仮名です。入場確認が4人そろうと正式な名前に自動更新されます。' : state.ticketBridge?.enabled && !state.ticketBridge.membersLoaded ? '整理券メンバーを反映し、参加者の名前を確認してください。' : '参加者・端末を確認し、準備が整ったら「試合を開始」を押してください。',
     COUNTDOWN: '開始カウントダウン中です。異常があれば「一時停止」を押してください。',
     ACTIVE: '試合中です。異常時は「一時停止」、打ち切る場合は「試合全体を強制終了」を押してください。',
     PAUSED: '一時停止中です。端末と参加者を確認して「試合を再開」を押してください。',

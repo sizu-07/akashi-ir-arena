@@ -497,6 +497,13 @@ export class TicketQueue {
     return round.ticketIds.flatMap(id => this.ticket(id)?.playerNicknames ?? []);
   }
 
+  roundAdmittedPlayerNicknames(round) {
+    return round.ticketIds.flatMap((id) => {
+      const ticket = this.ticket(id);
+      return (ticket?.playerNicknames ?? []).map((name) => ['CHECKED_IN', 'PLAYING'].includes(ticket.status) ? name : null);
+    });
+  }
+
   publicTicket(ticketOrAccessToken) {
     const ticket = typeof ticketOrAccessToken === 'string'
       ? this.state.tickets.find((item) => item.accessToken === ticketOrAccessToken)

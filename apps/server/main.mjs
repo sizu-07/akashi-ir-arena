@@ -53,7 +53,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
  const broker=aedesFactory({heartbeatInterval:5000,connectTimeout:5000});
  const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
  const local=req=>['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
- const sessions=new Map(),commands=new Map(),attempts=new Map();let owner=null,preparedTicketGameId=game.s.phase==='LOBBY'&&game.s.ticketRoundId?game.s.id:null,pairToken=randomBytes(16).toString('hex'),pairExpires=Date.now()+600000;
+ const sessions=new Map(),commands=new Map(),attempts=new Map();let owner=null,preparedTicketGameId=game.s.phase==='LOBBY'&&game.s.ticketRoundId?game.s.id:null,provisionalTicketGameId=null,pairToken=randomBytes(16).toString('hex'),pairExpires=Date.now()+600000;
  const demoEventCounts=new Map();
  const wss=new WebSocketServer({noServer:true,maxPayload:8192});
  const displayReady=()=>[...wss.clients].some(ws=>ws.display&&ws.displayReady&&ws.readyState===WebSocket.OPEN);
@@ -96,14 +96,16 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
  const reply=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
  const soundFiles=()=>Object.fromEntries(Object.entries(availableEffects(effectsDir)).map(([kind,entry])=>[kind,entry.url]));
  let checkingTicketMembers=false;
- async function applyTicketMembers(){
-   const names=await ticketBridge.loadPlayerNicknames();
-   if(game.s.phase!=='LOBBY')return false;
+ async function applyTicketMembers({allowPending=false}={}){
+   const preview=allowPending?await ticketBridge.previewPlayerNicknames():null;
+   const names=preview?.names??await ticketBridge.loadPlayerNicknames();
+   if(game.s.phase!=='LOBBY')throw Error('整理券メンバーは新しい試合の待機中だけ反映できます');
    game.setPlayerNames(names);
-   game.s.ticketRoundId=ticketBridge.currentRoundId;
-   preparedTicketGameId=game.s.id;
+   game.s.ticketRoundId=preview&&!preview.ready?null:ticketBridge.currentRoundId;
+   preparedTicketGameId=preview&&!preview.ready?null:game.s.id;
+   provisionalTicketGameId=preview&&!preview.ready?game.s.id:null;
    db.save(game.s);sync();
-   return true;
+   return {names,ready:!preview||preview.ready,checkedInPeople:preview?.checkedInPeople??4,assignedPeople:preview?.assignedPeople??4};
  }
  async function checkTicketMembers(){
    if(!ticketBridge.enabled||checkingTicketMembers||game.s.phase!=='LOBBY'||preparedTicketGameId===game.s.id)return;
@@ -131,7 +133,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
       res.setHeader('Set-Cookie',`arena=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`);return reply(res,200,{csrf:s.csrf,id:s.id});
     }
     if(url.pathname==='/api/session'){const s=session(req);return reply(res,s?200:401,s?{csrf:s.csrf,id:s.id,owner,local:local(req),demo}:{});}
-    if(url.pathname==='/api/state'){if(!session(req)&&!local(req))return reply(res,401,{});return reply(res,200,{...game.view(),soundFiles:soundFiles(),displayReady:displayReady(),demo,simulation,owner,diagnostics:diagnostics.view(),ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}});}
+    if(url.pathname==='/api/state'){if(!session(req)&&!local(req))return reply(res,401,{});return reply(res,200,{...game.view(),soundFiles:soundFiles(),displayReady:displayReady(),demo,simulation,owner,diagnostics:diagnostics.view(),ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id,membersProvisional:provisionalTicketGameId===game.s.id}});}
     if(url.pathname==='/api/pair-info'){
       if(!local(req))return reply(res,403,{});
       return reply(res,200,{url:`http://${tabletAddressOf(os.networkInterfaces())}:${httpServer.address().port}/`});
@@ -181,8 +183,8 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
           case 'sync_ticket_members':{
             if(game.s.phase!=='LOBBY')throw Error('整理券メンバーは新しい試合の待機中だけ反映できます');
             if(!ticketBridge.enabled)throw Error('公開整理券サーバーが未設定です');
-            await applyTicketMembers();
-            operation={notice:`整理券メンバーを反映しました: ${game.s.players.map(player=>player.name).join(' / ')}`};
+            const members=await applyTicketMembers({allowPending:true});
+            operation={notice:`${members.ready?'整理券メンバーを反映しました':'未入場の席は仮名で表示しています。入場確認後に自動更新します'}: ${members.names.join(' / ')}`};
             break;
           }
           case 'start':{
@@ -291,7 +293,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
    const ticketStartedBefore=game.s.ticketStarted,ticketPausedBefore=game.s.ticketPaused;
    ticketBridge.observe(game.s);
    if(game.s.phase!==lastSavedPhase||game.s.ticketStarted!==ticketStartedBefore||game.s.ticketPaused!==ticketPausedBefore){db.save(game.s);lastSavedPhase=game.s.phase;}
-   const state={...game.view(),soundFiles:soundFiles(),owner,displayReady:displayReady(),demo,simulation,diagnostics:diagnostics.view(),ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id}};
+   const state={...game.view(),soundFiles:soundFiles(),owner,displayReady:displayReady(),demo,simulation,diagnostics:diagnostics.view(),ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id,membersProvisional:provisionalTicketGameId===game.s.id}};
    for(const ws of wss.clients)if(ws.readyState===WebSocket.OPEN){if(ws.bufferedAmount>100000){ws.close();continue;}ws.send(JSON.stringify(state));}
    if(++count%4===0){sync();db.save(game.s);}if(count%8===0)void checkTicketMembers();if(count%240===0){for(const [k,s] of sessions)if(s.expires<Date.now())sessions.delete(k);}
  },250);

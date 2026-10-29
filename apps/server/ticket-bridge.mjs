@@ -3,7 +3,7 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 
 export function createTicketBridge({url, apiKey, dataDir, initialRoundId = null, initialPhase = null, log = () => {}} = {}) {
-  if (!url || !apiKey) return {enabled: false, connected: false, pending: 0, currentRoundId: null, observe() {}, async loadPlayerNicknames() { return []; }, async close() {}};
+  if (!url || !apiKey) return {enabled: false, connected: false, pending: 0, currentRoundId: null, observe() {}, async loadPlayerNicknames() { return []; }, async previewPlayerNicknames() { return {names: ['player1', 'player2', 'player3', 'player4'], ready: false, roundId: null, checkedInPeople: 0, assignedPeople: 0}; }, async close() {}};
   const endpoint = `${String(url).replace(/\/$/, '')}/api/game/events`;
   const currentRoundEndpoint = `${String(url).replace(/\/$/, '')}/api/game/current-round`;
   const heartbeatEndpoint = `${String(url).replace(/\/$/, '')}/api/game/heartbeat`;
@@ -80,21 +80,37 @@ export function createTicketBridge({url, apiKey, dataDir, initialRoundId = null,
   const timer = setInterval(() => { void flush(); void heartbeat(); }, 5000);
   timer.unref();
   void heartbeat();
+  const placeholders = ['player1', 'player2', 'player3', 'player4'];
+  const fetchCurrentRound = async () => {
+    const response = await fetch(currentRoundEndpoint, {headers: {Authorization: `Bearer ${apiKey}`}, signal: AbortSignal.timeout(5000)});
+    if (response.status === 404) return null;
+    if (!response.ok) throw Error(`整理券サーバー HTTP ${response.status}`);
+    return response.json();
+  };
   return {
     enabled: true,
     get connected() { return connected; },
     get pending() { return outbox.length; },
     get currentRoundId() { return currentRoundId; },
     async loadPlayerNicknames() {
-      const response = await fetch(currentRoundEndpoint, {headers: {Authorization: `Bearer ${apiKey}`}, signal: AbortSignal.timeout(5000)});
-      const result = await response.json();
-      if (!response.ok) throw Error(response.status === 404 ? '整理券運営画面で次の4名を先に呼び出してください' : `整理券サーバー HTTP ${response.status}`);
+      const result = await fetchCurrentRound();
+      if (!result) throw Error('整理券運営画面で次の4名を先に呼び出してください');
       if (result.ready === false) throw Error(`整理券の4名登録・入場確認が完了していません（${result.checkedInPeople}/${result.assignedPeople}名）`);
       if (result.assignedPeople !== undefined && result.assignedPeople !== 4) throw Error(`整理券の参加者が4名揃っていません（現在${result.assignedPeople}名）`);
       if (!Array.isArray(result.playerNicknames) || result.playerNicknames.length !== 4) throw Error('整理券の参加者名が4名分ありません');
       currentRoundId = result.roundId;
       connected = true;
       return Array.isArray(result.playerNicknames) ? result.playerNicknames.slice(0, 4) : [];
+    },
+    async previewPlayerNicknames() {
+      const result = await fetchCurrentRound();
+      connected = true;
+      if (!result) return {names: [...placeholders], ready: false, roundId: null, checkedInPeople: 0, assignedPeople: 0};
+      const admitted = Array.isArray(result.admittedPlayerNicknames) ? result.admittedPlayerNicknames
+        : result.ready ? result.playerNicknames : [];
+      const names = placeholders.map((fallback, index) => typeof admitted?.[index] === 'string' && admitted[index].trim() ? admitted[index] : fallback);
+      if (result.ready) currentRoundId = result.roundId;
+      return {names, ready: result.ready === true, roundId: result.roundId, checkedInPeople: result.checkedInPeople ?? 0, assignedPeople: result.assignedPeople ?? 0};
     },
     observe(game) {
       const phase = game.phase;

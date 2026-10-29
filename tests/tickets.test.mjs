@@ -142,6 +142,16 @@ test('複数人登録の名前を個人戦の参加者順に渡し、旧チー�
   assert.equal('playerTeams' in queue.state.tickets.find((ticket) => ticket.accessToken === solo.accessToken), false);
 });
 
+test('未入場の名前はゲーム画面へ渡さず、入場済みの席だけ名前を返す', () => {
+  const queue = new TicketQueue();
+  const first = queue.register({requestId:'pending-first-party',nicknames:['春','夏'],partySize:2,consent:true});
+  queue.register({requestId:'pending-second-party',nicknames:['秋','冬'],partySize:2,consent:true});
+  const round = queue.callNext('operator');
+  assert.deepEqual(queue.roundAdmittedPlayerNicknames(round),[null,null,null,null]);
+  queue.checkIn(first.qrToken,'operator');
+  assert.deepEqual(queue.roundAdmittedPlayerNicknames(round),['春','夏',null,null]);
+});
+
 test('現在時刻に依存せず切りのよい15分枠へ割り当て、前枠の開始時刻を入場予定にする', () => {
   let now = new Date('2026-09-17T17:07:00+09:00').getTime();
   const queue = new TicketQueue({now: () => now});
@@ -867,11 +877,14 @@ test('登録から呼出・入場・ゲーム開始終了・次枠呼出までHT
     const operatorHeaders = {'Content-Type': 'application/json', Cookie: loginResponse.headers.get('set-cookie').split(';')[0], 'X-CSRF-Token': login.csrf};
     const operatorAction = (action, commandId) => fetch(`${base}/api/operator/action`, {method: 'POST', headers: operatorHeaders, body: JSON.stringify({action, commandId})});
     assert.equal((await operatorAction('call_next', 'e2e-call')).status, 200);
+    const beforeAdmission = await (await fetch(`${base}/api/game/current-round`, {headers: {Authorization: `Bearer ${apiKey}`}})).json();
+    assert.deepEqual(beforeAdmission.admittedPlayerNicknames, [null, null, null, null]);
     const checkIn = await fetch(`${base}/api/operator/check-in`, {method: 'POST', headers: operatorHeaders, body: JSON.stringify({value: `AKASHI:${first.qrToken}`})});
     assert.equal((await checkIn.json()).code, 'OK');
     assert.equal((await (await fetch(`${base}/api/public/ticket/${first.accessToken}`)).json()).status, 'CHECKED_IN');
     const current = await (await fetch(`${base}/api/game/current-round`, {headers: {Authorization: `Bearer ${apiKey}`}})).json();
     assert.deepEqual(current.playerNicknames, ['春', '夏', '秋', '冬']);
+    assert.deepEqual(current.admittedPlayerNicknames, ['春', '夏', '秋', '冬']);
     const event = (eventId, type, targetRoundId) => fetch(`${base}/api/game/events`, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`}, body: JSON.stringify({eventId, type, targetRoundId, occurredAt: Date.now(), source: 'e2e-game'})});
     assert.equal((await event('e2e-start', 'GAME_STARTED', current.roundId)).status, 200);
     assert.equal((await (await fetch(`${base}/api/public/ticket/${first.accessToken}`)).json()).status, 'PLAYING');
@@ -1032,6 +1045,46 @@ test('入場受付後に整理券メンバーを自動反映し、手動更新�
     await app.close();
     await new Promise((resolve) => ticketServer.close(resolve));
     rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('入場前の手動反映は仮名を表示し、入場済みだけ実名へ変え、全員入場後に自動更新する', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-placeholder-test-'));
+  let currentRound = null;
+  const ticketServer = (await import('node:http')).createServer((request, response) => {
+    response.writeHead(request.url === '/api/game/current-round' && !currentRound ? 404 : 200, {'Content-Type':'application/json'});
+    response.end(JSON.stringify(request.url === '/api/game/current-round' ? currentRound ?? {error:'対象回がありません'} : {ok:true}));
+  });
+  await new Promise((resolve) => ticketServer.listen(0, '127.0.0.1', resolve));
+  const config = {httpPort:0,mqttPort:0,operatorPin:'12345678',ticketServerUrl:`http://127.0.0.1:${ticketServer.address().port}`,ticketServerApiKey:'placeholder-test-key',devices:[1,2,3,4].map((number)=>({id:`gun-00${number}`,key:`test-${number}`,name:`P${number}`,shooterId:number}))};
+  const app = await createGameApp({config,dataDir:dir,bind:'127.0.0.1'});
+  const base = `http://127.0.0.1:${app.httpServer.address().port}`;
+  try {
+    const loginResponse = await fetch(`${base}/api/login`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:config.operatorPin})});
+    const login = await loginResponse.json();
+    const headers = {'Content-Type':'application/json',Cookie:loginResponse.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':login.csrf};
+    let sequence = 0;
+    const reflect = async () => fetch(`${base}/api/action`,{method:'POST',headers,body:JSON.stringify({action:'sync_ticket_members',commandId:`placeholder-${++sequence}`})});
+    assert.equal((await reflect()).status,200);
+    assert.deepEqual(app.game.s.players.map((player)=>player.name),['player1','player2','player3','player4']);
+    assert.equal((await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersProvisional,true);
+    currentRound={roundId:'pending-round',playerNicknames:['春','夏','秋','冬'],admittedPlayerNicknames:[null,null,null,null],assignedPeople:4,checkedInPeople:0,ready:false};
+    assert.equal((await reflect()).status,200);
+    assert.deepEqual(app.game.s.players.map((player)=>player.name),['player1','player2','player3','player4']);
+    currentRound.admittedPlayerNicknames=['春','夏',null,null];currentRound.checkedInPeople=2;
+    assert.equal((await reflect()).status,200);
+    assert.deepEqual(app.game.s.players.map((player)=>player.name),['春','夏','player3','player4']);
+    assert.equal((await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersLoaded,false);
+    currentRound.admittedPlayerNicknames=['春','夏','秋','冬'];currentRound.checkedInPeople=4;currentRound.ready=true;
+    for(let attempt=0;attempt<35 && app.game.s.players[2].name!=='秋';attempt++)await new Promise((resolve)=>setTimeout(resolve,100));
+    assert.deepEqual(app.game.s.players.map((player)=>player.name),['春','夏','秋','冬']);
+    const finalState=await (await fetch(`${base}/api/state`)).json();
+    assert.equal(finalState.ticketBridge.membersLoaded,true);
+    assert.equal(finalState.ticketBridge.membersProvisional,false);
+  } finally {
+    await app.close();
+    await new Promise((resolve)=>ticketServer.close(resolve));
+    rmSync(dir,{recursive:true,force:true});
   }
 });
 
