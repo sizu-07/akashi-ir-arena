@@ -383,6 +383,13 @@ tbody tr:hover {
   width: min(280px, 100%);
   margin: 18px auto;
 }
+.event-days-panel { padding: 24px; }
+.event-days-form { display: grid; gap: 12px; }
+.event-day { display: grid; grid-template-columns: minmax(130px,1fr) repeat(3,minmax(110px,1fr)); align-items: end; gap: 12px; padding: 14px; border: 1px solid var(--line); background: var(--surface); }
+.event-day label { display: grid; gap: 5px; font-size: 13px; }
+.event-day input { width: 100%; min-height: 42px; }
+.event-days-form > button { justify-self: end; }
+@media (max-width: 760px) { .event-day { grid-template-columns: 1fr; } .event-days-form > button { width: 100%; } }
 dialog {
   width: min(500px, calc(100% - 32px));
   max-height: calc(100dvh - 32px);

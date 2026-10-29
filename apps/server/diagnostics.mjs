@@ -14,9 +14,9 @@ export class Diagnostics {
     this.shots=[];
     this.pending=[];
   }
-  begin(game) {
+  begin(game,{allowNoDevices=false}={}) {
     if(this.enabled)throw Error('一時診断はすでに実行中です');
-    if(!game.s.players.some(p=>p.connected&&p.diagnosticCapable))throw Error('診断対応ファームウェアの接続端末がありません。端末を更新・接続してください');
+    if(!allowNoDevices&&!game.s.players.some(p=>p.connected&&p.diagnosticCapable))throw Error('診断対応ファームウェアの接続端末がありません。端末を更新・接続してください');
     if(game.s.phase==='ACTIVE'||game.s.phase==='COUNTDOWN')game.pause('一時診断中');
     if(game.s.phase==='INTERMISSION'&&Number.isFinite(game.s.intermissionEndsAt)){
       this.intermissionRemainingMs=Math.max(0,game.s.intermissionEndsAt-this.now());

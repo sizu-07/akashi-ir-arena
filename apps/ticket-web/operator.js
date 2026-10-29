@@ -24,6 +24,7 @@ let heartbeat;
 let selectedTicket;
 let globalMessageDirty = false;
 let settingsDirty = false;
+let eventDaysDirty = false;
 let pending = false;
 const actionLabels = {
   hold: '保留にする', release: '保留を解除する', cancel: '整理券を取り消す', skip_group: 'この登録グループをスキップする',
@@ -318,12 +319,13 @@ function render() {
   renderTimeline();
   renderRoundControls();
   renderAllRounds();
-  $('registrationStatus').textContent = state.registrationOpen ? '受付中' : '停止中';
-  $('compactRegistrationStatus').textContent = state.registrationOpen ? '受付中' : '受付停止中';
-  $('compactRegistrationStatus').className = `badge registration-compact ${state.registrationOpen ? 'open' : 'closed'}`;
-  $('registrationBanner').className = `registration-banner ${state.registrationOpen ? 'open' : 'closed'}`;
-  $('registrationBannerTitle').textContent = state.registrationOpen ? '受付中' : '受付停止中';
-  $('registrationBannerHint').textContent = state.registrationOpen ? '来場者は整理券を登録できます' : '来場者は新しい整理券を登録できません';
+  const accepting=state.registrationStatus?.open ?? state.registrationOpen;
+  $('registrationStatus').textContent = accepting ? '受付中' : '受付停止中';
+  $('compactRegistrationStatus').textContent = accepting ? '受付中' : '受付停止中';
+  $('compactRegistrationStatus').className = `badge registration-compact ${accepting ? 'open' : 'closed'}`;
+  $('registrationBanner').className = `registration-banner ${accepting ? 'open' : 'closed'}`;
+  $('registrationBannerTitle').textContent = accepting ? '受付中' : '受付停止中';
+  $('registrationBannerHint').textContent = accepting ? '来場者は整理券を登録できます' : state.registrationStatus?.message || '来場者は新しい整理券を登録できません';
   $('waitingGroups').textContent = `${waiting.length}組`;
   $('waitingPeople').textContent = `${waiting.reduce((sum, ticket) => sum + ticket.partySize, 0)}人`;
   $('emptySeats').textContent = `${4 - (upcoming?.assignedPeople || 0)}席`;
@@ -341,6 +343,12 @@ function render() {
     $('settingsForm').elements.globalDelaySlots.value = Math.floor(state.settings.globalDelayMinutes / 15);
     $('settingsForm').elements.graceMinutes.value = state.settings.graceMinutes;
     $('settingsForm').elements.maxWaitingGroups.value = state.settings.maxWaitingGroups;
+  }
+  if(!eventDaysDirty)for(const row of document.querySelectorAll('.event-day')){
+    const day=state.settings.eventDays?.find((item)=>item.date===row.dataset.date&&item.period===row.dataset.period);
+    row.querySelector('.reception-start').value=day?.receptionStart??'';
+    row.querySelector('.slot-start').value=day?.slotStart??'';
+    row.querySelector('.slot-end').value=day?.slotEnd??'';
   }
   const delaySlots = Math.floor(state.settings.globalDelayMinutes / 15);
   $('delaySummary').textContent = delaySlots ? `調整中：残り${delaySlots}枠（${delaySlots * 15}分）` : '調整枠なし';
@@ -480,6 +488,12 @@ $('closeRegistration').onclick = guarded(() => action('registration', {value: fa
 $('callNext').onclick = guarded(async () => { if (confirm('待機列の先頭にある次枠を呼び出しますか？')) await action('call_next'); });
 $('messageForm').elements.message.addEventListener('input', () => { globalMessageDirty = true; $('noticeState').textContent = '編集中・まだ反映されていません'; });
 $('settingsForm').addEventListener('input', () => { settingsDirty = true; });
+$('eventDaysForm').addEventListener('input', () => { eventDaysDirty = true; });
+$('eventDaysForm').onsubmit = guarded(async () => {
+  const value=[...document.querySelectorAll('.event-day')].map((row)=>({date:row.dataset.date,period:row.dataset.period,receptionStart:row.querySelector('.reception-start').value,slotStart:row.querySelector('.slot-start').value,slotEnd:row.querySelector('.slot-end').value}));
+  await action('event_days',{value});
+  eventDaysDirty=false;
+});
 $('messageForm').onsubmit = guarded(async () => { await action('global_message', {value: $('messageForm').elements.message.value}); globalMessageDirty = false; $('noticeState').textContent = '全員の画面へ反映済み'; });
 $('settingsForm').onsubmit = guarded(async () => {
   const delaySlots = Number($('settingsForm').elements.globalDelaySlots.value);

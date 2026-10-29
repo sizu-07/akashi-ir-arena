@@ -22,6 +22,17 @@ let availabilityRequest = 0;
 let submitting = false;
 let reviewing = false;
 let reviewedData = null;
+const closedScreen=document.querySelector('#closedScreen');
+function setRegistrationState(registration) {
+  const closed=registration?.open===false;
+  document.body.classList.toggle('is-closed',closed);
+  closedScreen.hidden=!closed;
+  if(closed){
+    if(noticeDialog.open)noticeDialog.close();
+    document.querySelector('#closedTitle').textContent=registration.code==='ended'?'本日の受付は終了しました':registration.code==='before_open'?'受付開始前です':'整理券受付';
+    document.querySelector('#closedMessage').textContent=registration.message;
+  }else if(!noticeConfirmed.checked&&!noticeDialog.open)noticeDialog.showModal();
+}
 noticeDialog.addEventListener('cancel', (event) => event.preventDefault());
 noticeConfirmed.addEventListener('change', () => { noticeContinue.disabled = !noticeConfirmed.checked; });
 noticeContinue.addEventListener('click', () => {
@@ -56,6 +67,8 @@ async function refreshAvailability() {
     const result = await response.json();
     if (!response.ok) throw Error(result.error || '案内時刻を確認できません');
     if (sequence !== availabilityRequest) return;
+    setRegistrationState(result.registration);
+    if(result.registration?.open===false){availability=null;registerButton.disabled=true;return;}
     availability = result;
     arrivalSelect.replaceChildren();
     arrivalSelect.add(new Option(`表示中の入場時間（${formatTime(result.current.estimatedCallAt)}ごろ）`, ''));

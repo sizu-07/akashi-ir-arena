@@ -169,7 +169,7 @@ function disable() {
   $('newMatch').disabled = locked || state?.diagnostics?.enabled || !(['LOBBY', 'FINISHED'].includes(state?.phase) || state?.demo && state?.testMode && state?.phase === 'INTERMISSION');
   if ($('testMode')) $('testMode').disabled = locked || state?.phase !== 'LOBBY' || !state?.simulation;
   if ($('demoSource')) $('demoSource').disabled = locked || !['LOBBY', 'FINISHED'].includes(state?.phase) && !(state?.phase === 'INTERMISSION' && state?.testMode);
-  document.querySelector('[data-action=start]').disabled = locked || state?.diagnostics?.enabled || !['LOBBY', 'PAUSED', 'INTERMISSION'].includes(state?.phase) || (state?.phase === 'INTERMISSION' && !state.demo);
+  document.querySelector('[data-action=start]').disabled = locked || !['LOBBY', 'PAUSED', 'INTERMISSION'].includes(state?.phase) || (state?.phase === 'INTERMISSION' && !state.demo);
   document.querySelector('[data-action=pause]').disabled = locked || !['COUNTDOWN', 'ACTIVE'].includes(state?.phase);
   document.querySelector('[data-action=finish]').disabled = locked || !['COUNTDOWN', 'ACTIVE', 'PAUSED', 'INTERMISSION'].includes(state?.phase);
   $('demoEndRound').disabled = locked || state?.diagnostics?.enabled || !state?.demo || !['ACTIVE', 'PAUSED'].includes(state?.phase);

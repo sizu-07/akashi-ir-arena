@@ -269,6 +269,19 @@
             </details>
           </div>
         </details>
+        <section class="panel event-days-panel" aria-labelledby="eventDaysTitle">
+          <h2 id="eventDaysTitle">開催日ごとの受付時間</h2>
+          <p class="hint">受付開始、最初の体験枠、最後の体験枠の終了を日ごとに設定します。空欄の日は受付しません。枠は15分単位です。</p>
+          <form id="eventDaysForm" class="event-days-form">
+            <div class="event-day" data-date="2026-10-29" data-period="public"><strong>10月29日（木）</strong><label>受付開始<input class="reception-start" type="time" step="900"></label><label>最初の枠<input class="slot-start" type="time" step="900"></label><label>最終枠終了<input class="slot-end" type="time" step="900"></label></div>
+            <div class="event-day" data-date="2026-10-30" data-period="public"><strong>10月30日（金）</strong><label>受付開始<input class="reception-start" type="time" step="900"></label><label>最初の枠<input class="slot-start" type="time" step="900"></label><label>最終枠終了<input class="slot-end" type="time" step="900"></label></div>
+            <div class="event-day" data-date="2026-10-31" data-period="test"><strong>10月31日（土）動作確認</strong><label>受付開始<input class="reception-start" type="time" step="900"></label><label>最初の枠<input class="slot-start" type="time" step="900"></label><label>最終枠終了<input class="slot-end" type="time" step="900"></label></div>
+            <div class="event-day" data-date="2026-10-31" data-period="public"><strong>10月31日（土）一般公開</strong><label>受付開始<input class="reception-start" type="time" step="900"></label><label>最初の枠<input class="slot-start" type="time" step="900"></label><label>最終枠終了<input class="slot-end" type="time" step="900"></label></div>
+            <div class="event-day" data-date="2026-11-01" data-period="test"><strong>11月1日（日）動作確認</strong><label>受付開始<input class="reception-start" type="time" step="900"></label><label>最初の枠<input class="slot-start" type="time" step="900"></label><label>最終枠終了<input class="slot-end" type="time" step="900"></label></div>
+            <div class="event-day" data-date="2026-11-01" data-period="public"><strong>11月1日（日）一般公開</strong><label>受付開始<input class="reception-start" type="time" step="900"></label><label>最初の枠<input class="slot-start" type="time" step="900"></label><label>最終枠終了<input class="slot-end" type="time" step="900"></label></div>
+            <button class="primary" type="submit">4日分の受付時間を保存</button>
+          </form>
+        </section>
         <details class="panel qr-details">
           <summary>教室前掲示用QRコード</summary>
           <div class="details-body">

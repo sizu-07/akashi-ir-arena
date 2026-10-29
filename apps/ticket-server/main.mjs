@@ -6,7 +6,7 @@ import {randomBytes, timingSafeEqual} from 'node:crypto';
 import {WebSocketServer, WebSocket} from 'ws';
 import QRCode from 'qrcode';
 import {supabaseTicketStorage, ticketStorage} from './store.mjs';
-import {TicketQueue} from './tickets.mjs';
+import {TicketQueue,EVENT_SCHEDULE} from './tickets.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const webRoot = path.join(root, 'apps/ticket-web');
@@ -27,7 +27,13 @@ export async function createTicketApp({
   if (typeof operatorPassword !== 'string' || operatorPassword.length < 12) throw Error('運営パスワードは12文字以上にしてください');
   if (typeof gameApiKey !== 'string' || gameApiKey.length < 24) throw Error('ゲームAPIキーは24文字以上にしてください');
   const db = supabaseUrl ? supabaseTicketStorage({url: supabaseUrl, secretKey: supabaseSecretKey, serviceRoleKey: supabaseServiceRoleKey}) : ticketStorage(dataDir);
-  const queue = new TicketQueue({saved: await db.load(), save: (state) => db.save(state), log: (event) => db.log(event)});
+  let saved=await db.load();
+  if(supabaseUrl && saved && saved.version!==3){
+    await db.clear();
+    saved=null;
+  }
+  const queue = new TicketQueue({saved,eventSchedule:supabaseUrl?EVENT_SCHEDULE:null,save: (state) => db.save(state), log: (event) => db.log(event)});
+  if(!saved){db.save(queue.state);await db.flush();}
   const sessions = new Map();
   const attempts = new Map();
   const commands = new Map();
@@ -267,12 +273,16 @@ export async function createTicketApp({
     server.listen(port, bind);
   });
   let checkingDueRound = false;
+  let lastRegistrationCode=queue.registrationStatus().code;
   const dueRoundTimer = setInterval(async () => {
     if (checkingDueRound) return;
     checkingDueRound = true;
     try {
       const result = queue.advanceTime('automatic-time', {requireStarted: true});
-      if (result.changed) { await db.flush(); broadcast(); }
+      const registrationCode=queue.registrationStatus().code;
+      if (result.changed) await db.flush();
+      if (result.changed || registrationCode!==lastRegistrationCode) broadcast();
+      lastRegistrationCode=registrationCode;
     } catch (error) {
       console.error('整理券の時刻進行:', error.message);
     } finally {
@@ -291,6 +301,7 @@ export async function createTicketApp({
     async close() {
       clearInterval(dueRoundTimer);
       clearInterval(cleanup);
+      await db.flush();
       const serverClosed = new Promise((resolve) => server.close(resolve));
       for (const ws of wss.clients) ws.terminate();
       await serverClosed;

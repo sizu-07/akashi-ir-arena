@@ -66,6 +66,11 @@ export function supabaseTicketStorage({url, secretKey, serviceRoleKey}) {
       const rows = await query('/ticket_state?select=data&id=eq.main&limit=1');
       return rows[0]?.data ?? null;
     },
+    async clear() {
+      await pending;
+      await query('/ticket_events?id=not.is.null', {method:'DELETE',headers:{Prefer:'return=minimal'}});
+      await query('/ticket_state?id=eq.main', {method:'DELETE',headers:{Prefer:'return=minimal'}});
+    },
     save(state) {
       const data = structuredClone(state);
       enqueue(() => query('/ticket_state?on_conflict=id', {method: 'POST', headers: {Prefer: 'resolution=merge-duplicates,return=minimal'}, body: JSON.stringify({id: 'main', data, updated_at: new Date().toISOString()})}));

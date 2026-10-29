@@ -11,6 +11,24 @@ const token = () => randomBytes(24).toString('base64url');
 const clone = (value) => structuredClone(value);
 const SLOT_MINUTES = 15;
 const SLOT_MS = SLOT_MINUTES * 60_000;
+const MIN_REMAINING_OPENING_SLOT_MS = 5 * 60_000;
+export const EVENT_WINDOWS = Object.freeze([
+  {date:'2026-10-29',period:'public'}, {date:'2026-10-30',period:'public'},
+  {date:'2026-10-31',period:'test'}, {date:'2026-10-31',period:'public'},
+  {date:'2026-11-01',period:'test'}, {date:'2026-11-01',period:'public'},
+]);
+export const EVENT_SCHEDULE = Object.freeze([
+  {date:'2026-10-29',period:'public',receptionStart:'10:00',slotStart:'10:00',slotEnd:'21:00'},
+  {date:'2026-10-30',period:'public',receptionStart:'09:00',slotStart:'09:00',slotEnd:'21:00'},
+  {date:'2026-10-31',period:'test',receptionStart:'08:00',slotStart:'08:00',slotEnd:'09:30'},
+  {date:'2026-10-31',period:'public',receptionStart:'09:45',slotStart:'10:00',slotEnd:'15:00'},
+  {date:'2026-11-01',period:'test',receptionStart:'08:00',slotStart:'08:00',slotEnd:'09:30'},
+  {date:'2026-11-01',period:'public',receptionStart:'09:45',slotStart:'10:00',slotEnd:'15:00'},
+]);
+const eventDate = (timestamp) => new Intl.DateTimeFormat('sv-SE', {timeZone: 'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(timestamp);
+const eventTime = (date, time) => Date.parse(`${date}T${time}:00+09:00`);
+const validEventTime = (value) => typeof value === 'string' && /^(?:[01]\d|2[0-3]):(?:00|15|30|45)$/.test(value);
+const closedNotice = '受け付けは終了しました。もし枠が空いたら入れるかもしれません。';
 const nextSlotBoundary = (value) => (Math.floor(value / SLOT_MS) + 1) * SLOT_MS;
 const floorSlotBoundary = (value) => Math.floor(value / SLOT_MS) * SLOT_MS;
 const isSlotBoundary = (value) => Number.isFinite(value) && value % SLOT_MS === 0;
@@ -42,12 +60,13 @@ const bestDisplacement = (tickets, peopleNeeded) => {
 };
 
 export class TicketQueue {
-  constructor({saved = null, save = () => {}, log = () => {}, now = Date.now} = {}) {
+  constructor({saved = null, save = () => {}, log = () => {}, now = Date.now, previewing = false, eventSchedule = null} = {}) {
     this.save = save;
     this.log = log;
     this.now = now;
+    this.previewing = previewing;
     this.state = saved ?? {
-      version: 2,
+      version: 3,
       nextReceptionNumber: 1,
       nextTicketNumber: 1,
       nextRoundNumber: 1,
@@ -59,6 +78,7 @@ export class TicketQueue {
         graceMinutes: 3,
         maxWaitingGroups: 100,
         autoCall: true,
+        ...(eventSchedule?{eventDays:clone(eventSchedule)}:{}),
       },
       tickets: [],
       rounds: [],
@@ -69,7 +89,7 @@ export class TicketQueue {
     this.state.settings.globalDelayMinutes = Math.min(600, Math.max(0, Math.ceil((Number(this.state.settings.globalDelayMinutes) || 0) / SLOT_MINUTES) * SLOT_MINUTES));
     this.state.settings.delayAnchorAt = isSlotBoundary(this.state.settings.delayAnchorAt) ? this.state.settings.delayAnchorAt : null;
     if (!this.state.settings.globalDelayMinutes) this.state.settings.delayAnchorAt = null;
-    this.state.version = 2;
+    this.state.version = 3;
     for (const ticket of this.state.tickets) {
       if (!Array.isArray(ticket.playerNicknames) || ticket.playerNicknames.length !== ticket.partySize) {
         ticket.playerNicknames = legacyPlayerNames(ticket.nickname, ticket.partySize);
@@ -162,8 +182,31 @@ export class TicketQueue {
     return event;
   }
 
+  eventWindow() {
+    if (!this.state.settings.eventDays) return null;
+    const date = eventDate(this.now());
+    const windows=this.state.settings.eventDays.filter((item)=>item.date===date && item.receptionStart && item.slotStart && item.slotEnd)
+      .map((item)=>({date,period:item.period,configured:true,receptionStart:item.receptionStart,receptionStartAt:eventTime(date,item.receptionStart),slotStartAt:eventTime(date,item.slotStart),slotEndAt:eventTime(date,item.slotEnd)}))
+      .sort((a,b)=>a.receptionStartAt-b.receptionStartAt);
+    const active=windows.find((item)=>this.now()>=item.receptionStartAt && this.now()<item.slotEndAt-SLOT_MS);
+    if(active)return active;
+    const upcoming=windows.find((item)=>this.now()<item.receptionStartAt);
+    if(upcoming)return {...upcoming,beforeOpen:true};
+    return windows.length?{...windows.at(-1),ended:true}:date>EVENT_WINDOWS.at(-1).date?{date,configured:true,ended:true}:{date,configured:false};
+  }
+
+  registrationStatus() {
+    const window = this.eventWindow();
+    if (window?.ended) return {open:false,code:'ended',message:closedNotice};
+    if (!this.state.registrationOpen) return {open:false,code:'manual',message:'現在、整理券の受付を停止しています。'};
+    if (!window) return {open:true,code:'open',message:''};
+    if (!window.configured) return {open:false,code:'unconfigured',message:'本日の整理券受付は準備中です。'};
+    if (window.beforeOpen) return {open:false,code:'before_open',message:`受付開始は${window.receptionStart}です。`};
+    return {open:true,code:'open',message:'',slotStartAt:window.slotStartAt,slotEndAt:window.slotEndAt};
+  }
+
   registrationPreview(partySize, earliestCallAt = null) {
-    const copy = new TicketQueue({saved: clone(this.state), now: this.now});
+    const copy = new TicketQueue({saved: clone(this.state), now: this.now, previewing:true});
     const ticket = copy.register({
       requestId: randomUUID(), nicknames: Array.from({length: Number(partySize)}, (_, index) => `参加者${index + 1}`),
       partySize, consent: true, earliestCallAt,
@@ -174,21 +217,27 @@ export class TicketQueue {
   publicAvailability(partySize) {
     const size = Number(partySize);
     if (!Number.isInteger(size) || size < 1 || size > 4) throw Error('人数は1〜4人で入力してください');
+    const registration = this.registrationStatus();
+    if (!registration.open) return {registration,current:null,alternatives:[],updatedAt:this.state.updatedAt};
     const current = this.registrationPreview(partySize);
+    if (registration.slotEndAt && current.slotEndAt > registration.slotEndAt) return {registration:{open:false,code:'ended',message:closedNotice},current:null,alternatives:[],updatedAt:this.state.updatedAt};
     const first = nextSlotBoundary(Math.max(this.now(), current.estimatedCallAt ?? this.now()));
     const alternatives = Array.from({length: 8}, (_, index) => {
       const earliestCallAt = first + index * SLOT_MS;
       return earliestCallAt <= this.now() + 24 * 60 * 60_000
         ? {earliestCallAt, ...this.registrationPreview(partySize, earliestCallAt)} : null;
-    }).filter((option) => option && option.estimatedCallAt > current.estimatedCallAt);
-    return {current, alternatives, updatedAt: this.state.updatedAt};
+    }).filter((option) => option && option.estimatedCallAt > current.estimatedCallAt && (!registration.slotEndAt || option.slotEndAt <= registration.slotEndAt));
+    return {registration,current, alternatives, updatedAt: this.state.updatedAt};
   }
 
   register({nickname, nicknames, partySize, consent, requestId, earliestCallAt = null, expectedSlotStartAt = null}) {
     if (typeof requestId !== 'string' || requestId.length < 8 || requestId.length > 100) throw Error('登録要求IDが必要です');
     const existing = this.state.tickets.find((item) => item.registrationRequestId === requestId);
     if (existing) { this.save(this.state); return this.publicTicket(existing); }
-    if (!this.state.registrationOpen) throw Error('現在、整理券の受付を停止しています');
+    if (!this.previewing) {
+      const registration = this.registrationStatus();
+      if (!registration.open) throw Error(registration.message);
+    }
     const size = Number(partySize);
     if (!Number.isInteger(size) || size < 1 || size > 4) throw Error('人数は1〜4人で入力してください');
     const legacyName = String(nickname ?? '').trim();
@@ -205,12 +254,17 @@ export class TicketQueue {
     }
     const waiting = this.state.tickets.filter((item) => !terminalStates.has(item.status) && item.status !== 'PLAYING').length;
     if (waiting >= this.state.settings.maxWaitingGroups) throw Error('受付上限に達しました');
+    if (!this.previewing) {
+      const window=this.eventWindow();
+      if(window?.configured && this.registrationPreview(size,earliestCallAt).slotEndAt>window.slotEndAt) throw Error(closedNotice);
+    }
     if (expectedSlotStartAt !== null && this.registrationPreview(size, earliestCallAt).slotStartAt !== expectedSlotStartAt) {
       throw Error('案内時刻が更新されました。入力内容を確認し直してください');
     }
     const now = this.now();
     const queueWasDrained = this.state.rounds.some((round) => ['COMPLETED', 'SKIPPED'].includes(round.status))
       && !this.state.rounds.some((round) => ['CALLED', 'PLAYING', 'SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status));
+    const window=this.eventWindow();
     const ticket = {
       id: randomUUID(),
       registrationRequestId: requestId,
@@ -219,7 +273,7 @@ export class TicketQueue {
       nickname: legacyName || playerNames.join('・'),
       playerNicknames: playerNames,
       partySize: size,
-      earliestCallAt,
+      earliestCallAt:window?.configured?Math.max(earliestCallAt??0,window.slotStartAt-SLOT_MS):earliestCallAt,
       status: 'WAITING',
       accessToken: token(),
       qrToken: token(),
@@ -336,7 +390,14 @@ export class TicketQueue {
       nextSlot = called.slotStartAt + SLOT_MS;
     }
     const scheduled = this.state.rounds.filter((round) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status)).sort((a, b) => a.number - b.number);
-    if (nextSlot === null) nextSlot = isSlotBoundary(scheduled[0]?.slotStartAt) ? scheduled[0].slotStartAt : nextSlotBoundary(now);
+    const eventWindow=this.eventWindow();
+    if (nextSlot === null) {
+      const openingSlotAvailable=eventWindow?.configured && now>=eventWindow.slotStartAt
+        && now<=eventWindow.slotStartAt+SLOT_MS-MIN_REMAINING_OPENING_SLOT_MS;
+      nextSlot=isSlotBoundary(scheduled[0]?.slotStartAt) ? scheduled[0].slotStartAt
+        : openingSlotAvailable ? eventWindow.slotStartAt : nextSlotBoundary(now);
+    }
+    if (eventWindow?.configured&&!isSlotBoundary(scheduled[0]?.slotStartAt)) nextSlot=Math.max(nextSlot,eventWindow.slotStartAt);
     for (const round of scheduled) {
       const manual = round.manualSlotStartAt ?? (isSlotBoundary(round.manualScheduledAt) ? round.manualScheduledAt : null);
       const existing = isSlotBoundary(round.slotStartAt) ? round.slotStartAt : null;
@@ -499,7 +560,7 @@ export class TicketQueue {
         skippedTickets: (round.skippedTicketIds ?? []).map(ticketSummary).filter(Boolean),
       };
     });
-    return {registrationOpen: this.state.registrationOpen, globalMessage: this.state.globalMessage, settings: clone(this.state.settings), tickets, rounds, gameLastSeenAt: this.state.gameLastSeenAt ?? null, updatedAt: this.state.updatedAt};
+    return {registrationOpen: this.state.registrationOpen, registrationStatus:this.registrationStatus(), globalMessage: this.state.globalMessage, settings: clone(this.state.settings), tickets, rounds, gameLastSeenAt: this.state.gameLastSeenAt ?? null, updatedAt: this.state.updatedAt};
   }
 
   ticket(id) { return this.state.tickets.find((item) => item.id === id); }
@@ -713,6 +774,7 @@ export class TicketQueue {
     if (ticketId && !ticket) throw Error('整理券が見つかりません');
     switch (action) {
       case 'registration': this.state.registrationOpen = Boolean(value); this.persist('registration_changed', {operator, details: {open: Boolean(value)}}); break;
+      case 'event_days': this.updateEventDays(value,operator); break;
       case 'call_next': this.callNext(operator); break;
       case 'recall': {
         const round = this.round(roundId); if (!round || round.status !== 'CALLED') throw Error('呼出中の回を選んでください');
@@ -825,6 +887,33 @@ export class TicketQueue {
     const withdrawnRound = this.withdrawEarlyCalledRound(operator);
     this.persist('settings_changed', {operator, details: clone(this.state.settings)});
     if (withdrawnRound || this.state.settings.globalDelayMinutes < previousDelayMinutes) this.callDueRound(operator, {requireStarted: true});
+  }
+
+  updateEventDays(value,operator) {
+    if (!Array.isArray(value) || value.length!==EVENT_WINDOWS.length) throw Error('6つの時間帯を入力してください');
+    const days=EVENT_WINDOWS.map(({date,period},index)=>{
+      const input=value[index];
+      if(input?.date!==date||input?.period!==period) throw Error('日付と時間帯が一致しません');
+      const times=['receptionStart','slotStart','slotEnd'].map((key)=>String(input[key]??''));
+      if(times.every((time)=>time==='')) return {date,period,receptionStart:'',slotStart:'',slotEnd:''};
+      if(times.some((time)=>!validEventTime(time))) throw Error(`${date}の時刻は00・15・30・45分で入力してください`);
+      if(!(times[0]<=times[1] && times[1]<times[2])) throw Error(`${date}は受付開始≦最初の枠＜最終枠終了の順にしてください`);
+      if(eventTime(date,times[2])-eventTime(date,times[1])<SLOT_MS) throw Error(`${date}には15分以上の枠が必要です`);
+      return {date,period,receptionStart:times[0],slotStart:times[1],slotEnd:times[2]};
+    });
+    for(const date of new Set(days.map((day)=>day.date))){
+      const [first,second]=days.filter((day)=>day.date===date);
+      if(second?.receptionStart&&first?.slotEnd&&second.receptionStart<first.slotEnd) throw Error(`${date}の時間帯が重なっています`);
+    }
+    const protectedDates=new Set(this.state.tickets.filter((ticket)=>!terminalStates.has(ticket.status)).map((ticket)=>this.round(ticket.roundId)?.scheduledAt).filter(Number.isFinite).map(eventDate));
+    for(const date of protectedDates){
+      const previous=this.state.settings.eventDays?.filter((day)=>day.date===date)??[];
+      const next=days.filter((day)=>day.date===date);
+      if(JSON.stringify(previous)!==JSON.stringify(next)) throw Error(`${date}の有効な整理券があるため、この日の時間は変更できません`);
+    }
+    this.state.settings.eventDays=days;
+    this.scheduleRounds();
+    this.persist('event_days_changed',{operator,details:{days}});
   }
 
   applyGameEvent(event) {

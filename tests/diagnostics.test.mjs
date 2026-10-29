@@ -6,6 +6,8 @@ import path from 'node:path';
 import {Game} from '../apps/server/game.mjs';
 import {Diagnostics} from '../apps/server/diagnostics.mjs';
 import {createApp} from '../apps/server/main.mjs';
+import {hardware} from '../apps/server/hardware.mjs';
+import {WebSocket} from 'ws';
 
 const devices=[1,2,3,4].map(n=>({id:`gun-00${n}`,key:`key-${n}`,name:`P${n}`,shooterId:n}));
 function diagnosticFrame(shooter,seq){
@@ -82,4 +84,34 @@ test('本番APIで中間発表の自動進行を保留し、診断終了後に�
     assert.ok(after.intermissionEndsAt>Date.now()+8000);
     assert.deepEqual(after.players.map(p=>p.kills),[0,0,0,0]);
   }finally{await app.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+test('説明動画と同時に無得点の撃ち合い診断を始め、ゲーム開始で解除する',async()=>{
+  const dir=mkdtempSync(path.join(os.tmpdir(),'arena-video-diagnostic-'));
+  const app=await createApp({config:{httpPort:0,mqttPort:0,operatorPin:'12345678',devices},demo:true,demoSource:'devices',dataDir:dir,bind:'127.0.0.1'});
+  let display;
+  try{
+    const base=`http://127.0.0.1:${app.httpServer.address().port}`;
+    const loginResponse=await fetch(`${base}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:'12345678'})});
+    const login=await loginResponse.json(),cookie=loginResponse.headers.get('set-cookie').split(';')[0];
+    let seq=0;
+    const action=(name,extra={})=>fetch(`${base}/api/action`,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie,'X-CSRF-Token':login.csrf},body:JSON.stringify({action:name,commandId:`video-diagnostic-${++seq}`,...extra})});
+    display=new WebSocket(`${base.replace('http','ws')}/ws/display`,{headers:{Origin:base}});
+    await new Promise((resolve,reject)=>{display.once('open',resolve);display.once('error',reject);});
+    display.send(JSON.stringify({type:'ready',ready:true}));
+    assert.equal((await action('video',{operation:'restart'})).status,200);
+    assert.equal((await action('start',{testMode:true})).status,400);
+    assert.equal((await (await fetch(`${base}/api/state`)).json()).diagnostics.enabled,true);
+    app.game.hello('gun-001','boot-video');
+    app.game.heartbeat('gun-001',{syncRtt:10,hardware_profile:hardware.profile,hardware_ready:true,firmware_version:'0.8.2-4e42',diagnostic_capable:true});
+    const during=await (await fetch(`${base}/api/state`)).json();
+    assert.equal(during.media,'video');
+    assert.equal(during.diagnostics.enabled,true);
+    assert.deepEqual(during.players.map(p=>p.kills),[0,0,0,0]);
+    assert.equal((await action('start',{testMode:true})).status,200);
+    const after=await (await fetch(`${base}/api/state`)).json();
+    assert.equal(after.diagnostics.enabled,false);
+    assert.equal(after.phase,'COUNTDOWN');
+    assert.equal(after.media,'score');
+  }finally{display?.terminate();await app.close();rmSync(dir,{recursive:true,force:true});}
 });

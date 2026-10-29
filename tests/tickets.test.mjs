@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {TicketQueue} from '../apps/ticket-server/tickets.mjs';
+import {TicketQueue,EVENT_WINDOWS,EVENT_SCHEDULE} from '../apps/ticket-server/tickets.mjs';
 import {createTicketApp} from '../apps/ticket-server/main.mjs';
 import {createTicketBridge} from '../apps/server/ticket-bridge.mjs';
 import {supabaseTicketStorage} from '../apps/ticket-server/store.mjs';
@@ -24,6 +24,52 @@ test('4席へ後続組を充当し、飛ばされた組を次回で優先する'
   assert.equal(first.slotStartAt % (15 * 60_000), 0);
   assert.equal(second.slotStartAt - first.slotStartAt, 15 * 60_000);
   assert.equal(new Set(queue.state.tickets.map((ticket) => ticket.receptionNumber)).size, 4);
+});
+
+test('開催日ごとの受付時間と最終枠を守り、受付終了案内を返す',()=>{
+  let now=Date.parse('2026-10-29T08:45:00+09:00');
+  const queue=new TicketQueue({now:()=>now});
+  const eventDays=EVENT_WINDOWS.map(({date,period})=>({date,period,receptionStart:'',slotStart:'',slotEnd:''}));
+  eventDays[0]={date:'2026-10-29',period:'public',receptionStart:'09:00',slotStart:'10:00',slotEnd:'10:30'};
+  queue.operatorAction({action:'event_days',value:eventDays,operator:'test'});
+  assert.equal(queue.publicAvailability(4).registration.code,'before_open');
+  assert.throws(()=>register(queue,'早すぎる',4),/受付開始/);
+  now=Date.parse('2026-10-29T09:00:00+09:00');
+  const first=queue.publicAvailability(4);
+  assert.equal(first.registration.open,true);
+  assert.equal(first.current.slotStartAt,Date.parse('2026-10-29T10:00:00+09:00'));
+  register(queue,'1枠目',4);
+  register(queue,'2枠目',4);
+  assert.equal(queue.publicAvailability(4).registration.code,'ended');
+  assert.throws(()=>register(queue,'満席',4),/受け付けは終了しました/);
+  now=Date.parse('2026-10-29T10:15:00+09:00');
+  assert.equal(queue.publicAvailability(1).registration.code,'ended');
+  now=Date.parse('2026-10-30T09:00:00+09:00');
+  assert.equal(queue.publicAvailability(1).registration.code,'unconfigured');
+});
+
+test('一般公開前の動作確認と一般受付を別々の時間帯として扱う',()=>{
+  let now=Date.parse('2026-10-31T08:00:00+09:00');
+  const queue=new TicketQueue({now:()=>now});
+  queue.operatorAction({action:'event_days',value:structuredClone(EVENT_SCHEDULE),operator:'test'});
+  assert.equal(queue.publicAvailability(4).current.slotStartAt,Date.parse('2026-10-31T08:00:00+09:00'));
+  register(queue,'動作確認',4);
+  now=Date.parse('2026-10-31T09:20:00+09:00');
+  assert.equal(queue.publicAvailability(4).registration.code,'before_open');
+  now=Date.parse('2026-10-31T09:45:00+09:00');
+  assert.equal(queue.publicAvailability(4).current.slotStartAt,Date.parse('2026-10-31T10:00:00+09:00'));
+  register(queue,'一般公開',4);
+  assert.equal(queue.state.rounds.at(-1).slotStartAt,Date.parse('2026-10-31T10:00:00+09:00'));
+  now=Date.parse('2026-10-31T14:45:00+09:00');
+  assert.equal(queue.publicAvailability(4).registration.code,'ended');
+});
+
+test('受付と体験が同時に始まる日の開場直後は最初の枠を案内する',()=>{
+  let now=Date.parse('2026-10-29T10:00:05+09:00');
+  const queue=new TicketQueue({now:()=>now,eventSchedule:EVENT_SCHEDULE});
+  assert.equal(queue.publicAvailability(4).current.slotStartAt,Date.parse('2026-10-29T10:00:00+09:00'));
+  now=Date.parse('2026-10-29T10:11:00+09:00');
+  assert.equal(queue.publicAvailability(4).current.slotStartAt,Date.parse('2026-10-29T10:15:00+09:00'));
 });
 
 test('単純な先入れでは空席になる場合も4席になる組合せを選ぶ', () => {
@@ -865,10 +911,42 @@ test('Supabase保存は状態と監査ログを応答前に確定できる', asy
     store.save({tickets: [{id: 'one'}]});
     await store.flush();
     assert.equal(requests.filter((item) => item.method === 'POST').length, 2);
+    await store.clear();
+    assert.deepEqual(requests.filter((item) => item.method === 'DELETE').map((item) => item.url),['/rest/v1/ticket_events?id=not.is.null','/rest/v1/ticket_state?id=eq.main']);
     assert.match(await store.csv(), /test/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test('公開サーバーは旧整理券と監査履歴を一度だけ消去して4日分の時間を保存する',async()=>{
+  const requests=[];
+  let stored={version:2,tickets:[{id:'old-ticket'}]};
+  const server=(await import('node:http')).createServer(async(request,response)=>{
+    let text='';for await(const chunk of request)text+=chunk;
+    requests.push({method:request.method,url:request.url});
+    if(request.method==='GET'&&request.url.startsWith('/rest/v1/ticket_state')){
+      response.writeHead(200,{'Content-Type':'application/json'});response.end(JSON.stringify(stored?[{data:stored}]:[]));return;
+    }
+    if(request.method==='POST'&&request.url.startsWith('/rest/v1/ticket_state'))stored=JSON.parse(text).data;
+    if(request.method==='DELETE'&&request.url.startsWith('/rest/v1/ticket_state'))stored=null;
+    response.writeHead(204);response.end();
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const supabaseUrl=`http://127.0.0.1:${server.address().port}`;
+  const options={port:0,bind:'127.0.0.1',operatorPassword:'migration-test-password',gameApiKey:'migration-test-game-api-key-123',supabaseUrl,supabaseSecretKey:'sb_secret_test'};
+  try{
+    const first=await createTicketApp(options);
+    try{
+      assert.equal(first.queue.state.tickets.length,0);
+      assert.equal(first.queue.state.version,3);
+      assert.deepEqual(first.queue.state.settings.eventDays,EVENT_SCHEDULE);
+    }finally{await first.close();}
+    assert.equal(requests.filter(item=>item.method==='DELETE').length,2);
+    const second=await createTicketApp(options);
+    try{assert.equal(second.queue.state.version,3);}finally{await second.close();}
+    assert.equal(requests.filter(item=>item.method==='DELETE').length,2);
+  }finally{await new Promise(resolve=>server.close(resolve));}
 });
 
 test('Supabase Secret KeyはJWT用Authorizationヘッダーへ設定しない', async () => {

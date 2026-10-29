@@ -2,6 +2,14 @@
 .guest-page {
   font-size: 16px;
 }
+.guest-page.is-closed > header, .guest-page.is-closed > main { display: none; }
+.closed-screen[hidden] { display: none; }
+.closed-screen { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: linear-gradient(145deg,#241e25,#4c252b); color: white; }
+.closed-screen-card { width: min(720px,100%); padding: clamp(32px,7vw,72px); border: 1px solid #ffffff66; border-top: 6px solid #e98788; background: #ffffff12; box-shadow: 0 22px 70px #0005; }
+.closed-screen-card small { color: #f0b2b4; font-weight: 800; letter-spacing: .12em; }
+.closed-screen-card h1 { margin: 20px 0; font-size: clamp(38px,9vw,72px); line-height: 1.15; }
+.closed-screen-card p { font-size: clamp(18px,4vw,26px); line-height: 1.7; }
+.closed-screen-card p:last-child { font-size: 15px; color: #ffffffb9; }
 .notice-dialog {
   width: min(620px, calc(100% - 24px));
   max-height: calc(100dvh - 24px);

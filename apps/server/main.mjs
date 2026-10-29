@@ -45,6 +45,7 @@ export async function detectRunningGameServer(port){
 export async function createApp({config,demo=false,demoSource,dataDir=path.join(root,'data'),effectsDir=path.join(root,'assets/audio/effects'),bind='0.0.0.0'}={}){
  const db=storage(dataDir),saved=db.load(),game=new Game(config.devices,{saved,allowTestMode:demo,autoAdvanceRounds:!demo,log:e=>db.log(e)});
  const diagnostics=new Diagnostics({log:e=>db.log(e)});
+ let videoDiagnostics=false;
  let simulation=demo&&(demoSource??saved?.demoSource??'simulation')!=='devices',simulators=null,switchingSource=false;
  const simulationKey=randomBytes(24).toString('hex');
  if(demo)game.s.demoSource=simulation?'simulation':'devices';
@@ -185,23 +186,40 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
             break;
           }
           case 'start':{
-            if(diagnostics.enabled)throw Error('一時診断を終了してからゲームを開始・再開してください');
             if(!demo&&(b.testMode===true||game.s.testMode))throw Error('動作確認は「起動_デモ.cmd」で実行してください');
+            if(diagnostics.enabled&&!displayReady())throw Error('投影画面で「表示を準備」を押してください');
+            if(diagnostics.enabled&&game.s.phase==='INTERMISSION'&&game.autoAdvanceRounds)throw Error('次ゲームは途中経過の15秒後に自動開始します');
             const testMode=game.s.phase==='PAUSED'?game.s.testMode:b.testMode===true;
             if(demo&&!simulation&&!testMode)throw Error('デモ版の実機確認では「接続済み端末だけで動作確認」を選択してください');
             if(!testMode&&game.s.phase==='LOBBY'&&ticketBridge.enabled&&preparedTicketGameId!==game.s.id)await applyTicketMembers();
-            game.start(displayReady(),{testMode});break;
+            const wasDiagnostic=diagnostics.enabled,wasVideoDiagnostic=videoDiagnostics;
+            if(wasDiagnostic){diagnostics.end(game);videoDiagnostics=false;}
+            try{game.start(displayReady(),{testMode});}
+            catch(error){if(wasDiagnostic){diagnostics.begin(game,{allowNoDevices:true});videoDiagnostics=wasVideoDiagnostic;}throw error;}
+            break;
           }
           case 'pause':game.pause();break;
           case 'finish':if(diagnostics.enabled)diagnostics.end(game);game.finish('operator');break;
           case 'diagnostic_on':{
             if(simulation)throw Error('仮想端末では一時診断を使用できません');
-            diagnostics.begin(game);operation={notice:'一時診断を開始しました。試合の得点には加算されません。'};break;
+            diagnostics.begin(game);videoDiagnostics=false;operation={notice:'一時診断を開始しました。試合の得点には加算されません。'};break;
           }
-          case 'diagnostic_off':diagnostics.end(game);operation={notice:'一時診断を終了しました。停止中の試合は確認後に手動で再開してください。'};break;
+          case 'diagnostic_off':diagnostics.end(game);videoDiagnostics=false;operation={notice:'一時診断を終了しました。停止中の試合は確認後に手動で再開してください。'};break;
           case 'demo_end_round':if(!demo)throw Error('デモ専用操作');if(diagnostics.enabled)throw Error('一時診断を終了してからゲームを進めてください');game.endRound('demo_skip');break;
-          case 'media':if(b.mode==='video'&&!existsSync(path.join(root,rulesVideo())))throw Error('ルール説明動画がありません');game.setMedia(b.mode);break;
-          case 'video':if(!existsSync(path.join(root,rulesVideo())))throw Error('ルール説明動画がありません');game.controlVideo(b.operation);break;
+          case 'media':{
+            if(b.mode==='video'&&!existsSync(path.join(root,rulesVideo())))throw Error('ルール説明動画がありません');
+            game.setMedia(b.mode);
+            if(b.mode==='video'&&!simulation&&!diagnostics.enabled){diagnostics.begin(game,{allowNoDevices:true});videoDiagnostics=true;}
+            if(b.mode!=='video'&&videoDiagnostics&&diagnostics.enabled){diagnostics.end(game);videoDiagnostics=false;}
+            break;
+          }
+          case 'video':{
+            if(!existsSync(path.join(root,rulesVideo())))throw Error('ルール説明動画がありません');
+            game.controlVideo(b.operation);
+            if(b.operation!=='pause'&&!simulation&&!diagnostics.enabled){diagnostics.begin(game,{allowNoDevices:true});videoDiagnostics=true;}
+            if(b.operation==='pause'&&videoDiagnostics&&diagnostics.enabled){diagnostics.end(game);videoDiagnostics=false;}
+            break;
+          }
           case 'demo_hit':if(!simulation)throw Error('仮想端末専用操作');simulators?.hit(b.shooter,b.victim,b.receiver??'rx1');break;
           case 'motor_demo_hit':
           case 'motor_demo_defeat':
