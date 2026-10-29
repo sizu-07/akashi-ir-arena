@@ -1048,7 +1048,7 @@ test('入場受付後に整理券メンバーを自動反映し、手動更新�
   }
 });
 
-test('入場前の手動反映は仮名を表示し、入場済みだけ実名へ変え、全員入場後に自動更新する', async () => {
+test('入場確認のたびに待機画面の仮名を自動更新する', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'ticket-placeholder-test-'));
   let currentRound = null;
   const ticketServer = (await import('node:http')).createServer((request, response) => {
@@ -1065,6 +1065,11 @@ test('入場前の手動反映は仮名を表示し、入場済みだけ実名�
     const headers = {'Content-Type':'application/json',Cookie:loginResponse.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':login.csrf};
     let sequence = 0;
     const reflect = async () => fetch(`${base}/api/action`,{method:'POST',headers,body:JSON.stringify({action:'sync_ticket_members',commandId:`placeholder-${++sequence}`})});
+    const waitForNames = async (names) => {
+      for(let attempt=0;attempt<40 && JSON.stringify(app.game.s.players.map((player)=>player.name))!==JSON.stringify(names);attempt++)await new Promise((resolve)=>setTimeout(resolve,50));
+      assert.deepEqual(app.game.s.players.map((player)=>player.name),names);
+    };
+    await waitForNames(['player1','player2','player3','player4']);
     assert.equal((await reflect()).status,200);
     assert.deepEqual(app.game.s.players.map((player)=>player.name),['player1','player2','player3','player4']);
     assert.equal((await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersProvisional,true);
@@ -1072,12 +1077,10 @@ test('入場前の手動反映は仮名を表示し、入場済みだけ実名�
     assert.equal((await reflect()).status,200);
     assert.deepEqual(app.game.s.players.map((player)=>player.name),['player1','player2','player3','player4']);
     currentRound.admittedPlayerNicknames=['春','夏',null,null];currentRound.checkedInPeople=2;
-    assert.equal((await reflect()).status,200);
-    assert.deepEqual(app.game.s.players.map((player)=>player.name),['春','夏','player3','player4']);
+    await waitForNames(['春','夏','player3','player4']);
     assert.equal((await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersLoaded,false);
     currentRound.admittedPlayerNicknames=['春','夏','秋','冬'];currentRound.checkedInPeople=4;currentRound.ready=true;
-    for(let attempt=0;attempt<35 && app.game.s.players[2].name!=='秋';attempt++)await new Promise((resolve)=>setTimeout(resolve,100));
-    assert.deepEqual(app.game.s.players.map((player)=>player.name),['春','夏','秋','冬']);
+    await waitForNames(['春','夏','秋','冬']);
     const finalState=await (await fetch(`${base}/api/state`)).json();
     assert.equal(finalState.ticketBridge.membersLoaded,true);
     assert.equal(finalState.ticketBridge.membersProvisional,false);

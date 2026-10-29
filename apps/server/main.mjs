@@ -100,17 +100,23 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
    const preview=allowPending?await ticketBridge.previewPlayerNicknames():null;
    const names=preview?.names??await ticketBridge.loadPlayerNicknames();
    if(game.s.phase!=='LOBBY')throw Error('整理券メンバーは新しい試合の待機中だけ反映できます');
-   game.setPlayerNames(names);
-   game.s.ticketRoundId=preview&&!preview.ready?null:ticketBridge.currentRoundId;
+   const ready=!preview||preview.ready;
+   const roundId=ready?ticketBridge.currentRoundId:null;
+   const unchanged=game.s.players.every((player,index)=>player.name===names[index])
+     && game.s.ticketRoundId===roundId
+     && (ready?preparedTicketGameId===game.s.id:provisionalTicketGameId===game.s.id);
+   if(unchanged)return {names,ready,checkedInPeople:preview?.checkedInPeople??4,assignedPeople:preview?.assignedPeople??4};
+   if(game.s.players.some((player,index)=>player.name!==names[index]))game.setPlayerNames(names);
+   game.s.ticketRoundId=roundId;
    preparedTicketGameId=preview&&!preview.ready?null:game.s.id;
    provisionalTicketGameId=preview&&!preview.ready?game.s.id:null;
    db.save(game.s);sync();
-   return {names,ready:!preview||preview.ready,checkedInPeople:preview?.checkedInPeople??4,assignedPeople:preview?.assignedPeople??4};
+   return {names,ready,checkedInPeople:preview?.checkedInPeople??4,assignedPeople:preview?.assignedPeople??4};
  }
  async function checkTicketMembers(){
-   if(!ticketBridge.enabled||checkingTicketMembers||game.s.phase!=='LOBBY'||preparedTicketGameId===game.s.id)return;
+   if(!ticketBridge.enabled||checkingTicketMembers||game.s.phase!=='LOBBY')return;
    checkingTicketMembers=true;
-   try{await applyTicketMembers();}catch{/* Registration or check-in may still be in progress. */}
+   try{await applyTicketMembers({allowPending:true});}catch{/* Keep the last displayed names until the ticket server reconnects. */}
    finally{checkingTicketMembers=false;}
  }
  async function body(req){let data='';for await(const chunk of req){data+=chunk;if(data.length>16384)throw Error('本文が大きすぎます');}return JSON.parse(data||'{}');}
@@ -295,7 +301,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
    if(game.s.phase!==lastSavedPhase||game.s.ticketStarted!==ticketStartedBefore||game.s.ticketPaused!==ticketPausedBefore){db.save(game.s);lastSavedPhase=game.s.phase;}
    const state={...game.view(),soundFiles:soundFiles(),owner,displayReady:displayReady(),demo,simulation,diagnostics:diagnostics.view(),ticketBridge:{enabled:ticketBridge.enabled,connected:ticketBridge.connected,pending:ticketBridge.pending,membersLoaded:preparedTicketGameId===game.s.id,membersProvisional:provisionalTicketGameId===game.s.id}};
    for(const ws of wss.clients)if(ws.readyState===WebSocket.OPEN){if(ws.bufferedAmount>100000){ws.close();continue;}ws.send(JSON.stringify(state));}
-   if(++count%4===0){sync();db.save(game.s);}if(count%8===0)void checkTicketMembers();if(count%240===0){for(const [k,s] of sessions)if(s.expires<Date.now())sessions.delete(k);}
+   if(++count%4===0){sync();db.save(game.s);void checkTicketMembers();}if(count%240===0){for(const [k,s] of sessions)if(s.expires<Date.now())sessions.delete(k);}
  },250);
  return {game,broker,httpServer,mqttServer,ticketBridge,async close(){clearInterval(timer);await simulators?.close();await ticketBridge.close();for(const ws of wss.clients)ws.terminate();await new Promise(r=>wss.close(r));await new Promise(r=>httpServer.close(r));await new Promise(r=>broker.close(r));await new Promise(r=>mqttServer.close(r));db.save(game.s);}};
 }
