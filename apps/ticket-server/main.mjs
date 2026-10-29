@@ -27,11 +27,7 @@ export async function createTicketApp({
   if (typeof operatorPassword !== 'string' || operatorPassword.length < 12) throw Error('運営パスワードは12文字以上にしてください');
   if (typeof gameApiKey !== 'string' || gameApiKey.length < 24) throw Error('ゲームAPIキーは24文字以上にしてください');
   const db = supabaseUrl ? supabaseTicketStorage({url: supabaseUrl, secretKey: supabaseSecretKey, serviceRoleKey: supabaseServiceRoleKey}) : ticketStorage(dataDir);
-  let saved=await db.load();
-  if(supabaseUrl && saved && saved.version!==3){
-    await db.clear();
-    saved=null;
-  }
+  const saved=await db.load();
   const queue = new TicketQueue({saved,eventSchedule:supabaseUrl?EVENT_SCHEDULE:null,save: (state) => db.save(state), log: (event) => db.log(event)});
   if(!saved){db.save(queue.state);await db.flush();}
   const sessions = new Map();

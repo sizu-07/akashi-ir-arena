@@ -919,9 +919,9 @@ test('Supabase保存は状態と監査ログを応答前に確定できる', asy
   }
 });
 
-test('公開サーバーは旧整理券と監査履歴を一度だけ消去して4日分の時間を保存する',async()=>{
+test('公開サーバーは4日分の時間と登録済み整理券を再起動後も保持する',async()=>{
   const requests=[];
-  let stored={version:2,tickets:[{id:'old-ticket'}]};
+  let stored=null;
   const server=(await import('node:http')).createServer(async(request,response)=>{
     let text='';for await(const chunk of request)text+=chunk;
     requests.push({method:request.method,url:request.url});
@@ -929,7 +929,6 @@ test('公開サーバーは旧整理券と監査履歴を一度だけ消去し�
       response.writeHead(200,{'Content-Type':'application/json'});response.end(JSON.stringify(stored?[{data:stored}]:[]));return;
     }
     if(request.method==='POST'&&request.url.startsWith('/rest/v1/ticket_state'))stored=JSON.parse(text).data;
-    if(request.method==='DELETE'&&request.url.startsWith('/rest/v1/ticket_state'))stored=null;
     response.writeHead(204);response.end();
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -941,11 +940,15 @@ test('公開サーバーは旧整理券と監査履歴を一度だけ消去し�
       assert.equal(first.queue.state.tickets.length,0);
       assert.equal(first.queue.state.version,3);
       assert.deepEqual(first.queue.state.settings.eventDays,EVENT_SCHEDULE);
+      register(first.queue,'再起動後も保存',1);
     }finally{await first.close();}
-    assert.equal(requests.filter(item=>item.method==='DELETE').length,2);
     const second=await createTicketApp(options);
-    try{assert.equal(second.queue.state.version,3);}finally{await second.close();}
-    assert.equal(requests.filter(item=>item.method==='DELETE').length,2);
+    try{
+      assert.equal(second.queue.state.version,3);
+      assert.deepEqual(second.queue.state.settings.eventDays,EVENT_SCHEDULE);
+      assert.equal(second.queue.state.tickets[0].nickname,'再起動後も保存');
+    }finally{await second.close();}
+    assert.equal(requests.filter(item=>item.method==='DELETE').length,0);
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
 
