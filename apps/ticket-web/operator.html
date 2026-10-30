@@ -30,7 +30,7 @@
             >運営パスワード<input
               name="password"
               type="password"
-              minlength="12"
+              minlength="6"
               required
               autocomplete="current-password" /></label
           ><button class="primary">ログイン</button>
@@ -39,7 +39,7 @@
       <div id="app" hidden>
         <div class="toolbar">
           <div class="actions">
-            <span id="role"></span><button id="takeover">操作権を取得</button>
+            <span id="role"></span><button id="takeover" hidden>操作権を取得</button>
           </div>
           <div class="actions">
             <span
@@ -101,7 +101,7 @@
               ><button id="delayReset">調整枠を解除</button>
             </div>
             <p class="hint">
-              1枠＝15分。体験中の枠は動かさず、呼出・待機の予定を後ろへずらします。変更時は来場者へ自動で案内します。
+              1枠＝15分。体験中の枠は動かさず、呼出・待機の予定を後ろへずらします。変更時は来場者へ自動で案内します。調整枠は運営が追加したときだけ増えます（ゲームの一時停止では増えません）。不要になったら「1枠減らす」「解除」で消せます。調整枠がないときは、空いた枠へ後ろの組が自動で前詰めされます。
             </p>
           </section>
           <section class="panel" id="noticePanel">

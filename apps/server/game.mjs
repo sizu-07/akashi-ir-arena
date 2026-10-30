@@ -102,9 +102,15 @@ export class Game {
     if(!selected.length)throw Error(mode?'接続・時刻同期した端末が1台以上必要です':'使用できる銃がありません');
     if(!mode&&selected.some(receiverOnlyGame))throw Error('受信専用端末は「接続済み端末だけで動作確認」で使用してください');
     if(!mode&&selected.length<2)throw Error('使用できる銃が2台未満のため試合を開始できません');
-    if(!mode&&selected.some(p=>!['0.8.0-4e42','0.8.1-4e42','0.8.2-4e42','0.8.0-sim'].includes(p.firmwareVersion)))throw Error('通常試合には参加する銃すべてに個人戦用v0.8ファームウェアが必要です');
-    if(selected.some(p=>!this.current(p)))throw Error('参加端末の接続・時刻同期を確認してください');
-    if(selected.some(p=>mode?!this.testReady(p):!deviceReady(p)))throw Error(mode?'参加端末の構成・通常モードを確認してください':'参加する銃の個人戦対応・通常モードを確認してください');
+    // どの銃が原因かを示し、通常試合では故障扱いにして残りで始める方法も案内する。
+    const label=list=>list.map(p=>`${p.name}（${p.id}）`).join('、');
+    const hint=mode?'':'。直らない場合は、運営画面でその銃の「この銃を使用停止（故障）」を押すと残りの銃で開始できます';
+    const offline=selected.filter(p=>!this.current(p));
+    if(offline.length)throw Error(`${label(offline)}の接続・時刻同期を確認してください${hint}`);
+    const oldFirmware=mode?[]:selected.filter(p=>!['0.8.0-4e42','0.8.1-4e42','0.8.2-4e42','0.8.0-sim'].includes(p.firmwareVersion));
+    if(oldFirmware.length)throw Error(`${label(oldFirmware)}に個人戦用v0.8ファームウェアが必要です${hint}`);
+    const unready=selected.filter(p=>mode?!this.testReady(p):!deviceReady(p));
+    if(unready.length)throw Error(`${label(unready)}の${mode?'構成・通常モード':'個人戦対応・通常モード'}を確認してください${hint}`);
     this.s.testMode=mode;this.s.participantIds=selected.map(p=>p.id);
     this.s.generation++;this.s.phase='COUNTDOWN';this.s.pauseReason=null;this.s.intermissionEndsAt=null;this.s.intermissionBlockedReason=null;this.s.startAt=this.now()+countdownDurationMs;this.s.countdownAudioStartAt=this.s.startAt-countdownDurationMs;this.s.commandId=randomUUID();this.s.startCommitted=selected.every(p=>!this.gameDeviceReady(p));this.s.media='score';this.s.videoPlayback=null;
     if(nextRound){for(const p of this.s.players)Object.assign(p,{hp:1,deadAt:0,respawnAt:0,respawnRemainingMs:0,lastShot:-1e15,reviveProgressMs:0});this.s.roundStart=Object.fromEntries(this.s.players.map(p=>[p.id,stats(p)]));this.s.remainingMs=this.s.rules.durationSec*1000;}

@@ -184,7 +184,6 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
       if(!equal(req.headers['x-csrf-token'],s.csrf))return reply(res,403,{error:'再ログインが必要です'});
       const b=await body(req);
       if(url.pathname==='/api/takeover'){owner=s.id;db.log({at:Date.now(),type:'operator_takeover',operator:s.id});return reply(res,200,{ok:true});}
-      if(owner!==s.id)return reply(res,403,{error:'閲覧専用です。操作権を取得してください'});
       if(url.pathname==='/api/provision'){
         if(!local(req))return reply(res,403,{error:'秘密鍵の設定はメインPCで行ってください'});
         if(typeof b.ssid!=='string'||!b.ssid.length||b.ssid.length>32||typeof b.password!=='string'||b.password.length<8||b.password.length>63||typeof b.host!=='string'||!/^[\w.-]{1,100}$/.test(b.host))throw Error('SSID・WPA2パスワード・PCのIPv4を確認してください');
@@ -194,7 +193,8 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
         if(switchingSource)throw Error('確認対象を切り替えています。完了後に操作してください');
         if(typeof b.commandId!=='string'||b.commandId.length>80)throw Error('commandIdが必要です');const key=s.id+'/'+b.commandId;if(commands.has(key))return reply(res,200,commands.get(key));
         let operation={};
-        switch(b.action){
+        // 失敗した操作も理由を記録し、後から原因を追えるようにする。
+        try{switch(b.action){
           case 'demo_source':{
             if(!demo)throw Error('デモ専用操作');
             if(!['LOBBY','FINISHED'].includes(game.s.phase)&&!(game.s.phase==='INTERMISSION'&&game.s.testMode))throw Error('確認対象は待機中・途中経過・終了後だけ変更できます');
@@ -213,7 +213,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
             operation={notice:simulation?'仮想端末4台で確認します。':'接続した実機で確認します。端末の再接続を待ってください。'};
             break;
           }
-          case 'new':if(diagnostics.enabled)throw Error('一時診断を終了してから次の試合を準備してください');game.reset();break;
+          case 'new':if(diagnostics.enabled){diagnostics.end(game);videoDiagnostics=false;}game.reset();break;
           case 'sync_ticket_members':{
             if(game.s.phase!=='LOBBY')throw Error('整理券メンバーは新しい試合の待機中だけ反映できます');
             if(!ticketBridge.enabled)throw Error('公開整理券サーバーが未設定です');
@@ -241,7 +241,12 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
             operation={notice:b.outOfService===true?`${target.name}（${target.id}）を使用停止にしました。残りの銃で試合を続けられます。`:`${target.name}（${target.id}）の使用を再開しました。${['LOBBY','FINISHED'].includes(game.s.phase)?'':game.s.phase==='PAUSED'?'ゲームの再開時から参加します。':'次のゲームから参加します。'}`};
             break;
           }
-          case 'finish':if(diagnostics.enabled)diagnostics.end(game);game.finish('operator');break;
+          case 'finish':{
+            if(diagnostics.enabled){diagnostics.end(game);videoDiagnostics=false;}
+            // 開始前（説明動画・試し撃ち中）に端末が切れても抜け出せるよう、待機中は試し撃ちを終えて待機画面へ戻す。
+            if(game.s.phase==='LOBBY'){if(game.s.media!=='score')game.setMedia('score');operation={notice:'説明動画・試し撃ちを終了し、待機状態に戻しました。切断した銃は「この銃を使用停止（故障）」で外せます。'};break;}
+            game.finish('operator');break;
+          }
           case 'diagnostic_on':{
             if(simulation)throw Error('仮想端末では一時診断を使用できません');
             diagnostics.begin(game);videoDiagnostics=false;operation={notice:'一時診断を開始しました。試合の得点には加算されません。'};break;
@@ -278,7 +283,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
             break;
           }
           default:throw Error('未知の操作');
-        }
+        }}catch(error){db.log({at:Date.now(),gameId:game.s.id,type:'operator_action_failed',operator:s.id,action:b.action,error:error.message});throw error;}
         db.log({at:Date.now(),gameId:game.s.id,type:'operator_action',operator:s.id,action:b.action,reason:b.reason});const result={ok:true,commandId:b.commandId,...operation};commands.set(key,result);if(commands.size>2000)commands.delete(commands.keys().next().value);db.save(game.s);sync();return reply(res,200,result);
       }return reply(res,404,{});
     }

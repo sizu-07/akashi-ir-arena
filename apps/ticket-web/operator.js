@@ -374,7 +374,8 @@ function render() {
   const gameConnected = state.gameLastSeenAt && Date.now() - state.gameLastSeenAt < 60_000;
   $('gameConnection').textContent = gameConnected ? 'ゲーム連携中' : state.gameLastSeenAt ? 'ゲーム未同期' : 'ゲーム未受信';
   $('gameConnection').className = `badge${gameConnected ? '' : ' offline'}`;
-  $('role').textContent = state.owner === sessionId ? '主操作端末' : '閲覧専用';
+  // ログインしている端末はすべて操作できる。
+  $('role').textContent = 'ログイン中・この端末で操作できます';
   if (!globalMessageDirty) $('messageForm').elements.message.value = state.globalMessage;
   if (!settingsDirty) {
     $('settingsForm').elements.globalDelaySlots.value = Math.floor(state.settings.globalDelayMinutes / 15);
@@ -419,7 +420,12 @@ function roundCard(round) {
     if (reason === null) return;
     await action('round_time', {roundId: round.id, value: new Date(input.value).getTime(), reason});
   });
-  article.append(title, meta, input, change);
+  // 手動で時刻を指定した枠は、自動の並び（前の枠のすぐ後ろ）へ戻せる。
+  const auto = document.createElement('button');
+  auto.textContent = '自動の時刻に戻す';
+  auto.hidden = !round.manualSlotStartAt && !round.manualScheduledAt;
+  auto.onclick = guarded(async () => { if (confirm(`第${round.number}枠の手動の時刻指定を外し、前の枠のすぐ後ろへ戻します。よろしいですか？`)) await action('round_time_auto', {roundId: round.id}); });
+  article.append(title, meta, input, change, auto);
   return article;
 }
 
@@ -485,7 +491,7 @@ function updateTicketActionForm() {
 }
 
 function disable() {
-  const locked = pending || !socket || socket.readyState !== WebSocket.OPEN || state?.owner !== sessionId;
+  const locked = pending || !socket || socket.readyState !== WebSocket.OPEN;
   document.querySelectorAll('#app button').forEach((button) => { button.disabled = locked; });
   const called = state?.rounds.find((round) => round.status === 'CALLED');
   const upcoming = state?.rounds.filter((round) => scheduledRoundStates.has(round.status)).sort((a, b) => a.number - b.number)[0];

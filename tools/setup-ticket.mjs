@@ -1,5 +1,5 @@
 import {existsSync, mkdirSync, writeFileSync} from 'node:fs';
-import {randomBytes} from 'node:crypto';
+import {randomBytes, randomInt} from 'node:crypto';
 import {linkTicketConfig} from './link-ticket-config.mjs';
 
 mkdirSync('config', {recursive: true});
@@ -11,7 +11,8 @@ if (existsSync(file)) {
     port: 8787,
     bind: '0.0.0.0',
     publicOrigin: '',
-    operatorPassword: randomBytes(12).toString('base64url'),
+    // タブレットで入力しやすい数字6桁
+    operatorPassword: String(randomInt(0, 1_000_000)).padStart(6, '0'),
     gameApiKey: randomBytes(32).toString('hex'),
   };
   writeFileSync(file, JSON.stringify(config, null, 2));

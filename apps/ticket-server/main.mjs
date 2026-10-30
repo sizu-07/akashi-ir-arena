@@ -25,7 +25,8 @@ export async function createTicketApp({
   supabaseSecretKey = '',
   supabaseServiceRoleKey = '',
 } = {}) {
-  if (typeof operatorPassword !== 'string' || operatorPassword.length < 12) throw Error('運営パスワードは12文字以上にしてください');
+  // タブレットで入力しやすいよう、数字6桁以上のパスワードも使える。総当たりは下のログイン回数制限で防ぐ。
+  if (typeof operatorPassword !== 'string' || operatorPassword.length < 6) throw Error('運営パスワードは6文字以上にしてください');
   if (typeof gameApiKey !== 'string' || gameApiKey.length < 24) throw Error('ゲームAPIキーは24文字以上にしてください');
   const db = supabaseUrl ? supabaseTicketStorage({url: supabaseUrl, secretKey: supabaseSecretKey, serviceRoleKey: supabaseServiceRoleKey}) : ticketStorage(dataDir);
   const saved=await db.load();
@@ -140,8 +141,12 @@ export async function createTicketApp({
         if (rate.resetAt < Date.now()) { rate.count = 0; rate.resetAt = Date.now() + 60_000; }
         if (++rate.count > 8) return json(res, 429, {error: 'ログイン試行が多すぎます。1分後に再試行してください'});
         attempts.set(`login:${ip}`, rate);
+        // 送信元を偽った総当たりも止めるため、全体の失敗回数でも制限する。
+        const failures = attempts.get('login:failures') ?? {count: 0, resetAt: Date.now() + 10 * 60_000};
+        if (failures.resetAt < Date.now()) { failures.count = 0; failures.resetAt = Date.now() + 10 * 60_000; }
+        if (failures.count >= 60) return json(res, 429, {error: 'ログインの失敗が続いたため一時停止中です。10分後に再試行してください'});
         const input = await body(req);
-        if (!same(input.password, operatorPassword)) return json(res, 403, {error: 'パスワードが違います'});
+        if (!same(input.password, operatorPassword)) { failures.count += 1; attempts.set('login:failures', failures); return json(res, 403, {error: 'パスワードが違います'}); }
         const id = randomBytes(12).toString('hex');
         const key = randomBytes(32).toString('base64url');
         const current = {id, csrf: randomBytes(24).toString('base64url'), expiresAt: Date.now() + 12 * 60 * 60_000, seenAt: Date.now()};
@@ -173,7 +178,6 @@ export async function createTicketApp({
       if (url.pathname === '/api/operator/action' && req.method === 'POST') {
         const current = operatorOnly(req, res, true);
         if (!current) return;
-        if (owner !== current.id) return json(res, 403, {error: '閲覧専用です。操作権を取得してください'});
         const input = await body(req);
         if (typeof input.commandId !== 'string' || input.commandId.length > 100) throw Error('commandIdが必要です');
         const key = `${current.id}:${input.commandId}`;
@@ -189,7 +193,6 @@ export async function createTicketApp({
       if (url.pathname === '/api/operator/check-in' && req.method === 'POST') {
         const current = operatorOnly(req, res, true);
         if (!current) return;
-        if (owner !== current.id) return json(res, 403, {error: '閲覧専用です。操作権を取得してください'});
         const input = await body(req);
         const raw = String(input.value ?? '');
         const qrToken = raw.startsWith('AKASHI:') ? raw.slice(7) : raw.includes('/scan/') ? raw.split('/scan/').at(-1).split(/[?#]/)[0] : raw;

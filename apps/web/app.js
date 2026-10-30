@@ -157,7 +157,7 @@ function connect() {
 }
 
 function disable() {
-  const locked = pending || !connected || state?.owner !== sessionId;
+  const locked = pending || !connected;
 
   document
     .querySelectorAll('#dashboard button:not(#takeover):not(#dismissAlert)')
@@ -167,12 +167,13 @@ function disable() {
 
   $('takeover').disabled = pending || !connected;
   $('syncTicketMembers').disabled = locked || !state?.ticketBridge?.enabled || state?.phase !== 'LOBBY';
-  $('newMatch').disabled = locked || state?.diagnostics?.enabled || !(['LOBBY', 'FINISHED'].includes(state?.phase) || state?.demo && state?.testMode && state?.phase === 'INTERMISSION');
+  $('newMatch').disabled = locked || !(['LOBBY', 'FINISHED'].includes(state?.phase) || state?.demo && state?.testMode && state?.phase === 'INTERMISSION');
   if ($('testMode')) $('testMode').disabled = locked || state?.phase !== 'LOBBY' || !state?.simulation;
   if ($('demoSource')) $('demoSource').disabled = locked || !['LOBBY', 'FINISHED'].includes(state?.phase) && !(state?.phase === 'INTERMISSION' && state?.testMode);
   document.querySelector('[data-action=start]').disabled = locked || !['LOBBY', 'PAUSED', 'INTERMISSION'].includes(state?.phase) || (state?.phase === 'INTERMISSION' && !state.demo);
   document.querySelector('[data-action=pause]').disabled = locked || !['COUNTDOWN', 'ACTIVE'].includes(state?.phase);
-  document.querySelector('[data-action=finish]').disabled = locked || !['COUNTDOWN', 'ACTIVE', 'PAUSED', 'INTERMISSION'].includes(state?.phase);
+  // 開始前でも説明動画・試し撃ち中なら「強制終了」で待機状態へ戻せる。
+  document.querySelector('[data-action=finish]').disabled = locked || !(['COUNTDOWN', 'ACTIVE', 'PAUSED', 'INTERMISSION'].includes(state?.phase) || state?.phase === 'LOBBY' && (state?.diagnostics?.enabled || state?.media !== 'score'));
   $('demoEndRound').disabled = locked || state?.diagnostics?.enabled || !state?.demo || !['ACTIVE', 'PAUSED'].includes(state?.phase);
   $('diagnosticToggle').disabled = locked || state?.simulation || (!state?.diagnostics?.enabled && !state?.players?.some(player => player.connected && player.diagnosticCapable));
   const motorTarget = state?.players?.find((player) => player.id === $('motorDemoTarget').value);
@@ -194,7 +195,7 @@ const names = {
 };
 
 function renderOperation() {
-  const status = operationStatus(state, {connected, isOwner:state?.owner === sessionId, testRequested:testRequested()});
+  const status = operationStatus(state, {connected, isOwner:true, testRequested:testRequested()});
   $('operationCenter').dataset.tone = status.tone;
   $('operationTitle').textContent = status.title;
   $('operationState').textContent = !connected ? '通信切断' : state?.diagnostics?.enabled ? '診断中' : status.tone === 'danger' ? '要対応' : state?.phase === 'LOBBY' ? state?.simulation ? 'デモ待機' : status.tone === 'ready' ? '準備完了' : '準備中' : names[state?.phase] ?? '確認中';
@@ -258,7 +259,8 @@ function render() {
     ? time(Math.max(0, state.intermissionEndsAt - state.serverMs)) : time(Math.ceil(state.remainingMs * (state.rules.displayDurationSec ?? state.rules.durationSec) / state.rules.durationSec));
   $('roundLabel').textContent = `第${state.round}ゲーム / 全${state.rules.rounds}ゲーム`;
   $('score').textContent = [...state.players].sort((a,b)=>b.kills-a.kills).map(p=>`${p.name} ${p.kills}`).join(' / ');
-  $('role').textContent = state.owner === sessionId ? '主操作端末' : '閲覧専用';
+  // ログインしている端末はすべて操作できる。
+  $('role').textContent = 'ログイン中・この端末で操作できます';
 
   const connectedPlayers = state.players.filter((player) => player.connected).length;
   if ($('demoControls')) $('demoControls').hidden = !state.demo;
@@ -367,7 +369,7 @@ function render() {
     service.type = 'button';
     service.dataset.serviceDevice = player.id;
     service.dataset.outOfService = String(!player.outOfService);
-    service.disabled = pending || !connected || state.owner !== sessionId;
+    service.disabled = pending || !connected;
     element.append(header, score, life, stats, indicators, rx, activity, service);
     return element;
   });
@@ -443,7 +445,7 @@ function time(milliseconds) {
 
 document.querySelectorAll('[data-action]').forEach((button) => {
   button.onclick = guarded(async () => {
-    if (button.dataset.action === 'finish' && !confirm('試合全体を強制終了します。残りのゲームは行わず、現在の累計キル数で結果を確定します。よろしいですか？')) {
+    if (button.dataset.action === 'finish' && !confirm(state.phase === 'LOBBY' ? '説明動画・試し撃ちを終了して、待機状態に戻します。よろしいですか？' : '試合全体を強制終了します。残りのゲームは行わず、現在の累計キル数で結果を確定します。よろしいですか？')) {
       return;
     }
 

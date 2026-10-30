@@ -375,6 +375,7 @@ export class TicketQueue {
     const playing = this.state.rounds.find((round) => round.status === 'PLAYING');
     const called = this.state.rounds.find((round) => round.status === 'CALLED');
     let nextSlot = null;
+    const compact = !this.state.settings.globalDelayMinutes;
     const applyEstimate = (round) => {
       round.scheduledAt = round.slotStartAt + (this.state.settings.globalDelayMinutes + (round.delayMinutes ?? 0)) * 60_000;
     };
@@ -382,7 +383,8 @@ export class TicketQueue {
       if (!isSlotBoundary(playing.slotStartAt)) playing.slotStartAt = floorSlotBoundary(playing.scheduledAt ?? playing.startedAt ?? now);
       playing.activeSlotStartAt ??= playing.scheduledAt ?? playing.slotStartAt;
       playing.scheduledAt = playing.activeSlotStartAt;
-      nextSlot = playing.slotStartAt + SLOT_MS;
+      // 調整枠がないときは、体験中の枠が実際に使っている時間のすぐ後ろから並べる。
+      nextSlot = (compact ? Math.max(playing.slotStartAt, floorSlotBoundary(playing.activeSlotStartAt)) : playing.slotStartAt) + SLOT_MS;
     }
     if (called) {
       const minimum = playing ? nextSlot : (isSlotBoundary(called.slotStartAt) ? called.slotStartAt : nextSlotBoundary(now));
@@ -396,18 +398,20 @@ export class TicketQueue {
     if (nextSlot === null) {
       const openingSlotAvailable=eventWindow?.configured && now>=eventWindow.slotStartAt
         && now<=eventWindow.slotStartAt+SLOT_MS-MIN_REMAINING_OPENING_SLOT_MS;
-      nextSlot=isSlotBoundary(scheduled[0]?.slotStartAt) ? scheduled[0].slotStartAt
-        : openingSlotAvailable ? eventWindow.slotStartAt : nextSlotBoundary(now);
+      const earliest = openingSlotAvailable ? eventWindow.slotStartAt : nextSlotBoundary(now);
+      const first = scheduled[0]?.slotStartAt;
+      // 調整枠がないときは、先頭の予定枠を今から入れる最も早い枠まで前に詰める（呼出時刻を迎えた枠はそのまま）。
+      nextSlot = !isSlotBoundary(first) ? earliest : compact && first > earliest ? earliest : first;
     }
     if (eventWindow?.configured&&!isSlotBoundary(scheduled[0]?.slotStartAt)) nextSlot=Math.max(nextSlot,eventWindow.slotStartAt);
     for (const round of scheduled) {
       const manual = round.manualSlotStartAt ?? (isSlotBoundary(round.manualScheduledAt) ? round.manualScheduledAt : null);
-      const existing = isSlotBoundary(round.slotStartAt) ? round.slotStartAt : null;
-      const preferred = manual ?? existing;
+      // 調整枠の消化中は案内済みの時刻を保つ。調整枠がないときは手動指定以外の枠を前へ詰め、空き枠を残さない。
+      const existing = !compact && isSlotBoundary(round.slotStartAt) ? round.slotStartAt : null;
       const earliestCallAt = Math.max(0, ...round.ticketIds.map((id) => this.ticket(id)?.earliestCallAt ?? 0));
       const delayMs = (this.state.settings.globalDelayMinutes + (round.delayMinutes ?? 0)) * 60_000;
       const requestedStart = earliestCallAt ? ceilSlotBoundary(earliestCallAt + SLOT_MS - delayMs) : 0;
-      round.slotStartAt = Math.max(nextSlot, requestedStart, preferred ?? 0);
+      round.slotStartAt = Math.max(nextSlot, requestedStart, manual ?? existing ?? 0, compact ? floorSlotBoundary(now) : 0);
       applyEstimate(round);
       nextSlot = round.slotStartAt + SLOT_MS;
     }
@@ -885,6 +889,14 @@ export class TicketQueue {
         const before = round.slotStartAt; round.manualSlotStartAt = at; round.manualScheduledAt = null; round.status = 'LOCKED_SCHEDULED'; this.scheduleRounds();
         this.persist('round_time_changed', {operator, reason, roundId, details: {before, after: round.slotStartAt}}); break;
       }
+      case 'round_time_auto': {
+        // 手動で指定した時刻を外し、自動の並び（前の枠のすぐ後ろ）に戻す。
+        const round = this.round(roundId);
+        if (!round || !['SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status)) throw Error('予定中の回を選んでください');
+        const before = round.slotStartAt; round.manualSlotStartAt = null; round.manualScheduledAt = null; round.status = 'SCHEDULED'; this.scheduleRounds();
+        this.persist('round_time_auto', {operator, reason, roundId, details: {before, after: round.slotStartAt}});
+        return {notice: `第${round.number}枠を自動の時刻（${new Date(round.scheduledAt).toLocaleTimeString('ja-JP', {timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit'})}〜）に戻しました。`};
+      }
       case 'message': ticket.personalMessage = String(value ?? '').slice(0, 300); ticket.updatedAt = this.now(); this.persist('personal_message_changed', {operator, ticketId, details: {message: ticket.personalMessage}}); break;
       case 'global_message': this.state.globalMessage = String(value ?? '').slice(0, 500); this.persist('global_message_changed', {operator, details: {message: this.state.globalMessage}}); break;
       case 'settings': this.updateSettings(value, operator); break;
@@ -996,10 +1008,8 @@ export class TicketQueue {
     const map = {GAME_STARTED: 'PLAYING', GAME_RESUMED: 'PLAYING', GAME_ENDED: 'COMPLETED'};
     if (event.type === 'GAME_PAUSED') {
       if (round.status !== 'PLAYING') throw Error('体験中の枠だけ一時停止できます');
+      // ゲームの一時停止では調整枠を自動で増やさない。遅れが出たときは運営画面で調整枠を追加する。
       round.pausedAt = Number(event.occurredAt) || this.now();
-      this.state.settings.globalDelayMinutes = Math.min(600, this.state.settings.globalDelayMinutes + SLOT_MINUTES);
-      this.ensureAdjustmentAnchor();
-      this.state.globalMessage = adjustmentNotice(Math.floor(this.state.settings.globalDelayMinutes / SLOT_MINUTES));
     } else if (event.type === 'EQUIPMENT_TROUBLE') {
       const delay = Math.max(0, Math.min(120, Number(event.delayMinutes) || 0));
       this.state.settings.globalDelayMinutes = Math.min(600, this.state.settings.globalDelayMinutes + Math.ceil(delay / SLOT_MINUTES) * SLOT_MINUTES);
