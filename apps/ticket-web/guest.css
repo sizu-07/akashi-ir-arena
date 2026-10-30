@@ -385,3 +385,21 @@
     gap: 6px;
   }
 }
+
+/* 入場のしかた（後ろの入口から入り、左側から入場） */
+.entrance-guide {
+  display: grid;
+  gap: 4px;
+  margin: 14px 0 6px;
+  padding: 12px 14px;
+  border: 2px solid #b94047;
+  border-left-width: 8px;
+  border-radius: 6px;
+  background: #fff5f5;
+  color: #2a1a1b;
+  font-size: 17px;
+  line-height: 1.6;
+}
+.entrance-guide strong { color: #b94047; font-size: 15px; letter-spacing: 0.06em; }
+.entrance-guide b { color: #b94047; font-size: 1.12em; }
+#called strong { color: inherit; text-decoration: underline; text-underline-offset: 3px; }

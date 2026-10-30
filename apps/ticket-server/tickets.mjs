@@ -11,6 +11,8 @@ const token = () => randomBytes(24).toString('base64url');
 const clone = (value) => structuredClone(value);
 const SLOT_MINUTES = 15;
 const SLOT_MS = SLOT_MINUTES * 60_000;
+// 入場（呼出）開始は体験開始の10分前。前のゲームの開始ではなく、時刻で呼び出す。
+const CALL_LEAD_MS = 10 * 60_000;
 const MIN_REMAINING_OPENING_SLOT_MS = 5 * 60_000;
 export const EVENT_WINDOWS = Object.freeze([
   {date:'2026-10-29',period:'public'}, {date:'2026-10-30',period:'public'},
@@ -544,7 +546,7 @@ export class TicketQueue {
       return item.receptionNumber < ticket.receptionNumber;
     });
     const showSchedule = !terminalStates.has(ticket.status);
-    const plannedCallAt = showSchedule && round?.scheduledAt ? round.scheduledAt - SLOT_MS : null;
+    const plannedCallAt = showSchedule && round?.scheduledAt ? round.scheduledAt - CALL_LEAD_MS : null;
     const estimatedCallAt = showSchedule && round ? (['CALLED', 'CHECKED_IN', 'PLAYING'].includes(ticket.status) && ticket.calledAt
       ? Math.max(ticket.calledAt, plannedCallAt ?? ticket.calledAt)
       : plannedCallAt ? Math.max(plannedCallAt, this.now()) : null) : null;
@@ -577,7 +579,7 @@ export class TicketQueue {
       return ticket && {id: ticket.id, ticketNumber: ticket.ticketNumber, nickname: ticket.nickname, playerNicknames: clone(ticket.playerNicknames), partySize: ticket.partySize, status: ticket.status};
     };
     const rounds = this.state.rounds.sort((a, b) => a.number - b.number).map((round) => {
-      const plannedCallAt = round.scheduledAt ? round.scheduledAt - SLOT_MS : null;
+      const plannedCallAt = round.scheduledAt ? round.scheduledAt - CALL_LEAD_MS : null;
       const callAt = round.status === 'CALLED' && round.calledAt
         ? Math.max(round.calledAt, plannedCallAt ?? round.calledAt)
         : plannedCallAt ? Math.max(plannedCallAt, this.now()) : null;
@@ -607,7 +609,7 @@ export class TicketQueue {
     this.scheduleRounds();
     const round = this.state.rounds.filter((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status)).sort((a, b) => a.number - b.number)[0];
     if (!round) throw Error('呼び出せる予定回がありません');
-    const callAt = round.scheduledAt - SLOT_MS;
+    const callAt = round.scheduledAt - CALL_LEAD_MS;
     if (this.now() < callAt) throw Error(`第${round.number}枠は${new Date(callAt).toLocaleTimeString('ja-JP', {hour: '2-digit', minute: '2-digit'})}から呼び出します`);
     round.status = 'CALLED';
     round.calledAt = this.now();
@@ -628,13 +630,13 @@ export class TicketQueue {
       && !this.state.rounds.some((round) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(round.status) && round.firstCalledAt)) return null;
     this.scheduleRounds();
     const round = this.state.rounds.filter((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status)).sort((a, b) => a.number - b.number)[0];
-    if (!round || !round.scheduledAt || this.now() < round.scheduledAt - SLOT_MS) return null;
+    if (!round || !round.scheduledAt || this.now() < round.scheduledAt - CALL_LEAD_MS) return null;
     return this.callNext(operator);
   }
 
   withdrawEarlyCalledRound(operator = 'system') {
     const round = this.state.rounds.find((item) => item.status === 'CALLED');
-    if (!round?.scheduledAt || this.now() >= round.scheduledAt - SLOT_MS) return null;
+    if (!round?.scheduledAt || this.now() >= round.scheduledAt - CALL_LEAD_MS) return null;
     const hasCheckedIn = round.ticketIds.some((id) => this.ticket(id)?.status === 'CHECKED_IN');
     if (hasCheckedIn) return null;
     const previousCalledAt = round.calledAt;
@@ -652,7 +654,7 @@ export class TicketQueue {
       operator,
       reason: '調整により呼出予定時刻が未来へ移動',
       roundId: round.id,
-      details: {number: round.number, previousCalledAt, nextCallAt: round.scheduledAt - SLOT_MS},
+      details: {number: round.number, previousCalledAt, nextCallAt: round.scheduledAt - CALL_LEAD_MS},
     });
     return round;
   }

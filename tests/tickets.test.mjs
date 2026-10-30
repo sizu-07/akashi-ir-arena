@@ -152,7 +152,7 @@ test('未入場の名前はゲーム画面へ渡さず、入場済みの席だ�
   assert.deepEqual(queue.roundAdmittedPlayerNicknames(round),['春','夏',null,null]);
 });
 
-test('現在時刻に依存せず切りのよい15分枠へ割り当て、前枠の開始時刻を入場予定にする', () => {
+test('現在時刻に依存せず切りのよい15分枠へ割り当て、体験開始の10分前を入場予定にする', () => {
   let now = new Date('2026-09-17T17:07:00+09:00').getTime();
   const queue = new TicketQueue({now: () => now});
   const first = queue.register({requestId: 'fixed-slot-first', nicknames: ['A1', 'A2', 'A3', 'A4'], partySize: 4, consent: true});
@@ -163,8 +163,8 @@ test('現在時刻に依存せず切りのよい15分枠へ割り当て、前枠
   assert.equal(new Date(rounds[0].slotEndAt).toISOString(), '2026-09-17T08:30:00.000Z');
   assert.equal(new Date(rounds[1].slotStartAt).toISOString(), '2026-09-17T08:30:00.000Z');
   assert.equal(queue.publicTicket(first.accessToken).waitMinutes, 0);
-  assert.equal(queue.publicTicket(second.accessToken).estimatedCallAt, rounds[0].slotStartAt);
-  assert.equal(queue.publicTicket(second.accessToken).waitMinutes, 8);
+  assert.equal(queue.publicTicket(second.accessToken).estimatedCallAt, rounds[1].slotStartAt - 10 * 60_000);
+  assert.equal(queue.publicTicket(second.accessToken).waitMinutes, 13);
 });
 
 test('遅延を15分枠単位で設定し、実施枠と来場者予定を後ろへ移動する', () => {
@@ -182,7 +182,7 @@ test('遅延を15分枠単位で設定し、実施枠と来場者予定を後ろ
   assert.equal(round.effectiveSlotStartAt, nominalStart + 30 * 60_000);
   assert.equal(round.effectiveSlotEndAt - round.effectiveSlotStartAt, 15 * 60_000);
   assert.equal(queue.publicTicket(ticket.accessToken).slotStartAt, round.effectiveSlotStartAt);
-  assert.equal(queue.publicTicket(ticket.accessToken).estimatedCallAt, round.effectiveSlotStartAt - 15 * 60_000);
+  assert.equal(queue.publicTicket(ticket.accessToken).estimatedCallAt, round.effectiveSlotStartAt - 10 * 60_000);
 });
 
 test('呼出中の前へ遅延枠を挿入し、体験中の枠は動かさず次枠だけを後ろへ移動する', () => {
@@ -197,13 +197,13 @@ test('呼出中の前へ遅延枠を挿入し、体験中の枠は動かさず�
   assert.equal(queue.operatorView().rounds.find((round) => round.id === first.id).effectiveSlotStartAt, nominalFirstStart + 15 * 60_000);
   assert.equal(queue.round(first.id).status, 'SCHEDULED');
 
-  now = nominalFirstStart;
+  now = nominalFirstStart + 5 * 60_000;
   assert.equal(queue.callDueRound('automatic-time', {requireStarted: true})?.id, first.id);
   for (const id of queue.round(first.id).ticketIds) queue.checkIn(queue.ticket(id).qrToken, 'operator');
   queue.applyGameEvent({eventId: 'delayed-round-start', type: 'GAME_STARTED', targetRoundId: first.id, occurredAt: now, source: 'game'});
   const playingStart = queue.operatorView().rounds.find((round) => round.id === first.id).effectiveSlotStartAt;
   assert.equal(queue.round(second.id).status, 'SCHEDULED');
-  now = playingStart;
+  now = playingStart + 5 * 60_000;
   assert.equal(queue.callDueRound('automatic-time')?.id, second.id);
   assert.equal(queue.round(second.id).status, 'CALLED');
 
@@ -236,6 +236,10 @@ test('調整枠は終了時刻ごとに自動消化し、案内済みの開始�
   assert.equal(firstAdvance.elapsedAdjustmentSlots, 1);
   assert.equal(queue.state.settings.globalDelayMinutes, 15);
   assert.equal(queue.round(round.id).scheduledAt, announcedStart);
+  // 入場は体験開始の10分前になってから。
+  assert.equal(queue.round(round.id).status, 'SCHEDULED');
+  now = announcedStart - 10 * 60_000;
+  queue.advanceTime('automatic-time', {requireStarted: true});
   assert.equal(queue.round(round.id).status, 'CALLED');
 
   now = nominalStart + 30 * 60_000;
@@ -249,7 +253,7 @@ test('調整枠は終了時刻ごとに自動消化し、案内済みの開始�
 });
 
 test('調整で呼出時刻が未来へ移った未入場枠は割当済みに戻し、解除後に再呼出する', () => {
-  let now = new Date('2026-09-17T17:31:00+09:00').getTime();
+  let now = new Date('2026-09-17T17:36:00+09:00').getTime();
   const queue = new TicketQueue({now: () => now});
   const ticket = queue.register({requestId: 'withdraw-called-request', nicknames: ['呼出変更1', '呼出変更2', '呼出変更3', '呼出変更4'], partySize: 4, consent: true});
   const round = queue.operatorView().rounds[0];
@@ -258,7 +262,7 @@ test('調整で呼出時刻が未来へ移った未入場枠は割当済みに�
 
   assert.equal(queue.round(round.id).status, 'SCHEDULED');
   assert.equal(queue.publicTicket(ticket.accessToken).status, 'ASSIGNED');
-  assert.equal(queue.publicTicket(ticket.accessToken).estimatedCallAt, round.slotStartAt);
+  assert.equal(queue.publicTicket(ticket.accessToken).estimatedCallAt, round.slotStartAt + 5 * 60_000);
   assert.equal(queue.round(round.id).calledAt, null);
 
   now += 4 * 60_000;
@@ -269,7 +273,7 @@ test('調整で呼出時刻が未来へ移った未入場枠は割当済みに�
 });
 
 test('入場確認済みの呼出枠は調整後も維持し、来場者の入場予定だけ新時刻へ更新する', () => {
-  const now = new Date('2026-09-17T17:31:00+09:00').getTime();
+  const now = new Date('2026-09-17T17:36:00+09:00').getTime();
   const queue = new TicketQueue({now: () => now});
   const ticket = queue.register({requestId: 'checked-in-adjustment-request', nicknames: ['入場済1', '入場済2', '入場済3', '入場済4'], partySize: 4, consent: true});
   const round = queue.operatorView().rounds[0];
@@ -279,8 +283,8 @@ test('入場確認済みの呼出枠は調整後も維持し、来場者の入�
 
   assert.equal(queue.round(round.id).status, 'CALLED');
   assert.equal(queue.publicTicket(ticket.accessToken).status, 'CHECKED_IN');
-  assert.equal(queue.publicTicket(ticket.accessToken).estimatedCallAt, round.slotStartAt);
-  assert.equal(queue.operatorView().rounds.find((item) => item.id === round.id).callAt, round.slotStartAt);
+  assert.equal(queue.publicTicket(ticket.accessToken).estimatedCallAt, round.slotStartAt + 5 * 60_000);
+  assert.equal(queue.operatorView().rounds.find((item) => item.id === round.id).callAt, round.slotStartAt + 5 * 60_000);
 });
 
 test('ゲーム終了通知がなくても固定枠の終了時刻で自動完了し、次枠へ進む', () => {
@@ -387,7 +391,7 @@ test('遅延中に待機列へ戻った新規登録は開始15分前まで呼び
   const late = register(queue, '遅延後の新規組', 2);
   const scheduled = queue.round(queue.state.tickets.find((ticket) => ticket.ticketNumber === late.ticketNumber).roundId);
   const originalSlot = scheduled.slotStartAt;
-  const callAt = scheduled.scheduledAt - 15 * 60_000;
+  const callAt = scheduled.scheduledAt - 10 * 60_000;
   assert.equal(late.status, 'ASSIGNED');
   assert.throws(() => queue.callNext('operator'), /から呼び出します/);
   now = callAt - 1;

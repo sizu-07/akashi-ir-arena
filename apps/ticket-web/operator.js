@@ -163,7 +163,7 @@ function renderTimeline() {
   else if (called && called.checkedInPeople === called.assignedPeople) $('nextAction').textContent = `第${called.number}枠は全員入場済みです。ゲーム運営画面でゲームを開始してください。`;
   else if (called) $('nextAction').textContent = `第${called.number}枠を呼び出し中です。現在${called.checkedInPeople}/${called.assignedPeople}名が入場済みです。残りのQRを確認してください。`;
   else if (next && delayedBeforeNext) $('nextAction').textContent = `先頭に${delayedBeforeNext}枠の調整枠があります。第${next.number}枠は${formatTime(next.callAt)}ごろに改めて呼び出します。`;
-  else if (next?.callAt > Date.now()) $('nextAction').textContent = `次は第${next.number}枠です。開始15分前の${formatTime(next.callAt)}ごろに自動で呼び出します。`;
+  else if (next?.callAt > Date.now()) $('nextAction').textContent = `次は第${next.number}枠です。開始10分前の${formatTime(next.callAt)}ごろに自動で呼び出します。`;
   else if (next) $('nextAction').textContent = `次は第${next.number}枠です。「次の4名を呼び出す」から入口へ案内してください。`;
   else $('nextAction').textContent = '現在、待機中の来場者はいません。';
 }
