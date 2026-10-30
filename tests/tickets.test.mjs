@@ -361,7 +361,8 @@ test('ゲーム開始後も次枠の開始15分前まで待って自動呼出す
 });
 
 test('運営中に待機列が空になった後の新規登録を自動で呼び出す', () => {
-  const queue = new TicketQueue();
+  const now = Date.parse('2026-09-17T17:07:00+09:00');
+  const queue = new TicketQueue({now: () => now});
   register(queue, '最初', 4);
   const firstRound = queue.operatorView().rounds[0];
   queue.callNext('operator');
@@ -404,7 +405,8 @@ test('遅延中に待機列へ戻った新規登録は開始15分前まで呼び
 });
 
 test('呼出中枠の空席を後続の入れる組で4人まで自動補完する', () => {
-  const queue = new TicketQueue();
+  const now = Date.parse('2026-09-17T17:07:00+09:00');
+  const queue = new TicketQueue({now: () => now});
   register(queue, '運営済みにする組', 4);
   const completedRound = queue.operatorView().rounds[0];
   queue.callNext('operator');
@@ -956,7 +958,8 @@ test('登録から呼出・入場・ゲーム開始終了・次枠呼出までHT
     // 前の枠が早く終わったので、次の枠は空き時間を残さず前に詰めて呼び出す。
     const nextRound = app.queue.state.rounds.find((round) => round.number === 2);
     app.queue.advanceTime('automatic-time', {requireStarted: true});
-    assert.equal(nextRound.status, 'CALLED');
+    // 入場は体験開始の10分前から（実時刻で動くので、その時刻を過ぎていれば呼出中になる）。
+    assert.equal(nextRound.status, Date.now() >= nextRound.scheduledAt - 10 * 60_000 ? 'CALLED' : 'SCHEDULED');
   } finally {
     await app.close();
     rmSync(dir, {recursive: true, force: true});
@@ -1095,13 +1098,13 @@ test('入場受付後に整理券メンバーを自動反映し、手動更新�
       await new Promise((resolve) => setTimeout(resolve, 100));
     assert.equal((await (await fetch(`${base}/api/state`)).json()).ticketBridge.membersLoaded, true);
     const newGameStart = await operate('start', 'start-new-game-before-sync');
-    assert.match((await newGameStart.json()).error, /投影画面/);
+    assert.match((await newGameStart.json()).error, /接続・時刻同期/);
     assert.equal((await operate('sync_ticket_members', 'sync-next-game')).status, 200);
     assert.ok(currentRoundReads >= 2);
 
     const startResponse = await operate('start', 'start-without-display');
     assert.equal(startResponse.status, 400);
-    assert.match((await startResponse.json()).error, /投影画面/);
+    assert.match((await startResponse.json()).error, /接続・時刻同期/);
   } finally {
     await app.close();
     await new Promise((resolve) => ticketServer.close(resolve));

@@ -223,7 +223,6 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
           }
           case 'start':{
             if(!demo&&(b.testMode===true||game.s.testMode))throw Error('動作確認は「起動_デモ.cmd」で実行してください');
-            if(diagnostics.enabled&&!displayReady())throw Error('投影画面で「表示を準備」を押してください');
             if(diagnostics.enabled&&game.s.phase==='INTERMISSION'&&game.autoAdvanceRounds)throw Error('次ゲームは途中経過の15秒後に自動開始します');
             const testMode=game.s.phase==='PAUSED'?game.s.testMode:b.testMode===true;
             if(demo&&!simulation&&!testMode)throw Error('デモ版の実機確認では「接続済み端末だけで動作確認」を選択してください');
@@ -334,7 +333,7 @@ export async function createApp({config,demo=false,demoSource,dataDir=path.join(
  catch(error){await closeServer(httpServer);await closeServer(mqttServer);await new Promise(resolve=>broker.close(resolve));throw error;}
  async function startSimulation(){const {simulate}=await import('./simulator.mjs');return simulate(config.devices.map(d=>({...d,clientId:`sim-${d.id}`,key:simulationKey})),mqttServer.address().port);}
  if(simulation)simulators=await startSimulation();
- let count=0,lastSavedPhase=game.s.phase;const timer=setInterval(()=>{game.tick(displayReady());if(diagnostics.tick())sync();if(game.s.phase==='COUNTDOWN'&&!displayReady())game.pause('投影画面切断');
+ let count=0,lastSavedPhase=game.s.phase;const timer=setInterval(()=>{game.tick(displayReady());if(diagnostics.tick())sync();
    const ticketStartedBefore=game.s.ticketStarted,ticketPausedBefore=game.s.ticketPaused;
    ticketBridge.observe(game.s);
    if(game.s.phase!==lastSavedPhase||game.s.ticketStarted!==ticketStartedBefore||game.s.ticketPaused!==ticketPausedBefore){db.save(game.s);lastSavedPhase=game.s.phase;}

@@ -127,7 +127,7 @@ test('two intermediate standings and winner from three-game total kills',()=>{
   assert.equal(f.g.player('gun-001').accuracy,100);
 });
 
-test('production advances after 15 seconds, waits for a ready display, and preserves the next round',()=>{
+test('production advances after 15 seconds without needing the display, and preserves the next round',()=>{
   const f=fixture(null,{autoAdvanceRounds:true});f.start();
   f.fire('gun-001',1);f.hit('gun-002',1,1);
   f.advance(90000);
@@ -136,9 +136,8 @@ test('production advances after 15 seconds, waits for a ready display, and prese
   assert.throws(()=>f.g.start(true),/自動開始/);
   f.advance(intermissionDurationMs-1);
   assert.equal(f.g.s.phase,'INTERMISSION');
+  // 投影画面が未準備でも次のゲームへ進む。
   f.advance(1,false);
-  assert.match(f.g.s.intermissionBlockedReason,/投影画面/);
-  f.advance(0,true);
   assert.equal(f.g.s.phase,'COUNTDOWN');
   assert.equal(f.g.s.round,2);
   for(const p of devices)f.g.ack(p.id,{command_id:f.g.s.commandId,result:'ok'});

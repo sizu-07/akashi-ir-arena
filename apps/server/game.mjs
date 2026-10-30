@@ -91,7 +91,7 @@ export class Game {
     this.shots=[];this.pending=[];this.seen.clear();this.soundEvents=[];this.activity=[];this.record('new_game',{rules:r});}
   start(displayReady,{testMode=false,automatic=false}={}){if(!['LOBBY','PAUSED','INTERMISSION'].includes(this.s.phase))throw Error('待機・停止中・途中経過表示中のみ開始できます');
     if(this.s.phase==='INTERMISSION'&&this.autoAdvanceRounds&&!automatic)throw Error('次ゲームは途中経過の15秒後に自動開始します');
-    if(!displayReady)throw Error('投影画面で「表示を準備」を押してください');
+    // 投影画面が準備できていなくても開始できる（音声・映像は投影画面を準備すると出る）。
     const resuming=this.s.phase==='PAUSED';
     const nextRound=this.s.phase==='INTERMISSION';
     const mode=(resuming||nextRound)?this.s.testMode:testMode===true;

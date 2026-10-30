@@ -292,8 +292,7 @@ function render() {
   };
   $('nextStep').textContent = hints[state.phase];
   if (['LOBBY', 'PAUSED'].includes(state.phase)) {
-    if (!state.displayReady) $('nextStep').textContent = '「投影画面を開く」から「表示を準備」を押してください。';
-    else if (testRequested() || state.testMode) $('nextStep').textContent = `接続中の${connectedPlayers}台で動作確認します。未接続の端末は参加しません。`;
+    if (testRequested() || state.testMode) $('nextStep').textContent = `接続中の${connectedPlayers}台で動作確認します。未接続の端末は参加しません。`;
     else if (connectedPlayers < 4) $('nextStep').textContent = `端末が${connectedPlayers}/4台接続されています。通常試合には4台必要です。`;
   }
   if (state.simulation && state.phase === 'LOBBY') $('nextStep').textContent = 'デモモードです。表示中の4台は仮想端末です。実機を確認する場合は、確認対象を「接続した実機」に切り替えてください。';

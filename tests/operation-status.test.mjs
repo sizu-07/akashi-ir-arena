@@ -16,9 +16,10 @@ const options = {connected:true, isOwner:true, testRequested:false};
 
 test('operator sees a clear ready state and individual missing preparation', () => {
   assert.match(operationStatus(state(), options).title, /開始できます/);
+  // 投影画面は任意なので、準備していなくても開始できる。
   const withoutDisplay = operationStatus(state({displayReady:false}), options);
-  assert.match(withoutDisplay.title, /投影画面/);
-  assert.match(withoutDisplay.next, /表示を準備/);
+  assert.match(withoutDisplay.title, /開始できます/);
+  assert.match(withoutDisplay.checks.find((check) => check.label === '投影画面').detail, /投影なしでも開始/);
   const withoutNames = operationStatus(state({ticketBridge:{enabled:true, membersLoaded:false}}), options);
   assert.match(withoutNames.title, /参加者名/);
   const withoutDevice = operationStatus(state({players:[...players.slice(0, 3), {...players[3], connected:false}]}), options);

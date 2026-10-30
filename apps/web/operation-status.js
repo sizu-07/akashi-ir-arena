@@ -39,7 +39,8 @@ export function operationStatus(state, {connected, isOwner, testRequested}) {
   const devicesReady = testing ? connectedPlayers >= 1 && deviceIssues.length === 0 : inService.length >= 2 && connectedPlayers === inService.length && deviceIssues.length === 0;
   const ticketRequired = state.ticketBridge?.enabled && !testing && state.phase === 'LOBBY';
   const checks = [
-    {ok:!!state.displayReady, label:'投影画面', detail:state.displayReady ? '音声・映像の準備完了' : '投影画面を開き「表示を準備」を押す'},
+    // 投影画面は任意。準備していなくても開始できる。
+    {ok:true, label:'投影画面', detail:state.displayReady ? '音声・映像の準備完了' : '未準備（投影なしでも開始できます。使う場合は「表示を準備」を押す）'},
     {ok:!ticketRequired || !!state.ticketBridge?.membersLoaded, label:'参加者名', detail:ticketRequired ? state.ticketBridge.membersLoaded ? '入場受付から名前を自動反映済み' : '4人全員の入場受付が完了すると名前を自動反映' : state.ticketBridge?.enabled ? '動作確認では整理券の反映は不要' : '手動設定の名前を確認'},
     {ok:devicesReady, label:'参加端末', detail:deviceIssues.length ? deviceIssues.join('／') : `${connectedPlayers}/${inService.length}台接続${outOfService ? `（使用停止 ${outOfService}台）` : ''}${testing ? '（動作確認は1台以上）' : ''}${devicesReady ? state.phase === 'LOBBY' ? '・開始可能' : '・通信正常' : '・不足'}`},
   ];

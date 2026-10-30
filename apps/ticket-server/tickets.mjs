@@ -611,7 +611,8 @@ export class TicketQueue {
     this.scheduleRounds();
     const round = this.state.rounds.filter((item) => ['SCHEDULED', 'LOCKED_SCHEDULED'].includes(item.status)).sort((a, b) => a.number - b.number)[0];
     if (!round) throw Error('呼び出せる予定回がありません');
-    const callAt = round.scheduledAt - CALL_LEAD_MS;
+    // 自動の呼出は開始10分前。運営の手動呼出は、従来どおり開始15分前から早めに行える。
+    const callAt = round.scheduledAt - SLOT_MS;
     if (this.now() < callAt) throw Error(`第${round.number}枠は${new Date(callAt).toLocaleTimeString('ja-JP', {hour: '2-digit', minute: '2-digit'})}から呼び出します`);
     round.status = 'CALLED';
     round.calledAt = this.now();

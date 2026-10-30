@@ -33,10 +33,6 @@ try{
   await admin.locator('#dashboard').waitFor({state:'visible'});
   await admin.locator('[data-action=start]').waitFor({state:'visible'});
   await waitFor(admin,()=>!document.querySelector('[data-action=start]').disabled);
-  await admin.locator('[data-action=start]').click();
-  await admin.locator('#operationAlert').waitFor({state:'visible'});
-  assert.match(await admin.locator('#operationAlertText').innerText(),/投影画面/);
-  assert.match(await admin.locator('#operationAlertNext').innerText(),/表示を準備/);
   await display.goto(`${base}/display`);
   await display.locator('#prepare').click();
   await waitFor(admin,()=>document.getElementById('readiness').textContent.includes('準備完了')&&document.getElementById('readiness').textContent.includes('4/4'));
