@@ -348,10 +348,11 @@ function showOverlay(mode, title, text = '', kicker = '') {
   $('resultLead').hidden = true;
   $('resultBoard').hidden = true;
   $('resultMeta').hidden = true;
+  $('nextCountdown').hidden = true;
   $('slideProgress').hidden = mode !== 'rules';
 }
 
-function showResultOverlay({kind, title, kicker, champion = '', standings, completed = null, meta = ''}) {
+function showResultOverlay({kind, title, kicker, champion = '', standings, completed = null, meta = '', share = null}) {
   showOverlay('finished', title, '', kicker);
   $('overlay').dataset.result = kind;
   $('resultLead').hidden = !champion;
@@ -360,9 +361,9 @@ function showResultOverlay({kind, title, kicker, champion = '', standings, compl
   $('resultMeta').hidden = !meta;
   setText('resultMeta', meta);
   const key = JSON.stringify({kind, standings: standings.map((player) => [
-    player.id, player.name, player.kills, player.deaths, player.shots, player.accuracy,
+    player.id, player.name, player.kills, player.deaths, player.shots, player.accuracy, player.outOfService,
     completed?.players.find((entry) => entry.id === player.id),
-  ])});
+  ]), share: share && [share.gameId, share.status, share.players]});
   if (key === resultBoardKey) return;
   resultBoardKey = key;
   const rows = standings.map((player, index) => {
@@ -377,6 +378,12 @@ function showResultOverlay({kind, title, kicker, champion = '', standings, compl
     const name = document.createElement('strong');
     name.className = 'result-name';
     name.textContent = player.name;
+    if (player.outOfService) {
+      const retired = document.createElement('small');
+      retired.className = 'result-retired';
+      retired.textContent = '故障で欠場';
+      name.append(retired);
+    }
     const total = document.createElement('span');
     total.className = 'result-total';
     total.textContent = String(player.kills);
@@ -401,6 +408,23 @@ function showResultOverlay({kind, title, kicker, champion = '', standings, compl
       stats.append(cell);
     }
     row.append(rank, name, total, stats);
+    // 試合全体の結果では、各プレイヤーの行に本人用の共有QRコードを付ける。
+    if (share?.enabled) {
+      const cell = document.createElement('span');
+      cell.className = 'result-share';
+      if (share.players.includes(player.id)) {
+        const image = document.createElement('img');
+        image.src = `/api/share-qr.svg?device=${encodeURIComponent(player.id)}&game=${encodeURIComponent(share.gameId)}`;
+        image.alt = `${player.name}の結果共有QRコード`;
+        const caption = document.createElement('small');
+        caption.textContent = 'SHARE';
+        cell.append(image, caption);
+      } else {
+        cell.classList.add('is-waiting');
+        cell.textContent = share.status === 'failed' ? '共有QRを\n作成できません' : 'QRを\n準備中…';
+      }
+      row.append(cell);
+    }
     return row;
   });
   $('resultBoard').replaceChildren(...rows);
@@ -462,7 +486,8 @@ function renderPlayers() {
       node.element.classList.add('is-hit');
     }
     node.previousHp = player.hp;
-    node.number.textContent = `RANK ${String(index + 1).padStart(2, '0')} / P${player.shooterId}`;
+    node.number.textContent = `RANK ${String(index + 1).padStart(2, '0')} / P${player.shooterId}${player.outOfService ? ' / 欠場' : ''}`;
+    node.element.classList.toggle('is-retired', !!player.outOfService);
     node.name.textContent = player.name;
     node.name.classList.toggle('long-name', [...player.name].length > 10);
     node.hp.textContent = player.kills;
@@ -669,14 +694,23 @@ function render() {
   } else if (state.phase === 'INTERMISSION') {
     const completed = state.roundResults.at(-1);
     const standings = [...state.players].sort((a, b) => b.kills - a.kills || a.shooterId - b.shooterId);
+    const nextSeconds = Number.isFinite(state.intermissionEndsAt) ? Math.max(0, Math.ceil((state.intermissionEndsAt - now) / 1000)) : null;
     showResultOverlay({
       kind: 'intermission', title: '途中経過',
       kicker: `ROUND ${String(completed?.round ?? state.round - 1).padStart(2, '0')} / GAME RESULT`,
       standings, completed,
       meta: state.demo ? `NEXT GAME ${String(state.round).padStart(2, '0')} / 運営の合図を待ってください`
         : state.intermissionBlockedReason ? `NEXT GAME / ${state.intermissionBlockedReason}`
-          : `NEXT GAME ${String(state.round).padStart(2, '0')} / あと ${Math.max(0, Math.ceil((state.intermissionEndsAt - now) / 1000))} 秒`,
+          : nextSeconds === null ? `NEXT GAME ${String(state.round).padStart(2, '0')} / まもなく開始` : '',
     });
+    // 次のゲームまでの残り秒数は結果表の横に大きく出す（自動進行のときだけ）。
+    const counting = !state.demo && !state.intermissionBlockedReason && nextSeconds !== null;
+    $('nextCountdown').hidden = !counting;
+    if (counting) {
+      setText('nextRound', String(state.round).padStart(2, '0'));
+      setText('nextSeconds', String(nextSeconds));
+      $('nextCountdown').classList.toggle('is-final', nextSeconds <= 5);
+    }
   } else if (state.phase === 'FINISHED') {
     if (state.testMode) {
       $('overlay').dataset.draw = 'true';
@@ -688,8 +722,10 @@ function render() {
       showResultOverlay({
         kind: 'final', title: draw ? '同率優勝' : '優勝',
         kicker: draw ? 'FINAL RESULT / TIE FOR FIRST' : 'FINAL RESULT / WINNER',
-        champion: draw ? '' : winner?.name ?? '', standings,
-        meta: '4 GAMES / 合計キル数で決着',
+        champion: draw ? '' : winner?.name ?? '', standings, share: state.share,
+        meta: state.share?.enabled && state.share.status !== 'failed'
+          ? `${state.rules.rounds}ゲームの合計キル数で決着 ／ 自分の名前の横のQRを読み取って結果をシェア！ #明石光線`
+          : `${state.rules.rounds} GAMES / 合計キル数で決着`,
       });
       $('overlay').dataset.draw = String(draw);
     }

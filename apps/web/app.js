@@ -10,6 +10,7 @@ let ws;
 let first = true;
 let pending = false;
 let previousDemoSource;
+let playerPointerDown = false;
 const testRequested = () => state?.demo && ($('testMode')?.checked ?? false);
 
 function errorNext(text) {
@@ -306,14 +307,14 @@ function render() {
     const respawnSeconds = player.hp === 0 ? Math.max(0, Math.ceil(respawnMs / 1000)) : 0;
     const triggerRecent = Number.isFinite(player.lastTriggerAt) && state.serverMs - player.lastTriggerAt < 2300;
     const motorRecent = Number.isFinite(player.lastMotorAt) && state.serverMs - player.lastMotorAt < 2300;
-    element.className = `player player-card ${!online ? 'is-offline' : player.hp === 0 ? 'is-defeated' : player.lowBattery ? 'is-low-battery' : 'is-connected'}${online && (player.triggerDown || triggerRecent) ? ' is-triggered' : ''}`;
+    element.className = `player player-card ${player.outOfService ? 'is-out-of-service' : !online ? 'is-offline' : player.hp === 0 ? 'is-defeated' : 'is-connected'}${online && (player.triggerDown || triggerRecent) ? ' is-triggered' : ''}`;
 
     const title = document.createElement('h3');
     title.textContent = player.name;
     const identity = document.createElement('div');
     identity.className = 'player-identity';
     identity.append(title, textElement('small', 'device-id', player.id));
-    const stateBadge = textElement('span', 'player-state', !online ? '通信切断' : player.hp === 0 ? '撃破中' : player.lowBattery ? '電池低下' : state.simulation ? '仮想接続' : '接続中');
+    const stateBadge = textElement('span', 'player-state', player.outOfService ? '使用停止' : !online ? '通信切断' : player.hp === 0 ? '撃破中' : state.simulation ? '仮想接続' : '接続中');
     const header = document.createElement('div');
     header.className = 'player-card-head';
     header.append(identity, stateBadge);
@@ -332,7 +333,7 @@ function render() {
         player.hardwareProfile === 'xiao-s3-plus-3rx-6led-motor-trigger' && player.hardwareReady
           ? ['0.8.0-4e42', '0.8.1-4e42', '0.8.2-4e42', '0.8.0-sim'].includes(player.firmwareVersion) ? player.firmwareVersion === '0.8.2-4e42' ? '最新ゲーム版' : '個人戦旧版・更新推奨' : '旧ゲーム版・要更新'
           : player.firmwareVersion === '0.7.1-rx44' && player.hardwareReady ? 'ゲーム用・受信専用（GPIO44）' : '未確認・旧版'
-      }${player.bench ? ' / 机上モード' : ''}${player.lowBattery ? ' / 電池低下' : ''}\n` +
+      }${player.bench ? ' / 机上モード' : ''}\n` +
       `受信数 前:${player.rxFrames?.rx1 ?? '—'} ` +
       `左:${player.rxFrames?.rx2 ?? '—'} ` +
       `右:${player.rxFrames?.rx3 ?? '—'}\n` +
@@ -342,7 +343,7 @@ function render() {
     meta.style.whiteSpace = 'pre-line';
 
     deviceElements.push(meta);
-    const life = textElement('div', 'player-life', !online ? '端末の電源・Wi-Fiを確認' : player.hp === 0 ? `復活まで ${respawnSeconds} 秒` : state.phase === 'ACTIVE' ? '生存・射撃可能' : state.diagnostics?.enabled ? player.diagnosticMode ? '一時診断に参加中' : '端末の診断適用を待機中' : '接続状態を確認中');
+    const life = textElement('div', 'player-life', player.outOfService ? '故障のため試合に参加しません' : !online ? '端末の電源・Wi-Fiを確認' : player.hp === 0 ? `復活まで ${respawnSeconds} 秒` : state.phase === 'ACTIVE' ? '生存・射撃可能' : state.diagnostics?.enabled ? player.diagnosticMode ? '一時診断に参加中' : '端末の診断適用を待機中' : '接続状態を確認中');
     const stats = textElement('p', 'player-stats', `デス ${player.deaths}  ／  射撃 ${player.shots}  ／  命中率 ${player.accuracy}%`);
     const indicators = document.createElement('div');
     indicators.className = 'device-indicators';
@@ -350,7 +351,7 @@ function render() {
       indicator('リミット', !online ? '確認不可' : player.triggerDown ? '押下中' : triggerRecent ? '押下を検知' : player.diagnosticCapable ? '離されている' : '未対応', online && (player.triggerDown || triggerRecent) ? 'active' : 'neutral'),
       indicator('モーター', !online ? '確認不可' : player.motorActive ? '動作中' : motorRecent ? '動作を検知' : player.diagnosticCapable ? '停止中' : '状態のみ', online && (player.motorActive || motorRecent) ? 'active' : 'neutral'),
       indicator('テープLED', !online ? '確認不可' : player.ledColor ? ledNames[player.ledColor] ?? player.ledColor : '未対応', player.ledColor && player.ledColor !== 'OFF' ? 'led-on' : 'neutral'),
-      indicator('電池', !online ? '確認不可' : `${batteryInfo.text}${batteryInfo.status ? ` / ${batteryInfo.status}` : ''}`, batteryInfo.warning ? 'warning' : 'neutral'),
+      indicator('電池', !online ? '確認不可' : batteryInfo.text),
     );
     const rx = textElement('p', 'player-rx', `赤外線受信　前 ${player.rxFrames?.rx1 ?? '—'} ／ 左 ${player.rxFrames?.rx2 ?? '—'} ／ 右 ${player.rxFrames?.rx3 ?? '—'}`);
     const activity = document.createElement('div');
@@ -361,11 +362,18 @@ function render() {
     for (const entry of entries) list.append(textElement('li', '', `${timeLabel(entry.at)}　${entry.text}`));
     if (!entries.length) list.append(textElement('li', 'empty', 'まだ記録がありません'));
     activity.append(list);
-    element.append(header, score, life, stats, indicators, rx, activity);
+    // 故障した銃を試合から外すボタン。カードは更新のたびに作り直すため、クリックは #players で受け取る。
+    const service = textElement('button', `service-toggle${player.outOfService ? ' is-resume' : ''}`, player.outOfService ? '使用を再開' : 'この銃を使用停止（故障）');
+    service.type = 'button';
+    service.dataset.serviceDevice = player.id;
+    service.dataset.outOfService = String(!player.outOfService);
+    service.disabled = pending || !connected || state.owner !== sessionId;
+    element.append(header, score, life, stats, indicators, rx, activity, service);
     return element;
   });
 
-  $('players').replaceChildren(...playerElements);
+  // ボタンを押している途中でカードを作り直すとクリックが失われるため、押下中は更新を見送る。
+  if (!playerPointerDown) $('players').replaceChildren(...playerElements);
   $('deviceDetails').replaceChildren(...deviceElements);
   $('diagnosticPanel').hidden = !!state.simulation;
   $('diagnosticPanel').classList.toggle('is-active', !!state.diagnostics?.enabled);
@@ -441,6 +449,20 @@ document.querySelectorAll('[data-action]').forEach((button) => {
 
     await action(button.dataset.action, button.dataset.action === 'start' && state.demo ? {testMode: testRequested()} : {});
   });
+});
+$('players').addEventListener('pointerdown', (event) => { if (event.target.closest('[data-service-device]')) playerPointerDown = true; });
+for (const type of ['pointerup', 'pointercancel']) window.addEventListener(type, () => { setTimeout(() => { playerPointerDown = false; }, 0); });
+$('players').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-service-device]');
+  if (!button || button.disabled) return;
+  const player = state?.players.find((item) => item.id === button.dataset.serviceDevice);
+  if (!player) return;
+  const outOfService = button.dataset.outOfService === 'true';
+  const question = outOfService
+    ? `${player.name}（${player.id}）の銃を使用停止にします。\nこの銃は試合から外れ、残りの銃で試合を続けます（それまでのキル数は残ります）。よろしいですか？`
+    : `${player.name}（${player.id}）の銃の使用を再開します。${['LOBBY', 'FINISHED'].includes(state.phase) ? '' : state.phase === 'PAUSED' ? 'ゲームの再開時から参加します。' : '進行中の試合には次のゲームから参加します。'}よろしいですか？`;
+  if (!confirm(question)) return;
+  guarded(() => action('device_service', {deviceId: player.id, outOfService}))();
 });
 $('testMode').onchange = () => { if (state) render(); };
 $('dismissAlert').onclick = () => message('');

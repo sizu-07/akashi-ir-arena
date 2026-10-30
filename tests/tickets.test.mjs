@@ -470,38 +470,54 @@ test('対象枠のないイベントと呼出中への終了イベントを拒�
   assert.equal(queue.round(round.id).status, 'CALLED');
 });
 
-test('呼出中の登録グループだけをスキップし、空席を後続グループで補完する', () => {
+test('呼出中の登録グループをスキップしても後続を繰り上げず、スキップ枠として運営が入る', () => {
   const queue = new TicketQueue();
   const firstGroup = register(queue, '第1組', 2);
   const secondGroup = register(queue, '第2組', 2);
-  const replacementGroup = register(queue, '補完組', 2);
+  const laterGroup = register(queue, '後続組', 2);
   const first = queue.operatorView().rounds[0];
   queue.callNext('operator');
   const firstGroupId = queue.state.tickets.find((ticket) => ticket.ticketNumber === firstGroup.ticketNumber).id;
+  const laterGroupId = queue.state.tickets.find((ticket) => ticket.ticketNumber === laterGroup.ticketNumber).id;
+  const laterRoundId = queue.ticket(laterGroupId).roundId;
   const skipResult = queue.operatorAction({action: 'skip_group', ticketId: firstGroupId, reason: '来場なし', operator: 'operator'});
   assert.match(skipResult.notice, /スキップ済み/);
+  assert.match(skipResult.notice, /スキップ枠/);
   assert.equal(queue.round(first.id).status, 'CALLED');
   assert.equal(queue.ticket(firstGroupId).status, 'NO_SHOW');
   assert.equal(queue.publicTicket(firstGroup.accessToken).waitMinutes, null);
-  assert.equal(queue.publicTicket(firstGroup.accessToken).estimatedCallAt, null);
-  assert.equal(queue.publicTicket(firstGroup.accessToken).slotStartAt, null);
-  assert.deepEqual(
-    queue.round(first.id).ticketIds.map((id) => queue.ticket(id).ticketNumber),
-    [secondGroup.ticketNumber, replacementGroup.ticketNumber],
-  );
-  assert.deepEqual(queue.operatorView().rounds.find((round) => round.id === first.id).skippedTickets.map((ticket) => ticket.ticketNumber), [firstGroup.ticketNumber]);
-  assert.equal(queue.operatorView().rounds.find((round) => round.id === first.id).assignedPeople, 4);
-  assert.equal(queue.operatorView().rounds.find((round) => round.id === first.id).skippedPeople, 2);
+  // 後ろの組は前の枠へ移らず、元の枠のまま。
+  assert.deepEqual(queue.round(first.id).ticketIds.map((id) => queue.ticket(id).ticketNumber), [secondGroup.ticketNumber]);
+  assert.equal(queue.ticket(laterGroupId).status, 'ASSIGNED');
+  assert.equal(queue.ticket(laterGroupId).roundId, laterRoundId);
+  const view = queue.operatorView().rounds.find((round) => round.id === first.id);
+  assert.equal(view.assignedPeople, 2);
+  assert.equal(view.skippedPeople, 2);
+  // ゲームには4名分の名前（2席はスキップ枠）を渡し、残りの組が入場すれば開始できる。
+  assert.deepEqual(queue.roundPlayerNicknames(queue.round(first.id)).slice(2), ['スキップ枠', 'スキップ枠']);
+  assert.equal(queue.roundSummary(first.id).ready, false);
+  for (const id of queue.round(first.id).ticketIds) queue.checkIn(queue.ticket(id).qrToken, 'operator');
+  assert.equal(queue.roundSummary(first.id).ready, true);
+  queue.applyGameEvent({eventId: 'skip-seat-start', type: 'GAME_STARTED', targetRoundId: first.id, occurredAt: Date.now(), source: 'game'});
+  assert.equal(queue.round(first.id).status, 'PLAYING');
+});
 
-  const recallResult = queue.operatorAction({action: 'recall_group', ticketId: firstGroupId, reason: '来場を確認', operator: 'operator'});
-  assert.match(recallResult.notice, /スキップを取り消し/);
-  assert.equal(queue.ticket(firstGroupId).status, 'CALLED');
-  assert.deepEqual(
-    queue.round(first.id).ticketIds.map((id) => queue.ticket(id).ticketNumber),
-    [secondGroup.ticketNumber, firstGroup.ticketNumber],
-  );
-  assert.equal(queue.state.tickets.find((ticket) => ticket.ticketNumber === replacementGroup.ticketNumber).status, 'ASSIGNED');
-  assert.ok(queue.state.rounds.every((round) => !(round.skippedTicketIds ?? []).includes(firstGroupId)));
+test('呼出中の組を全てスキップしても枠を飛ばさず、4席すべてスキップ枠で実施する', () => {
+  const queue = new TicketQueue();
+  const only = register(queue, '全員来ない', 4);
+  register(queue, '次の組', 4);
+  const first = queue.operatorView().rounds[0];
+  queue.callNext('operator');
+  const id = queue.state.tickets.find((ticket) => ticket.ticketNumber === only.ticketNumber).id;
+  queue.operatorAction({action: 'skip_group', ticketId: id, reason: '来場なし', operator: 'operator'});
+  assert.equal(queue.round(first.id).status, 'CALLED');
+  assert.deepEqual(queue.roundPlayerNicknames(queue.round(first.id)), ['スキップ枠', 'スキップ枠', 'スキップ枠', 'スキップ枠']);
+  assert.equal(queue.roundSummary(first.id).ready, true);
+  // スキップを取り消すと、その組が元の席に戻る。
+  const recall = queue.operatorAction({action: 'recall_group', ticketId: id, reason: '来場を確認', operator: 'operator'});
+  assert.match(recall.notice, /スキップを取り消し/);
+  assert.equal(queue.ticket(id).status, 'CALLED');
+  assert.equal(queue.roundSummary(first.id).skippedPeople, 0);
 });
 
 test('誤って終了した過去枠を再呼出ししてゲームを再実施できる', () => {

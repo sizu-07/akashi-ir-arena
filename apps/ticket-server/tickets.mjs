@@ -36,6 +36,7 @@ const ceilSlotBoundary = (value) => Math.ceil(value / SLOT_MS) * SLOT_MS;
 const adjustmentNotice = (slots) => slots > 0
   ? `現在、運営調整のため${slots}枠（${slots * SLOT_MINUTES}分）遅れています。調整枠は時間の経過に合わせて自動で消化されます。今後の状況により、入場予定時刻が変更される場合があります。`
   : '運営調整は終了しました。整理券画面の最新の入場予定時刻をご確認ください。';
+export const SKIP_SEAT_NAME = 'スキップ枠';
 const legacyPlayerNames = (nickname, partySize) => Array.from({length: partySize}, (_, index) => partySize === 1 ? nickname : `${nickname}${index + 1}`);
 const bestFillIndexes = (tickets, capacity) => {
   const combinations = Array.from({length: capacity + 1}, () => null);
@@ -300,7 +301,8 @@ export class TicketQueue {
   fillCalledRound() {
     const called = this.state.rounds.find((round) => round.status === 'CALLED');
     if (!called) return [];
-    const occupied = called.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.partySize ?? 0), 0);
+    // スキップした組の席は「スキップ枠」として運営が入るため、後続の組で埋めない。
+    const occupied = called.ticketIds.reduce((sum, id) => sum + (this.ticket(id)?.partySize ?? 0), 0) + this.skippedSeats(called);
     const capacity = 4 - occupied;
     if (capacity <= 0) return [];
     const candidates = this.state.tickets
@@ -493,15 +495,19 @@ export class TicketQueue {
     return {changed: Boolean(elapsedAdjustmentSlots || completedRound || calledRound), elapsedAdjustmentSlots, completedRound, calledRound};
   }
 
+  skippedSeats(round) {
+    return (round.skippedTicketIds ?? []).reduce((sum, id) => sum + (this.ticket(id)?.status === 'NO_SHOW' ? this.ticket(id).partySize : 0), 0);
+  }
+
   roundPlayerNicknames(round) {
-    return round.ticketIds.flatMap(id => this.ticket(id)?.playerNicknames ?? []);
+    return [...round.ticketIds.flatMap(id => this.ticket(id)?.playerNicknames ?? []), ...Array(this.skippedSeats(round)).fill(SKIP_SEAT_NAME)];
   }
 
   roundAdmittedPlayerNicknames(round) {
     return round.ticketIds.flatMap((id) => {
       const ticket = this.ticket(id);
       return (ticket?.playerNicknames ?? []).map((name) => ['CHECKED_IN', 'PLAYING'].includes(ticket.status) ? name : null);
-    });
+    }).concat(Array(this.skippedSeats(round)).fill(SKIP_SEAT_NAME));
   }
 
   publicTicket(ticketOrAccessToken) {
@@ -644,7 +650,8 @@ export class TicketQueue {
     ticket.updatedAt = this.now();
     this.recalculate(false);
     const filled = this.fillCalledRound();
-    const becameEmpty = round.ticketIds.length === 0;
+    // スキップ枠が残っている枠は運営が入って実施するので、空き枠として飛ばさない。
+    const becameEmpty = round.ticketIds.length === 0 && this.skippedSeats(round) === 0;
     if (becameEmpty) {
       round.status = 'SKIPPED';
       round.skippedAt = this.now();
@@ -764,7 +771,10 @@ export class TicketQueue {
     const round = this.round(roundId);
     if (!round) return null;
     const tickets = round.ticketIds.map((id) => this.ticket(id)).filter(Boolean);
-    return {number: round.number, checkedInPeople: tickets.filter((item) => item.status === 'CHECKED_IN').reduce((sum, item) => sum + item.partySize, 0), assignedPeople: tickets.reduce((sum, item) => sum + item.partySize, 0)};
+    const assignedPeople = tickets.reduce((sum, item) => sum + item.partySize, 0), skippedPeople = this.skippedSeats(round);
+    const checkedInPeople = tickets.filter((item) => item.status === 'CHECKED_IN').reduce((sum, item) => sum + item.partySize, 0);
+    // スキップ枠は運営が入るので、入場済みとして扱い4席に数える。
+    return {number: round.number, checkedInPeople, assignedPeople, skippedPeople, ready: assignedPeople + skippedPeople === 4 && checkedInPeople === assignedPeople};
   }
 
   cancelByVisitor(accessToken) {
@@ -789,7 +799,7 @@ export class TicketQueue {
       }
       case 'skip_group': {
         const result = this.skipCalledGroup(ticketId, operator, reason);
-        const fillText = result.filled.length ? ` 空席に${result.filled.map((item) => this.ticket(item.ticketId)?.ticketNumber).filter(Boolean).join('・')}を自動充当しました。` : '';
+        const fillText = ` ${result.ticket.partySize}席はスキップ枠として運営が入ります。後ろの組は繰り上げません。`;
         const nextText = result.nextCalledRound ? ` 第${result.nextCalledRound.number}枠を自動で呼び出しました。` : '';
         return {notice: `${result.ticket.ticketNumber}をスキップ済みにしました。${fillText}${nextText}`.replace(/\s+/g, ' ').trim()};
       }
@@ -934,8 +944,8 @@ export class TicketQueue {
       const otherPlaying = this.state.rounds.find((item) => item.status === 'PLAYING' && item.id !== round.id);
       if (otherPlaying) throw Error(`第${otherPlaying.number}枠が体験中です`);
       const summary = this.roundSummary(round.id);
-      if (summary.assignedPeople !== 4) throw Error(`通常試合には4名必要です（現在${summary.assignedPeople}名）`);
-      if (summary.checkedInPeople !== 4) throw Error(`未入場者がいます（${summary.checkedInPeople}/4名入場済み）`);
+      if (summary.assignedPeople + summary.skippedPeople !== 4) throw Error(`通常試合には4名必要です（現在${summary.assignedPeople}名・スキップ枠${summary.skippedPeople}席）`);
+      if (summary.checkedInPeople !== summary.assignedPeople) throw Error(`未入場者がいます（${summary.checkedInPeople}/${summary.assignedPeople}名入場済み）`);
     }
     if (event.type === 'GAME_ENDED' && round.status === 'COMPLETED') {
       this.state.processedGameEvents.push(event.eventId);

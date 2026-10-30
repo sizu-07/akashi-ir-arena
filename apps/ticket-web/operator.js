@@ -183,7 +183,7 @@ function renderRoundControls() {
   $('calledRoundControls').hidden = !called;
   if (called) {
     $('calledRoundControlTitle').textContent = `第${called.number}枠を呼び出し中`;
-    $('calledRoundControlHint').textContent = '来場しない登録グループだけをスキップします。空席には後続の入れるグループを自動で補完します。';
+    $('calledRoundControlHint').textContent = '来場しない登録グループだけをスキップします。スキップした席は「スキップ枠」として運営が入り、後ろの組は繰り上げません。';
     $('calledGroups').replaceChildren(...called.tickets.map((ticket) => {
       const item = document.createElement('div');
       item.className = 'called-group';
@@ -233,7 +233,7 @@ function renderRoundControls() {
 }
 
 function timelineRound(round, index, {history = false} = {}) {
-  const ready = round.status === 'CALLED' && round.assignedPeople > 0 && round.checkedInPeople === round.assignedPeople;
+  const ready = round.status === 'CALLED' && round.assignedPeople + (round.skippedPeople ?? 0) > 0 && round.checkedInPeople === round.assignedPeople;
   const checkingIn = round.status === 'CALLED' && round.checkedInPeople > 0 && !ready;
   const article = document.createElement('article');
   article.className = `timeline-round ${round.status.toLowerCase()}${ready ? ' ready' : ''}`;
@@ -274,11 +274,14 @@ function timelineRound(round, index, {history = false} = {}) {
     groups.append(chip);
   }
   const seatTickets = history && round.status === 'SKIPPED' && !round.tickets.length ? (round.skippedTickets ?? []) : round.tickets;
-  const assignedNames = seatTickets.flatMap((ticket) => playerNames(ticket).map((name) => ({name, ticketNumber: ticket.ticketNumber, status: ticket.status, groupColor: groupColor(ticket)})));
+  // スキップした組の席は「スキップ枠」として残し、運営が入る。
+  const staffSeats = round.status === 'SKIPPED' ? [] : (round.skippedTickets ?? []).flatMap((ticket) => Array.from({length: ticket.partySize}, () => ({name: 'スキップ枠', ticketNumber: ticket.ticketNumber, status: 'STAFF'})));
+  const assignedNames = [...seatTickets.flatMap((ticket) => playerNames(ticket).map((name) => ({name, ticketNumber: ticket.ticketNumber, status: ticket.status, groupColor: groupColor(ticket)}))), ...staffSeats];
   for (let seatIndex = 0; seatIndex < 4; seatIndex += 1) {
     const seat = document.createElement('div');
     const player = assignedNames[seatIndex];
     const seatStatus = !player ? 'empty'
+      : player.status === 'STAFF' ? 'staff'
       : round.status === 'COMPLETED' || player.status === 'COMPLETED' ? 'completed'
         : round.status === 'SKIPPED' || player.status === 'NO_SHOW' ? 'skipped'
           : round.status === 'PLAYING' ? 'playing'
@@ -291,8 +294,8 @@ function timelineRound(round, index, {history = false} = {}) {
     const ticketStateText = player?.status === 'CHECKED_IN' ? '入場済・'
       : player?.status === 'COMPLETED' ? '終了・'
         : player?.status === 'NO_SHOW' ? 'スキップ済み・' : '';
-    small.textContent = player ? `${ticketStateText}${player.ticketNumber}` : ['EMPTY', 'DELAYED_EMPTY'].includes(round.status) ? '未割当' : '自動充当';
-    if (player) {
+    small.textContent = player?.status === 'STAFF' ? `運営が入る（${player.ticketNumber}）` : player ? `${ticketStateText}${player.ticketNumber}` : ['EMPTY', 'DELAYED_EMPTY'].includes(round.status) ? '未割当' : '自動充当';
+    if (player && player.status !== 'STAFF') {
       seat.classList.add('group-seat');
       seat.style.setProperty('--group-color', player.groupColor);
     }
@@ -302,7 +305,7 @@ function timelineRound(round, index, {history = false} = {}) {
   const footer = document.createElement('p');
   footer.className = 'timeline-footer';
   const displayedStatus = ready ? '全員入場済み' : checkingIn ? '入場受付中' : round.status === 'PLAYING' && round.pausedAt ? '一時停止中' : labels[round.status] || round.status;
-  const displayedPeople = round.status === 'SKIPPED' ? round.skippedPeople : round.assignedPeople;
+  const displayedPeople = round.status === 'SKIPPED' ? round.skippedPeople : round.assignedPeople + (round.skippedPeople ?? 0);
   footer.textContent = round.status === 'DELAYED_EMPTY' ? '運営調整のため使用しません。終了時刻に自動で進みます'
     : round.status === 'EMPTY' ? '登録が入ると自動配置されます'
       : `${displayedStatus}・${displayedPeople}/4名${round.status === 'CALLED' ? `・${round.checkedInPeople}名入場済` : ''}`;

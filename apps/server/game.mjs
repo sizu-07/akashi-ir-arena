@@ -17,7 +17,7 @@ export class Game {
     this.autoAdvanceRounds=autoAdvanceRounds;
     this.now=now; this.log=log; this.pending=[]; this.shots=[]; this.seen=new Map(); this.soundEvents=[]; this.activity=[]; this.events=saved?.eventNo??0;this.defaultPlayerNames=devices.map(device=>device.name);
     this.s={id:randomUUID(),generation:1,phase:'LOBBY',pauseReason:null,rules:{...defaults},round:1,roundResults:[],remainingMs:defaults.durationSec*1000,intermissionEndsAt:null,intermissionBlockedReason:null,ticketRoundId:null,ticketStarted:false,ticketPaused:false,media:'score',winner:null,testMode:false,participantIds:[],
-      players:devices.map(d=>({id:d.id,name:d.name,shooterId:d.shooterId,hp:1,kills:0,deaths:0,shots:0,hits:0,hitShots:0,accuracy:0,respawnAt:0,connected:false,armed:false,lastSeen:0,bootId:null,ack:null,lastShot:-1e15,rssi:null,battery:null,syncRtt:null}))};
+      players:devices.map(d=>({id:d.id,name:d.name,shooterId:d.shooterId,outOfService:false,hp:1,kills:0,deaths:0,shots:0,hits:0,hitShots:0,accuracy:0,respawnAt:0,connected:false,armed:false,lastSeen:0,bootId:null,ack:null,lastShot:-1e15,rssi:null,battery:null,syncRtt:null}))};
     this.s.roundStart=Object.fromEntries(this.s.players.map(p=>[p.id,stats(p)]));
     if(saved?.players?.length===4&&saved.rules?.mode===defaults.mode) {
       const previousDuration = saved.rules.durationSec;
@@ -96,18 +96,34 @@ export class Game {
     const nextRound=this.s.phase==='INTERMISSION';
     const mode=(resuming||nextRound)?this.s.testMode:testMode===true;
     if(mode&&!this.allowTestMode)throw Error('動作確認は「起動_デモ.cmd」で実行してください');
-    const selected=(resuming||nextRound)?this.participants():mode?this.s.players.filter(p=>p.connected):this.s.players;
-    if(!selected.length)throw Error('接続・時刻同期した端末が1台以上必要です');
+    // 使用停止にした銃は参加させない。使用を再開した銃は、通常試合なら次の開始・再開から戻る。
+    const inService=this.s.players.filter(p=>!p.outOfService);
+    const selected=((resuming||nextRound)?mode?this.participants():inService:mode?this.s.players.filter(p=>p.connected):inService).filter(p=>!p.outOfService);
+    if(!selected.length)throw Error(mode?'接続・時刻同期した端末が1台以上必要です':'使用できる銃がありません');
     if(!mode&&selected.some(receiverOnlyGame))throw Error('受信専用端末は「接続済み端末だけで動作確認」で使用してください');
-    if(!mode&&selected.length!==4)throw Error('通常試合は4台必要です');
-    if(!mode&&selected.some(p=>!['0.8.0-4e42','0.8.1-4e42','0.8.2-4e42','0.8.0-sim'].includes(p.firmwareVersion)))throw Error('通常試合には4台とも個人戦用v0.8ファームウェアが必要です');
+    if(!mode&&selected.length<2)throw Error('使用できる銃が2台未満のため試合を開始できません');
+    if(!mode&&selected.some(p=>!['0.8.0-4e42','0.8.1-4e42','0.8.2-4e42','0.8.0-sim'].includes(p.firmwareVersion)))throw Error('通常試合には参加する銃すべてに個人戦用v0.8ファームウェアが必要です');
     if(selected.some(p=>!this.current(p)))throw Error('参加端末の接続・時刻同期を確認してください');
-    if(selected.some(p=>mode?!this.testReady(p):!deviceReady(p)))throw Error(mode?'参加端末の構成・通常モードを確認してください':'4台の個人戦対応・通常モードを確認してください');
+    if(selected.some(p=>mode?!this.testReady(p):!deviceReady(p)))throw Error(mode?'参加端末の構成・通常モードを確認してください':'参加する銃の個人戦対応・通常モードを確認してください');
     this.s.testMode=mode;this.s.participantIds=selected.map(p=>p.id);
     this.s.generation++;this.s.phase='COUNTDOWN';this.s.pauseReason=null;this.s.intermissionEndsAt=null;this.s.intermissionBlockedReason=null;this.s.startAt=this.now()+countdownDurationMs;this.s.countdownAudioStartAt=this.s.startAt-countdownDurationMs;this.s.commandId=randomUUID();this.s.startCommitted=selected.every(p=>!this.gameDeviceReady(p));this.s.media='score';this.s.videoPlayback=null;
     if(nextRound){for(const p of this.s.players)Object.assign(p,{hp:1,deadAt:0,respawnAt:0,respawnRemainingMs:0,lastShot:-1e15,reviveProgressMs:0});this.s.roundStart=Object.fromEntries(this.s.players.map(p=>[p.id,stats(p)]));this.s.remainingMs=this.s.rules.durationSec*1000;}
     if(resuming)for(const p of this.s.players)if(p.hp===0&&p.respawnRemainingMs>0){p.respawnAt=this.s.startAt+p.respawnRemainingMs;p.respawnRemainingMs=0;}
     for(const p of this.s.players){p.ack=null;p.armed=false;p.damageFeedback=null;}this.record('countdown',{startAt:this.s.startAt,commandId:this.s.commandId,testMode:mode,participantIds:this.s.participantIds});}
+  // 故障した銃を試合から外す（true）か、使用を再開する（false）。外した銃のそれまでのキル数は残す。
+  setOutOfService(id,value){const p=this.player(id),out=value===true;if(p.outOfService===out)return;
+    p.outOfService=out;
+    if(out){
+      p.armed=false;p.ack=null;
+      if(p.hp===0)Object.assign(p,{hp:1,deadAt:0,respawnAt:0,respawnRemainingMs:0});
+      if(this.isParticipant(id)&&!['LOBBY','FINISHED'].includes(this.s.phase)){
+        this.s.participantIds=this.s.participantIds.filter(x=>x!==id);
+        if(this.s.phase==='COUNTDOWN')this.s.startCommitted=this.participants().every(q=>!this.gameDeviceReady(q)||q.ack===this.s.commandId);
+      }
+    }
+    this.record('device_service',{deviceId:id,outOfService:out});
+    if(out&&!this.s.testMode&&['ACTIVE','COUNTDOWN'].includes(this.s.phase)&&this.participants().length<2)this.pause('使用できる銃が不足');
+  }
   pause(reason='operator'){if(this.s.phase==='ACTIVE')this.s.remainingMs=Math.max(0,this.s.endAt-this.now());
     if(['ACTIVE','COUNTDOWN'].includes(this.s.phase)){this.s.phase='PAUSED';this.s.pauseReason=reason;this.s.generation++;this.s.startCommitted=false;for(const p of this.s.players){p.armed=false;if(p.hp===0)p.respawnRemainingMs=Math.max(0,p.respawnAt-this.now());}this.pending=[];this.shots=[];this.record('pause',{reason});}}
   endRound(reason='time'){

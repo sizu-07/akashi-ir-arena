@@ -11,6 +11,7 @@ export function pauseExplanation(reason) {
     '投影画面切断': ['投影画面との接続が切れました', '投影画面を開き直して「表示を準備」を押し、接続を確認してから再開してください。'],
     server_restart: ['ゲームサーバーが再起動したため停止しました', '投影画面と4台の端末を確認してから「ゲームを再開」を押してください。'],
     server_shutdown: ['ゲームサーバーの停止により中断しました', 'サーバーを起動し、投影画面と端末を確認してから再開してください。'],
+    '使用できる銃が不足': ['使用できる銃が2台未満になりました', '故障した銃を直して「使用を再開」するか、試合全体を終了してください。'],
     '一時診断中': ['一時診断のためゲームを停止しました', '診断を終了し、端末と投影画面を確認してから「ゲームを再開」を押してください。'],
   };
   return known[reason] ?? [reason ? `ゲームが停止しました：${reason}` : 'ゲームが一時停止しています', '投影画面と参加端末を確認してから「ゲームを再開」を押してください。'];
@@ -22,10 +23,12 @@ export function operationStatus(state, {connected, isOwner, testRequested}) {
   if (!isOwner) return {tone:'warning', title:'この画面は閲覧専用です', detail:'ほかの端末が操作権を持っています。ボタン操作はできません。', next:'この端末で操作する場合は「操作権を取得」を押してください。', checks:[]};
 
   const players = state.players ?? [];
-  const connectedPlayers = players.filter(player => player.connected).length;
+  // 使用停止（故障）にした銃は準備確認の対象から外す。
+  const inService = players.filter(player => !player.outOfService);
+  const outOfService = players.length - inService.length;
+  const connectedPlayers = inService.filter(player => player.connected).length;
   const testing = state.phase === 'LOBBY' ? testRequested : state.testMode;
-  const participants = state.phase === 'LOBBY' ? testing ? players.filter(player => player.connected) : players : players.filter(player => state.participantIds?.includes(player.id));
-  const required = testing ? 1 : 4;
+  const participants = state.phase === 'LOBBY' ? testing ? inService.filter(player => player.connected) : inService : players.filter(player => state.participantIds?.includes(player.id));
   const deviceIssues = [];
   for (const player of participants) {
     if (!player.connected || state.serverMs - player.lastSeen > 2500) deviceIssues.push(`${player.name}：通信が切れています`);
@@ -33,12 +36,12 @@ export function operationStatus(state, {connected, isOwner, testRequested}) {
     else if (!testing && !firmwareOk(player)) deviceIssues.push(`${player.name}：個人戦用v0.8への更新が必要です`);
     else if ((!player.hardwareReady && !(testing && player.firmwareVersion?.startsWith('legacy-motor-demo-') && player.bench)) || (!testing && player.bench)) deviceIssues.push(`${player.name}：ゲーム用設定・机上モードを確認してください`);
   }
-  const devicesReady = testing ? connectedPlayers >= 1 && deviceIssues.length === 0 : connectedPlayers === 4 && deviceIssues.length === 0;
+  const devicesReady = testing ? connectedPlayers >= 1 && deviceIssues.length === 0 : inService.length >= 2 && connectedPlayers === inService.length && deviceIssues.length === 0;
   const ticketRequired = state.ticketBridge?.enabled && !testing && state.phase === 'LOBBY';
   const checks = [
     {ok:!!state.displayReady, label:'投影画面', detail:state.displayReady ? '音声・映像の準備完了' : '投影画面を開き「表示を準備」を押す'},
     {ok:!ticketRequired || !!state.ticketBridge?.membersLoaded, label:'参加者名', detail:ticketRequired ? state.ticketBridge.membersLoaded ? '入場受付から名前を自動反映済み' : '4人全員の入場受付が完了すると名前を自動反映' : state.ticketBridge?.enabled ? '動作確認では整理券の反映は不要' : '手動設定の名前を確認'},
-    {ok:devicesReady, label:'参加端末', detail:deviceIssues.length ? deviceIssues.join('／') : `${connectedPlayers}/4台接続${testing ? '（動作確認は1台以上）' : ''}${devicesReady ? state.phase === 'LOBBY' ? '・開始可能' : '・通信正常' : '・不足'}`},
+    {ok:devicesReady, label:'参加端末', detail:deviceIssues.length ? deviceIssues.join('／') : `${connectedPlayers}/${inService.length}台接続${outOfService ? `（使用停止 ${outOfService}台）` : ''}${testing ? '（動作確認は1台以上）' : ''}${devicesReady ? state.phase === 'LOBBY' ? '・開始可能' : '・通信正常' : '・不足'}`},
   ];
 
   if(state.diagnostics?.enabled)return {tone:'warning',title:'一時診断中・戦績には加算されません',detail:state.diagnostics.intermissionHeld?'中間発表の自動進行を保留しています。':'接続した端末の射撃・受信・振動を確認しています。',next:'下の「参加者・端末」で各銃の反応と診断ログを確認し、終わったら「一時診断を終了」を押してください。',checks};

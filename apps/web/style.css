@@ -387,7 +387,9 @@ progress::-moz-progress-bar {
 }
 .player.player-card.is-offline { border-color: #bf3039; background: #fff0f0; }
 .player.player-card.is-defeated { border-color: #aa383d; background: #fff8f8; }
-.player.player-card.is-low-battery { border-color: #a86b1a; background: #fffbf2; }
+.player.player-card.is-out-of-service { border-color: #8d8f94; background: #eceef1; }
+.player.player-card.is-out-of-service .player-kills,
+.player.player-card.is-out-of-service h3 { color: #6c7077; }
 .player.player-card.is-triggered { background: #fff2dc; box-shadow: 0 0 0 3px #efab55; }
 .player-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .player-identity { min-width: 0; }
@@ -397,7 +399,10 @@ progress::-moz-progress-bar {
 .player-state { flex: none; padding: 4px 7px; border-radius: 3px; background: #eaf6ee; color: #256e4b; font-size: 12px; font-weight: 800; }
 .is-offline .player-state,
 .is-defeated .player-state { background: #f7dfe0; color: #9b2931; }
-.is-low-battery .player-state { background: #faecd2; color: #91551c; }
+.is-out-of-service .player-state { background: #5b5f66; color: #fff; }
+.is-out-of-service .player-life { border-color: #6c7077; background: #e2e5e9; }
+.service-toggle { min-height: 44px; border: 1px solid #b6bcc4; background: #fff; color: #4a4f57; font-weight: 700; }
+.service-toggle.is-resume { border-color: var(--accent); color: var(--accent-hover); }
 .player.player-card .player-kills { margin-top: 2px; font-size: 35px; }
 .player-life { padding: 7px 10px; border-left: 3px solid var(--team-color); background: #f4f6f8; font-size: 14px; font-weight: 700; }
 .is-offline .player-life,

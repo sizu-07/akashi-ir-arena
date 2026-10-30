@@ -7,6 +7,7 @@ import {WebSocketServer, WebSocket} from 'ws';
 import QRCode from 'qrcode';
 import {supabaseTicketStorage, ticketStorage} from './store.mjs';
 import {TicketQueue,EVENT_SCHEDULE} from './tickets.mjs';
+import {createShare, publicShare} from './shares.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const webRoot = path.join(root, 'apps/ticket-web');
@@ -80,9 +81,11 @@ export async function createTicketApp({
     ['/operator-shared.css', 'operator-shared.css'], ['/operator.css', 'operator.css'],
     ['/guest.css', 'guest.css'],
     ['/scanner.css', 'scanner.css'],
+    ['/share.js', 'share.js'], ['/share.css', 'share.css'],
+    ['/fonts/Anton-Regular.ttf', 'fonts/Anton-Regular.ttf'], ['/fonts/BarlowCondensed-Bold.ttf', 'fonts/BarlowCondensed-Bold.ttf'],
     ['/vendor/jsqr.js', path.join(root, 'node_modules/jsqr/dist/jsQR.js')],
   ]);
-  const contentTypes = {'.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8'};
+  const contentTypes = {'.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.ttf': 'font/ttf'};
 
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -214,6 +217,21 @@ export async function createTicketApp({
         broadcast();
         return json(res, 200, {ok: true, ...result});
       }
+      if (url.pathname === '/api/game/share' && req.method === 'POST') {
+        if (!same(req.headers.authorization, `Bearer ${gameApiKey}`)) return json(res, 401, {error: 'APIキーが無効です'});
+        const record = createShare(queue, await body(req));
+        await db.flush();
+        return json(res, 200, {ok: true, expiresAt: record.expiresAt, players: record.players.map((player) => ({slot: player.slot, url: `${requestOrigin(req)}/s/${player.token}`}))});
+      }
+      if (url.pathname.startsWith('/api/public/share/') && req.method === 'GET') {
+        const share = publicShare(queue, decodeURIComponent(url.pathname.slice('/api/public/share/'.length)));
+        return share ? json(res, 200, share) : json(res, 404, {error: '結果ページが見つからないか、公開期限（7日）を過ぎました'});
+      }
+      if (url.pathname.startsWith('/s/') && req.method === 'GET') {
+        const data = readFileSync(path.join(webRoot, 'share.html'));
+        res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8', 'Content-Length': data.length, 'Cache-Control': 'no-cache'});
+        return res.end(data);
+      }
       if (url.pathname === '/api/game/heartbeat' && req.method === 'POST') {
         if (!same(req.headers.authorization, `Bearer ${gameApiKey}`)) return json(res, 401, {error: 'APIキーが無効です'});
         queue.state.gameLastSeenAt = Date.now();
@@ -226,7 +244,7 @@ export async function createTicketApp({
         const playerNicknames = round ? queue.roundPlayerNicknames(round) : [];
         const admittedPlayerNicknames = round ? queue.roundAdmittedPlayerNicknames(round) : [];
         const summary = round && queue.roundSummary(round.id);
-        return json(res, round ? 200 : 404, round ? {roundId: round.id, number: round.number, status: round.status, playerNicknames, admittedPlayerNicknames, assignedPeople: summary.assignedPeople, checkedInPeople: summary.checkedInPeople, ready: summary.assignedPeople === 4 && summary.checkedInPeople === 4} : {error: '対象回がありません'});
+        return json(res, round ? 200 : 404, round ? {roundId: round.id, number: round.number, status: round.status, playerNicknames, admittedPlayerNicknames, assignedPeople: summary.assignedPeople, checkedInPeople: summary.checkedInPeople, skippedPeople: summary.skippedPeople, ready: summary.ready} : {error: '対象回がありません'});
       }
 
       if (url.pathname.startsWith('/scan/')) { res.writeHead(302, {Location: `/scanner#${url.pathname.slice(6)}`}); return res.end(); }

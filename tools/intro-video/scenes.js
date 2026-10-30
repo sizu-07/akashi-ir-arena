@@ -2,12 +2,13 @@
 import {sections, scenes} from './script.js';
 
 export const W = 1920, H = 1080, FPS = 30;
-const C = {red: '#ed2335', ink: '#141414', paper: '#f4f1e9', grey: '#8a8780', led: '#2b2b2b'};
+const C = {red: '#ed2335', ink: '#141414', paper: '#f4f1e9', grey: '#8a8780', led: '#2b2b2b', green: '#6b9c31'};
+// ゲームの表示色と同じ：プレイヤー1＝青、2＝オレンジ、3＝緑、4＝紫。
 const TEAM = [
-  {ja: '赤', en: 'RED', color: '#ed2335'},
-  {ja: '青', en: 'BLUE', color: '#1684a7'},
-  {ja: '緑', en: 'GREEN', color: '#6b9c31'},
-  {ja: '黄', en: 'YELLOW', color: '#e0a90f'},
+  {ja: '1', en: 'PLAYER 1', color: '#1684a7'},
+  {ja: '2', en: 'PLAYER 2', color: '#c45e28'},
+  {ja: '3', en: 'PLAYER 3', color: '#6b9c31'},
+  {ja: '4', en: 'PLAYER 4', color: '#9a58a7'},
 ];
 const SECTION_SEC = 1.7, VOICE_LEAD = 0.35, TAIL = 0.55;
 
@@ -183,7 +184,8 @@ function figure(ctx, x, y, s, pose, color = C.ink) {
 
 // ---------- フィールド（ホワイトボードの配置図より） ----------
 const FIELD_RATIO = 1.12;
-const STARTS = [[0.07, 0.08], [0.82, 0.1], [0.1, 0.92], [0.88, 0.92]];
+// スタート地点は左上から時計回りにプレイヤー1〜4。
+const STARTS = [[0.07, 0.08], [0.82, 0.1], [0.88, 0.92], [0.1, 0.92]];
 const BUTTONS = [[0.35, 0.36, 1], [0.6, 0.35, 2], [0.36, 0.62, 3], [0.62, 0.6, 0]];
 function field(ctx, x, y, w, {players = [], t = 0, highlightStarts = 0, label = true} = {}) {
   const h = w * FIELD_RATIO, X = v => x + v * w, Y = v => y + v * h;
@@ -259,7 +261,7 @@ function player(ctx, x, y, r, {team, dir = 0, out = false, alpha = 1, scale = 1}
   ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
   ctx.lineWidth = 4; ctx.strokeStyle = C.ink; ctx.stroke();
   ctx.rotate(-dir);
-  text(ctx, TEAM[team].ja, 0, 2, {size: r * 1.1, color: '#fff', align: 'center', baseline: 'middle'});
+  text(ctx, TEAM[team].ja, 0, 3, {family: 'display', size: r * 1.25, color: '#fff', align: 'center', baseline: 'middle'});
   ctx.restore();
 }
 
@@ -351,7 +353,7 @@ V.versus = (ctx, t) => {
     ctx.save(); ctx.translate(x + bw / 2, 470); ctx.scale(p, p);
     para(ctx, -bw / 2, -200, bw, 330, -9, team.color);
     text(ctx, '1', 0, 90, {family: 'display', size: 300, color: C.paper, align: 'center', skew: -9});
-    text(ctx, team.en, 0, -150, {family: 'display', size: 40, color: C.paper, align: 'center', skew: -9, spacing: 3});
+    text(ctx, `P${i + 1}`, 0, -150, {family: 'display', size: 40, color: C.paper, align: 'center', skew: -9, spacing: 3});
     ctx.restore();
     if (i < 3) text(ctx, 'VS', x + bw + gap / 2, 500, {family: 'display', size: 90, align: 'center', skew: -9, alpha: prog(t, 0.5 + i * 0.4, 0.2), color: C.ink});
   });
@@ -396,10 +398,10 @@ V.oneShot = (ctx, t) => {
   if (t > 0.8) {
     ctx.lineWidth = 34; ctx.strokeStyle = '#14141420'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
     const done = cd >= 1;
-    ctx.strokeStyle = done ? TEAM[2].color : C.red;
+    ctx.strokeStyle = done ? C.green : C.red;
     ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (done ? 1 : 1 - cd)); ctx.stroke();
     if (done) {
-      sticker(ctx, cx, cy, 'REVIVE!', {color: TEAM[2].color, size: 64, t: prog(t, 4.2, 1)});
+      sticker(ctx, cx, cy, 'REVIVE!', {color: C.green, size: 64, t: prog(t, 4.2, 1)});
     } else {
       text(ctx, String(Math.ceil(7 * (1 - cd))), cx, cy + 70, {family: 'display', size: 210, align: 'center', color: C.ink});
     }
@@ -428,13 +430,13 @@ V.field = (ctx, t) => {
     const a = prog(t, 1.4 + i * 0.3, 0.3);
     ctx.save(); ctx.globalAlpha = a;
     para(ctx, 1090, 470 + i * 90, 90, 70, -9, team.color);
-    text(ctx, team.ja, 1135, 520 + i * 90, {size: 44, color: '#fff', align: 'center'});
+    text(ctx, team.ja, 1135, 520 + i * 90, {family: 'display', size: 50, color: '#fff', align: 'center'});
     text(ctx, `${team.en} START`, 1210, 524 + i * 90, {family: 'display', size: 48, skew: -9, spacing: 2});
     ctx.restore();
   });
 };
 V.toStart = (ctx, t) => {
-  const from = [[0.42, 0.42], [0.58, 0.36], [0.36, 0.64], [0.62, 0.6]], walk = easeInOut(prog(t, 1, 9.5));
+  const from = [[0.42, 0.42], [0.58, 0.36], [0.62, 0.6], [0.36, 0.64]], walk = easeInOut(prog(t, 1, 9.5));
   const players = STARTS.map(([x, y], i) => {
     const [fx, fy] = from[i];
     return {x: lerp(fx, x, walk), y: lerp(fy, y, walk), team: i, dir: walk < 1 ? Math.atan2(y - fy, x - fx) + Math.PI / 2 : Math.atan2(0.5 - y, 0.5 - x) + Math.PI / 2};
@@ -448,9 +450,9 @@ V.toStart = (ctx, t) => {
   TEAM.forEach((team, i) => {
     const arrived = walk >= 1;
     para(ctx, 1090, 470 + i * 90, 90, 70, -9, team.color);
-    text(ctx, team.ja, 1135, 520 + i * 90, {size: 44, color: '#fff', align: 'center'});
+    text(ctx, team.ja, 1135, 520 + i * 90, {family: 'display', size: 50, color: '#fff', align: 'center'});
     text(ctx, `${team.en} START`, 1210, 524 + i * 90, {family: 'display', size: 48, skew: -9, spacing: 2});
-    if (arrived) okMark(ctx, 1560, 505 + i * 90, 26, t - 10.5 - i * 0.1);
+    if (arrived) okMark(ctx, 1790, 505 + i * 90, 26, t - 10.5 - i * 0.1);
   });
   sticker(ctx, 1730, 400, 'あるいて移動', {color: C.ink, size: 34, rotate: 4, t: prog(t, 2, 1)});
   if (t > 11) sticker(ctx, 1600, 862, '運営の合図を待ってね', {size: 40, t: prog(t, 11, 1)});
@@ -562,7 +564,7 @@ V.respawn = (ctx, t) => {
   const [ax, ay] = path[seg], [bx, by] = path[seg + 1];
   const revived = t >= 7.5;
   const me = {x: lerp(ax, bx, local), y: lerp(ay, by, local), team: 0, dir: Math.atan2(by - ay, bx - ax) + Math.PI / 2, out: !revived};
-  const others = [{x: 0.7, y: 0.25, team: 1, dir: -2.4}, {x: 0.28, y: 0.78, team: 2, dir: 0.6}, {x: 0.72, y: 0.75, team: 3, dir: -0.8}];
+  const others = [{x: 0.7, y: 0.25, team: 1, dir: -2.4}, {x: 0.72, y: 0.75, team: 2, dir: -0.8}, {x: 0.28, y: 0.78, team: 3, dir: 0.6}];
   const {X, Y} = field(ctx, 200, 210, 520, {players: [...others, me], t, label: false});
   ctx.strokeStyle = C.red; ctx.lineWidth = 4; ctx.setLineDash([12, 10]);
   ctx.beginPath(); ctx.moveTo(X(path[0][0]), Y(path[0][1])); for (const [px, py] of path.slice(1)) ctx.lineTo(X(px), Y(py)); ctx.stroke(); ctx.setLineDash([]);
@@ -571,10 +573,10 @@ V.respawn = (ctx, t) => {
   // 銃のライトで残り秒数を表示する（7個の赤＝7秒）
   const left = clamp(7.5 - t, 0, 7), lit = Math.ceil(left);
   const leds = Array(8).fill(null);
-  if (revived) leds.fill(TEAM[2].color);
+  if (revived) leds.fill(C.green);
   else if (Math.floor(t * 4) % 2) { leds[0] = C.red; for (let i = 1; i <= lit; i++) leds[i] = C.red; }
   gunSide(ctx, 1260, 450, 0.8, {leds});
-  if (revived) sticker(ctx, 1300, 760, 'REVIVE!', {color: TEAM[2].color, size: 70, t: prog(t, 7.5, 1)});
+  if (revived) sticker(ctx, 1300, 760, 'REVIVE!', {color: C.green, size: 70, t: prog(t, 7.5, 1)});
   else {
     text(ctx, String(lit), 1700, 790, {family: 'display', size: 220, align: 'center', color: C.red});
     text(ctx, 'ライトのカウント', 1700, 560, {size: 36, align: 'center'});
@@ -598,7 +600,7 @@ V.report = (ctx, t) => {
     ctx.fillStyle = TEAM[team].color; ctx.fillRect(260, y, 14, 104);
     ctx.strokeStyle = '#14141438'; ctx.lineWidth = 1; ctx.strokeRect(260, y, 1400, 104);
     text(ctx, String(i + 1), 330, y + 82, {family: 'display', size: 76, color: i ? C.ink : C.red, align: 'center'});
-    text(ctx, `プレイヤー${TEAM[team].ja}`, 420, y + 70, {size: 48});
+    text(ctx, `プレイヤー${team + 1}`, 420, y + 70, {size: 48});
     text(ctx, String(k), 1150, y + 84, {family: 'display', size: 76, align: 'center', color: C.red});
     text(ctx, String(d), 1330, y + 80, {family: 'display', size: 60, align: 'center'});
     text(ctx, `${acc}%`, 1500, y + 80, {family: 'display', size: 60, align: 'center'});
@@ -623,6 +625,24 @@ function cautionCards(ctx, t, cards) {
 V.noRun = (ctx, t) => {
   text(ctx, 'NO RUNNING', 160, 205, {family: 'display', size: 60, skew: -9, color: C.red, spacing: 3});
   cautionCards(ctx, t, [['run', 'はしらない', false, 0.9], ['jump', 'ジャンプしない', false, 1.6], ['slide', 'スライディングしない', false, 2.3], ['walk', 'あるく', true, 4.2], ['crouch', 'しゃがむ', true, 4.7]]);
+};
+// 市販品と勘違いして振り回されないよう、手作りの銃であることをはっきり伝える。
+V.handmade = (ctx, t) => {
+  gunSide(ctx, 560, 600, 0.95, {angle: Math.sin(t * 1.6) * 0.025});
+  ctx.strokeStyle = C.red; ctx.lineWidth = 6; ctx.setLineDash([14, 10]);
+  ctx.beginPath(); ctx.ellipse(560, 600, 430, 300, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  sticker(ctx, 470, 280, 'HANDMADE', {color: C.ink, size: 66, rotate: -6, t: prog(t, 0.3, 1)});
+  text(ctx, 'この銃は', 1080, 320, {size: 52, skew: -9, alpha: prog(t, 0.6, 0.3)});
+  text(ctx, '自作（手作り）です', 1080, 420, {size: 80, skew: -9, color: C.red, alpha: prog(t, 0.9, 0.3)});
+  text(ctx, 'お店で売っている市販品ではありません', 1085, 500, {size: 40, skew: -9, alpha: prog(t, 1.5, 0.3)});
+  const s = back(prog(t, 2.3, 0.35));
+  if (s > 0) {
+    ctx.save(); ctx.translate(1420, 690); ctx.rotate(rad(-6)); ctx.scale(s, s);
+    ctx.strokeStyle = C.red; ctx.lineWidth = 8; ctx.strokeRect(-330, -95, 660, 190);
+    text(ctx, 'FRAGILE', 0, -10, {family: 'display', size: 100, color: C.red, align: 'center', spacing: 8, skew: 0});
+    text(ctx, 'こわれやすい・やさしく扱ってね', 0, 62, {size: 38, align: 'center', skew: 0});
+    ctx.restore();
+  }
 };
 V.noSwing = (ctx, t) => {
   text(ctx, 'HANDLE WITH CARE', 160, 205, {family: 'display', size: 60, skew: -9, color: C.red, spacing: 3});

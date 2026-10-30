@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#ed2335">
+  <title>明石光線 | 試合結果をシェア</title>
+  <link rel="stylesheet" href="/share.css">
+</head>
+<body>
+  <main class="share">
+    <header class="share-head">
+      <p class="brand"><span>↗</span>明石<b>光線</b><small>AKASHI IR ARENA</small></p>
+    </header>
+    <section id="loading" class="share-card"><p>結果を読み込んでいます…</p></section>
+    <section id="error" class="share-card" hidden><h1>結果ページを開けません</h1><p id="errorText"></p></section>
+    <section id="result" hidden>
+      <p class="kicker">FINAL RESULT</p>
+      <h1 id="headline"></h1>
+      <p id="summary" class="summary"></p>
+      <div class="actions">
+        <button id="shareX" class="share-button x" type="button">X でシェア<small>横長の画像と文章を投稿</small></button>
+        <button id="shareInstagram" class="share-button instagram" type="button">Instagram でシェア<small>縦長の画像を投稿・文章は貼り付け</small></button>
+      </div>
+      <p id="notice" class="notice" role="status" hidden></p>
+      <figure class="preview">
+        <img id="previewPortrait" alt="Instagram用の結果画像">
+        <figcaption><a id="savePortrait" download="akashi-kosen-instagram.png">縦長の画像を保存</a> ／ <a id="saveLandscape" download="akashi-kosen-x.png">横長の画像を保存</a></figcaption>
+      </figure>
+      <p id="expires" class="expires"></p>
+    </section>
+  </main>
+  <script type="module" src="/share.js"></script>
+</body>
+</html>

@@ -241,6 +241,11 @@
   background: var(--red-soft);
   color: var(--red);
 }
+.seat.staff {
+  border-style: dashed;
+  background: #eef0f4;
+  color: #3f4650;
+}
 .seat.empty {
   border-style: dashed;
   color: var(--muted);
