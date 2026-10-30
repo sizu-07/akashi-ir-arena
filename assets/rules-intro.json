@@ -1,13 +1,13 @@
 {
   "output": "assets/rules-intro.webm",
-  "bytes": 70800337,
-  "sha256": "6744cb6614489e7b39c813deed96b8a5aaa6a1e39719604f597632348a1d27a5",
+  "bytes": 74312059,
+  "sha256": "48863eed1b126f90ea346ddfcbe295f657558d216a50a3b34fb776fb8e227642",
   "voice": {
     "engine": "voicevox",
     "speaker": 8,
     "credit": "VOICEVOX:春日部つむぎ"
   },
-  "durationSeconds": 212.46533333333335,
+  "durationSeconds": 220.91733333333332,
   "size": [
     1920,
     1080
@@ -15,8 +15,8 @@
   "fps": 30,
   "video": "VP9 WebM",
   "audio": "Opus 48kHz stereo",
-  "frames": 6374,
-  "encodeSeconds": 55.241200000047684,
+  "frames": 6628,
+  "encodeSeconds": 31.581,
   "scenes": [
     {
       "start": 0,
@@ -128,60 +128,66 @@
     },
     {
       "start": 96.27,
+      "duration": 8.45,
+      "kind": "scene",
+      "name": "handmade"
+    },
+    {
+      "start": 104.72,
       "duration": 4.5,
       "kind": "scene",
       "name": "noSwing"
     },
     {
-      "start": 100.77,
+      "start": 109.22,
       "duration": 6.93,
       "kind": "scene",
       "name": "noContact"
     },
     {
-      "start": 107.7,
+      "start": 116.15,
       "duration": 4,
       "kind": "scene",
       "name": "goBack"
     },
     {
-      "start": 111.7,
+      "start": 120.15,
       "duration": 6.66,
       "kind": "scene",
       "name": "trouble"
     },
     {
-      "start": 118.36,
+      "start": 126.81,
       "duration": 7.61,
       "kind": "scene",
       "name": "stop"
     },
     {
-      "start": 125.97,
+      "start": 134.42,
       "duration": 1.7,
       "kind": "section",
       "name": "try"
     },
     {
-      "start": 127.67,
+      "start": 136.12,
       "duration": 5.5,
       "kind": "scene",
       "name": "tryIt"
     },
     {
-      "start": 133.17,
+      "start": 141.62,
       "duration": 64,
       "kind": "scene",
       "name": "practice"
     },
     {
-      "start": 197.17,
+      "start": 205.62,
       "duration": 1.7,
       "kind": "section",
       "name": "standby"
     },
     {
-      "start": 198.87,
+      "start": 207.32,
       "duration": 13,
       "kind": "scene",
       "name": "toStart"
