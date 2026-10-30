@@ -244,7 +244,7 @@ export async function createTicketApp({
         const playerNicknames = round ? queue.roundPlayerNicknames(round) : [];
         const admittedPlayerNicknames = round ? queue.roundAdmittedPlayerNicknames(round) : [];
         const summary = round && queue.roundSummary(round.id);
-        return json(res, round ? 200 : 404, round ? {roundId: round.id, number: round.number, status: round.status, playerNicknames, admittedPlayerNicknames, assignedPeople: summary.assignedPeople, checkedInPeople: summary.checkedInPeople, skippedPeople: summary.skippedPeople, ready: summary.ready} : {error: '対象回がありません'});
+        return json(res, round ? 200 : 404, round ? {roundId: round.id, number: round.number, status: round.status, playerNicknames, admittedPlayerNicknames, assignedPeople: summary.assignedPeople, checkedInPeople: summary.checkedInPeople, skippedPeople: summary.skippedPeople, staffSeats: summary.staffSeats, ready: summary.ready} : {error: '対象回がありません'});
       }
 
       if (url.pathname.startsWith('/scan/')) { res.writeHead(302, {Location: `/scanner#${url.pathname.slice(6)}`}); return res.end(); }

@@ -159,6 +159,15 @@
             <strong id="calledRoundControlTitle">呼出中のグループを操作</strong>
             <p id="calledRoundControlHint" class="hint"></p>
             <div id="calledGroups" class="called-groups"></div>
+            <form id="staffFillForm" class="staff-fill" hidden>
+              <strong>空いている席に運営が入る</strong>
+              <p id="staffFillHint" class="hint"></p>
+              <div id="staffFillInputs" class="staff-fill-inputs"></div>
+              <div class="staff-fill-actions">
+                <button id="staffFillSubmit" class="primary" type="submit">空いている席をすべて埋める</button>
+                <button id="staffFillClear" type="button" hidden>運営の席を外す</button>
+              </div>
+            </form>
           </div>
           <div
             id="skippedGroupControls"

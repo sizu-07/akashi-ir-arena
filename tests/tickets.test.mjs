@@ -520,6 +520,46 @@ test('呼出中の組を全てスキップしても枠を飛ばさず、4席す�
   assert.equal(queue.roundSummary(first.id).skippedPeople, 0);
 });
 
+test('呼出中の枠の空き席に、入力した名前で運営が入って開始できる', () => {
+  const queue = new TicketQueue();
+  const three = register(queue, '3人組', 3);
+  register(queue, '次の組', 2);
+  const round = queue.operatorView().rounds[0];
+  queue.callNext('operator');
+  assert.equal(queue.roundSummary(round.id).ready, false);
+  assert.throws(() => queue.operatorAction({action: 'fill_staff', roundId: round.id, value: ['a', 'b'], operator: 'operator'}), /1席すべて/);
+  assert.throws(() => queue.operatorAction({action: 'fill_staff', roundId: round.id, value: [' '], operator: 'operator'}), /1〜20文字/);
+  const result = queue.operatorAction({action: 'fill_staff', roundId: round.id, value: ['たなか先生'], operator: 'operator'});
+  assert.match(result.notice, /たなか先生/);
+  const threeId = queue.state.tickets.find((ticket) => ticket.ticketNumber === three.ticketNumber).id;
+  assert.deepEqual(queue.roundPlayerNicknames(queue.round(round.id)).at(-1), 'たなか先生');
+  assert.equal(queue.operatorView().rounds.find((item) => item.id === round.id).staffSeatNames.length, 1);
+  queue.checkIn(queue.ticket(threeId).qrToken, 'operator');
+  assert.equal(queue.roundSummary(round.id).ready, true);
+  queue.applyGameEvent({eventId: 'staff-start', type: 'GAME_STARTED', targetRoundId: round.id, occurredAt: Date.now(), source: 'game'});
+  assert.equal(queue.round(round.id).status, 'PLAYING');
+});
+
+test('スキップした席にも運営の名前を入れられ、外すとスキップ枠に戻る', () => {
+  const queue = new TicketQueue();
+  const skipped = register(queue, '来ない組', 2);
+  register(queue, '来た組', 2);
+  const round = queue.operatorView().rounds[0];
+  queue.callNext('operator');
+  const skippedId = queue.state.tickets.find((ticket) => ticket.ticketNumber === skipped.ticketNumber).id;
+  queue.operatorAction({action: 'skip_group', ticketId: skippedId, reason: '来場なし', operator: 'operator'});
+  assert.deepEqual(queue.roundPlayerNicknames(queue.round(round.id)).slice(2), ['スキップ枠', 'スキップ枠']);
+  queue.operatorAction({action: 'fill_staff', roundId: round.id, value: ['すずき', 'さとう'], operator: 'operator'});
+  assert.deepEqual(queue.roundPlayerNicknames(queue.round(round.id)).slice(2), ['すずき', 'さとう']);
+  queue.operatorAction({action: 'fill_staff', roundId: round.id, value: [], operator: 'operator'});
+  assert.deepEqual(queue.roundPlayerNicknames(queue.round(round.id)).slice(2), ['スキップ枠', 'スキップ枠']);
+  // スキップを取り消すと、その組が席に戻り運営の名前は使わない。
+  queue.operatorAction({action: 'fill_staff', roundId: round.id, value: ['すずき', 'さとう'], operator: 'operator'});
+  queue.operatorAction({action: 'recall_group', ticketId: skippedId, reason: '来場を確認', operator: 'operator'});
+  assert.equal(queue.roundSummary(round.id).staffSeats, 0);
+  assert.equal(queue.roundPlayerNicknames(queue.round(round.id)).length, 4);
+});
+
 test('誤って終了した過去枠を再呼出ししてゲームを再実施できる', () => {
   const queue = new TicketQueue();
   register(queue, '再実施', 4);

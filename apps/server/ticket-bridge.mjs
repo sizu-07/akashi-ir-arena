@@ -96,8 +96,8 @@ export function createTicketBridge({url, apiKey, dataDir, initialRoundId = null,
       const result = await fetchCurrentRound();
       if (!result) throw Error('整理券運営画面で次の4名を先に呼び出してください');
       if (result.ready === false) throw Error(`整理券の4名登録・入場確認が完了していません（${result.checkedInPeople}/${result.assignedPeople}名）`);
-      // スキップ枠の席は運営が入るため、参加者として数える。
-      if (result.assignedPeople !== undefined && result.assignedPeople + (result.skippedPeople ?? 0) !== 4) throw Error(`整理券の参加者が4名揃っていません（現在${result.assignedPeople}名）`);
+      // スキップ枠や運営が名前を入れた席は運営が入るため、参加者として数える。
+      if (result.assignedPeople !== undefined && result.assignedPeople + (result.staffSeats ?? result.skippedPeople ?? 0) !== 4) throw Error(`整理券の参加者が4名揃っていません（現在${result.assignedPeople}名）`);
       if (!Array.isArray(result.playerNicknames) || result.playerNicknames.length !== 4) throw Error('整理券の参加者名が4名分ありません');
       currentRoundId = result.roundId;
       connected = true;

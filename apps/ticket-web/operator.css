@@ -476,3 +476,12 @@ dialog::backdrop {
     flex-basis: min(78vw, 260px);
   }
 }
+
+/* 呼出中の枠の空き席を運営で埋めるフォーム */
+.staff-fill { display: grid; gap: 8px; margin-top: 12px; padding: 12px; border: 1px dashed #9aa2ad; border-radius: 4px; background: #f7f8fa; }
+.staff-fill .hint { margin: 0; }
+.staff-fill-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.staff-fill-inputs label { display: grid; gap: 4px; font-size: 13px; font-weight: 700; }
+.staff-fill-inputs input { min-height: 44px; }
+.staff-fill-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.staff-fill-actions button { min-height: 44px; }
