@@ -111,3 +111,17 @@ test('during the pre-game video, "force finish" returns to waiting and a new mat
     rmSync(dir, {recursive: true, force: true});
   }
 });
+
+test('rounds waiting behind a late called round never show a slot that already started', () => {
+  let now = Date.parse('2026-09-17T17:07:00+09:00');
+  const queue = new TicketQueue({now: () => now});
+  register(queue, 'A', 4);
+  register(queue, 'B', 4);
+  queue.callNext('operator');
+  // 呼出中の組がまだ始まらないまま時間が過ぎた。
+  now = Date.parse('2026-09-17T17:41:00+09:00');
+  queue.scheduleRounds();
+  const waiting = queue.state.rounds.find((round) => round.status === 'SCHEDULED');
+  assert.equal(waiting.slotStartAt, Date.parse('2026-09-17T17:45:00+09:00'));
+  assert.ok(queue.operatorView().rounds.find((round) => round.id === waiting.id).callAt >= now);
+});

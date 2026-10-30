@@ -405,6 +405,8 @@ export class TicketQueue {
       // 調整枠がないときは、先頭の予定枠を今から入れる最も早い枠まで前に詰める（呼出時刻を迎えた枠はそのまま）。
       nextSlot = !isSlotBoundary(first) ? earliest : compact && first > earliest ? earliest : first;
     }
+    // 呼出中・体験中の枠の後ろで待つ枠は、すでに始まった時間帯を案内しない（前の枠が遅れていれば一緒に後ろへずれる）。
+    const notBefore = !compact ? 0 : playing || called ? nextSlotBoundary(now) : floorSlotBoundary(now);
     if (eventWindow?.configured&&!isSlotBoundary(scheduled[0]?.slotStartAt)) nextSlot=Math.max(nextSlot,eventWindow.slotStartAt);
     for (const round of scheduled) {
       const manual = round.manualSlotStartAt ?? (isSlotBoundary(round.manualScheduledAt) ? round.manualScheduledAt : null);
@@ -413,7 +415,7 @@ export class TicketQueue {
       const earliestCallAt = Math.max(0, ...round.ticketIds.map((id) => this.ticket(id)?.earliestCallAt ?? 0));
       const delayMs = (this.state.settings.globalDelayMinutes + (round.delayMinutes ?? 0)) * 60_000;
       const requestedStart = earliestCallAt ? ceilSlotBoundary(earliestCallAt + SLOT_MS - delayMs) : 0;
-      round.slotStartAt = Math.max(nextSlot, requestedStart, manual ?? existing ?? 0, compact ? floorSlotBoundary(now) : 0);
+      round.slotStartAt = Math.max(nextSlot, requestedStart, manual ?? existing ?? 0, notBefore);
       applyEstimate(round);
       nextSlot = round.slotStartAt + SLOT_MS;
     }
