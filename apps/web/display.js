@@ -523,7 +523,7 @@ function renderStandby() {
       element.className = 'standby-slot';
       // Names are inserted with textContent so ticket nicknames cannot create markup.
       element.innerHTML = '<span class="standby-slot-number"></span><h3></h3><span class="standby-slot-arrow" aria-hidden="true">↓</span><svg class="standby-figure" viewBox="0 0 200 240" aria-hidden="true" focusable="false"><circle cx="100" cy="53" r="37"/><path d="M99 102c-47 0-83 32-87 83l-6 55h188l-6-55c-4-51-40-83-89-83Z"/></svg><span class="standby-spot"><b></b><span>POSITION</span></span>';
-      node = {element, number: element.querySelector('.standby-slot-number'), name: element.querySelector('h3')};
+      node = {element, number: element.querySelector('.standby-slot-number'), name: element.querySelector('h3'), spot: element.querySelector('.standby-spot span')};
       standbyNodes.set(player.id, node);
     }
     if ($('standbyLanes').children[index] !== node.element)
@@ -533,6 +533,7 @@ function renderStandby() {
     node.number.textContent = `PLAYER ${String(player.shooterId).padStart(2, '0')}`;
     node.name.textContent = player.name;
     node.name.classList.toggle('long-name', [...player.name].length > 10);
+    node.spot.textContent = `左から${index + 1}番目に立つ`;
   });
 }
 
@@ -699,9 +700,10 @@ function render() {
       kind: 'intermission', title: '途中経過',
       kicker: `ROUND ${String(completed?.round ?? state.round - 1).padStart(2, '0')} / GAME RESULT`,
       standings, completed,
-      meta: state.demo ? `NEXT GAME ${String(state.round).padStart(2, '0')} / 運営の合図を待ってください`
-        : state.intermissionBlockedReason ? `NEXT GAME / ${state.intermissionBlockedReason}`
-          : nextSeconds === null ? `NEXT GAME ${String(state.round).padStart(2, '0')} / まもなく開始` : '',
+      // 結果を見たら、次のゲームに備えてスタート地点へ戻るよう毎回伝える。
+      meta: `結果を確認したら、自分のスタート地点へ戻ってください${state.demo ? ' ／ 次のゲームは運営の合図で開始'
+        : state.intermissionBlockedReason ? ` ／ ${state.intermissionBlockedReason}`
+          : nextSeconds === null ? ' ／ まもなく開始' : ''}`,
     });
     // 次のゲームまでの残り秒数は結果表の横に大きく出す（自動進行のときだけ）。
     const counting = !state.demo && !state.intermissionBlockedReason && nextSeconds !== null;

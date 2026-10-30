@@ -13,6 +13,10 @@ export const scenes = [
   {section: 'rules', visual: 'title', min: 4.5,
     caption: '明石光線へようこそ！ まずはルールを説明するよ',
     say: 'あかしこうせんへ、ようこそ！まずは、ルールを説明するよ。', sfx: [[0.2, 'whoosh'], [0.7, 'shot']]},
+  // 待機画面で並んだ順（左から）に、自分の色を伝える。待機画面と同じ順番・色。
+  {section: 'rules', visual: 'colors', min: 9,
+    caption: '並んだ順に自分の色を確認！ 左から 青・オレンジ・緑・紫',
+    say: 'まずは、自分の色を覚えよう。スクリーンの前に並んだ順に、左から1番目のあなたは青、2番目はオレンジ、3番目は緑、4番目は紫だよ。', sfx: [[6.05, 'pop'], [7.2, 'pop'], [8.8, 'pop'], [10.2, 'pop']]},
   {section: 'rules', visual: 'versus', min: 4.5,
     caption: '1 vs 1 vs 1 vs 1 のキル数勝負！',
     say: 'ルールはシンプル。いちたいいちたいいちたいいちの、キル数勝負だ！', sfx: [[0.3, 'pop'], [0.7, 'pop'], [1.1, 'pop'], [1.5, 'pop']]},
@@ -51,8 +55,8 @@ export const scenes = [
     caption: 'ライトのカウントが終わる前に、スタート地点へもどれ！',
     say: 'ライトのカウントが終わる前に、スタート地点まで戻ろう。', sfx: [[7.6, 'revive']]},
   {section: 'flow', visual: 'report', min: 5,
-    caption: 'ラウンドが終わったら、中間報告をチェック！',
-    say: 'ラウンドが終わったら、スクリーンの中間報告をチェック！', sfx: [[0.2, 'matchEnd']]},
+    caption: '中間報告を確認したら、すぐスタート地点へ戻ろう！',
+    say: 'ラウンドが終わったら、スクリーンの中間報告をチェック！確認したら、すぐに自分のスタート地点へ戻ろう。', sfx: [[0.2, 'matchEnd'], [3.6, 'whoosh']], min: 6.5},
 
   {section: 'caution', visual: 'noRun', min: 6.5,
     caption: 'はしらない・ジャンプしない・スライディングしない',

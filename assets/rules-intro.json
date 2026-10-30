@@ -1,13 +1,13 @@
 {
   "output": "assets/rules-intro.webm",
-  "bytes": 74312059,
-  "sha256": "48863eed1b126f90ea346ddfcbe295f657558d216a50a3b34fb776fb8e227642",
+  "bytes": 77166398,
+  "sha256": "980fafbc9ae8a6915712d783d35c4fbff62b0f2ef54bbf597a24a2f0f7c0f59f",
   "voice": {
     "engine": "voicevox",
     "speaker": 8,
     "credit": "VOICEVOX:春日部つむぎ"
   },
-  "durationSeconds": 220.91733333333332,
+  "durationSeconds": 235.10399999999996,
   "size": [
     1920,
     1080
@@ -15,8 +15,8 @@
   "fps": 30,
   "video": "VP9 WebM",
   "audio": "Opus 48kHz stereo",
-  "frames": 6628,
-  "encodeSeconds": 31.581,
+  "frames": 7054,
+  "encodeSeconds": 69.1985,
   "scenes": [
     {
       "start": 0,
@@ -32,162 +32,168 @@
     },
     {
       "start": 7.06,
+      "duration": 11.67,
+      "kind": "scene",
+      "name": "colors"
+    },
+    {
+      "start": 18.73,
       "duration": 5.07,
       "kind": "scene",
       "name": "versus"
     },
     {
-      "start": 12.13,
+      "start": 23.8,
       "duration": 7.92,
       "kind": "scene",
       "name": "rounds"
     },
     {
-      "start": 20.05,
+      "start": 31.72,
       "duration": 5.66,
       "kind": "scene",
       "name": "oneShot"
     },
     {
-      "start": 25.71,
+      "start": 37.38,
       "duration": 3.64,
       "kind": "scene",
       "name": "hype"
     },
     {
-      "start": 29.35,
+      "start": 41.02,
       "duration": 1.7,
       "kind": "section",
       "name": "flow"
     },
     {
-      "start": 31.05,
+      "start": 42.72,
       "duration": 6.98,
       "kind": "scene",
       "name": "field"
     },
     {
-      "start": 38.03,
+      "start": 49.7,
       "duration": 7.52,
       "kind": "scene",
       "name": "moves"
     },
     {
-      "start": 45.55,
+      "start": 57.22,
       "duration": 4,
       "kind": "scene",
       "name": "swing"
     },
     {
-      "start": 49.55,
+      "start": 61.22,
       "duration": 6.93,
       "kind": "scene",
       "name": "receiver"
     },
     {
-      "start": 56.48,
+      "start": 68.15,
       "duration": 4.47,
       "kind": "scene",
       "name": "cover"
     },
     {
-      "start": 60.95,
+      "start": 72.62,
       "duration": 7.31,
       "kind": "scene",
       "name": "ready"
     },
     {
-      "start": 68.26,
+      "start": 79.93,
       "duration": 5.16,
       "kind": "scene",
       "name": "hit"
     },
     {
-      "start": 73.42,
+      "start": 85.09,
       "duration": 8.5,
       "kind": "scene",
       "name": "respawn"
     },
     {
-      "start": 81.92,
-      "duration": 5,
+      "start": 93.59,
+      "duration": 7.51,
       "kind": "scene",
       "name": "report"
     },
     {
-      "start": 86.92,
+      "start": 101.1,
       "duration": 1.7,
       "kind": "section",
       "name": "caution"
     },
     {
-      "start": 88.62,
+      "start": 102.8,
       "duration": 7.65,
       "kind": "scene",
       "name": "noRun"
     },
     {
-      "start": 96.27,
+      "start": 110.46,
       "duration": 8.45,
       "kind": "scene",
       "name": "handmade"
     },
     {
-      "start": 104.72,
+      "start": 118.91,
       "duration": 4.5,
       "kind": "scene",
       "name": "noSwing"
     },
     {
-      "start": 109.22,
+      "start": 123.41,
       "duration": 6.93,
       "kind": "scene",
       "name": "noContact"
     },
     {
-      "start": 116.15,
+      "start": 130.33,
       "duration": 4,
       "kind": "scene",
       "name": "goBack"
     },
     {
-      "start": 120.15,
+      "start": 134.33,
       "duration": 6.66,
       "kind": "scene",
       "name": "trouble"
     },
     {
-      "start": 126.81,
+      "start": 140.99,
       "duration": 7.61,
       "kind": "scene",
       "name": "stop"
     },
     {
-      "start": 134.42,
+      "start": 148.6,
       "duration": 1.7,
       "kind": "section",
       "name": "try"
     },
     {
-      "start": 136.12,
+      "start": 150.3,
       "duration": 5.5,
       "kind": "scene",
       "name": "tryIt"
     },
     {
-      "start": 141.62,
+      "start": 155.8,
       "duration": 64,
       "kind": "scene",
       "name": "practice"
     },
     {
-      "start": 205.62,
+      "start": 219.8,
       "duration": 1.7,
       "kind": "section",
       "name": "standby"
     },
     {
-      "start": 207.32,
+      "start": 221.5,
       "duration": 13,
       "kind": "scene",
       "name": "toStart"

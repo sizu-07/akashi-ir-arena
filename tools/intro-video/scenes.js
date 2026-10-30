@@ -583,6 +583,27 @@ V.respawn = (ctx, t) => {
   }
   text(ctx, 'GO BACK!', 820, 290, {family: 'display', size: 84, skew: -9, color: C.red, alpha: revived ? 0 : prog(t, 0.6, 0.3)});
 };
+// 待機画面で並んだ順（左から1〜4番目）と、それぞれの色を対応させて見せる。
+V.colors = (ctx, t) => {
+  text(ctx, 'YOUR COLOR', 160, 230, {family: 'display', size: 90, skew: -9, spacing: 4, alpha: prog(t, 0.2, 0.3)});
+  text(ctx, 'スクリーンの前に並んだ順（左から）', 170, 290, {size: 40, color: C.red, alpha: prog(t, 0.4, 0.3)});
+  const names = ['青', 'オレンジ', '緑', '紫'];
+  TEAM.forEach((team, i) => {
+    // ナレーションで色を読み上げるタイミングに合わせて出す。
+    const p = back(prog(t, [6.0, 7.15, 8.75, 10.15][i], 0.4)); if (p <= 0) return;
+    const x = 330 + i * 420;
+    ctx.save(); ctx.translate(x, 0);
+    text(ctx, `左から${i + 1}番目`, 0, 390, {size: 38, align: 'center', alpha: Math.min(1, p)});
+    ctx.save(); ctx.translate(0, 470); ctx.scale(p, p);
+    para(ctx, -150, -60, 300, 110, -9, team.color);
+    text(ctx, names[i], 0, 30, {size: names[i].length > 2 ? 62 : 86, color: '#fff', align: 'center', skew: -9});
+    ctx.restore();
+    figure(ctx, 0, 820, 1.15, 'walk', team.color);
+    ctx.fillStyle = C.ink; ctx.fillRect(-150, 824, 300, 5);
+    text(ctx, team.en, 0, 870, {family: 'display', size: 34, align: 'center', spacing: 2, alpha: Math.min(1, p)});
+    ctx.restore();
+  });
+};
 V.report = (ctx, t) => {
   const rows = [[0, 6, 2, 46], [1, 5, 3, 41], [2, 3, 4, 30], [3, 2, 7, 22]];
   para(ctx, 260, 170, 1400, 100, -9, C.ink);
@@ -606,6 +627,7 @@ V.report = (ctx, t) => {
     text(ctx, `${acc}%`, 1500, y + 80, {family: 'display', size: 60, align: 'center'});
     ctx.restore();
   });
+  sticker(ctx, 1330, 843, '確認したらスタート地点へ戻ろう！', {size: 40, rotate: -2, t: prog(t, 3.4, 1)});
 };
 function cautionCards(ctx, t, cards) {
   const n = cards.length, cw = Math.min(330, (W - 260 - (n - 1) * 30) / n), x0 = (W - (cw * n + 30 * (n - 1))) / 2;

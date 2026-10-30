@@ -107,25 +107,33 @@ const toBlob = (canvas) => new Promise((resolve) => canvas.toBlob(resolve, 'imag
 
 function notice(message) { $('notice').textContent = message; $('notice').hidden = !message; }
 
-async function share(kind) {
-  const blob = images[kind];
-  const file = new File([blob], kind === 'x' ? 'akashi-kosen-x.png' : 'akashi-kosen-instagram.png', {type: 'image/png'});
-  if (kind === 'instagram') {
-    // Instagramは共有時に文章を受け取らないため、先にコピーしておき投稿画面で貼り付けてもらう。
-    try { await navigator.clipboard.writeText(shareText); notice('文章とハッシュタグをコピーしました。Instagramの投稿画面で貼り付けてください。'); }
-    catch { notice(`Instagramの投稿画面で次の文章を入力してください：${shareText}`); }
-  }
-  if (navigator.canShare?.({files: [file]})) {
-    try { await navigator.share(kind === 'x' ? {files: [file], text: shareText} : {files: [file]}); }
-    catch (error) { if (error.name !== 'AbortError') notice('共有を開けませんでした。下の「画像を保存」から保存して投稿してください。'); }
+// LINEやInstagramなどアプリ内のブラウザでは、画像の共有機能が使えないことが多い。
+const inAppBrowser = /Line\/|Instagram|FBAN|FBAV|Twitter|MicroMessenger|KAKAOTALK/i.test(navigator.userAgent);
+let cardUpload = Promise.resolve();
+const files = {};
+
+// Xは文章とリンクを入れた投稿画面をすぐ開く。リンクのプレビューに結果画像（横長）が出る。
+async function shareToX() {
+  notice('Xの投稿画面を開きます。そのままポストできます。');
+  await Promise.race([cardUpload, new Promise((resolve) => setTimeout(resolve, 2500))]);
+  const pageUrl = `${location.origin}/s/${encodeURIComponent(token)}`;
+  location.href = `https://x.com/intent/post?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(pageUrl)}`;
+}
+
+// Instagramはタップの直後に共有メニューを開く（待ち時間をはさむとブラウザに拒否される）。
+function shareToInstagram() {
+  try { navigator.clipboard?.writeText(shareText).catch(() => {}); } catch {}
+  const file = files.instagram;
+  if (file && navigator.canShare?.({files: [file]})) {
+    notice('共有メニューで「Instagram」→「ストーリーズ」を選んでください。文章とハッシュタグはコピー済みなので、必要ならテキストとして貼り付けられます。');
+    navigator.share({files: [file]}).catch((error) => {
+      if (error.name !== 'AbortError') notice('共有メニューを開けませんでした。下の画像を長押しして保存し、Instagramのストーリーズから投稿してください。');
+    });
     return;
   }
-  if (kind === 'x') {
-    notice('この端末では画像を直接渡せないため、文章だけ入力したXを開きます。画像は下の「横長の画像を保存」から追加できます。');
-    location.href = `https://x.com/intent/post?text=${encodeURIComponent(shareText)}`;
-    return;
-  }
-  notice('この端末では直接共有できません。下の「縦長の画像を保存」から保存してInstagramに投稿し、コピーした文章を貼り付けてください。');
+  notice(inAppBrowser
+    ? 'このアプリ内のブラウザでは直接共有できません。右上のメニューから「Safariで開く」または「ブラウザで開く」を選び、もう一度ボタンを押してください。'
+    : 'この端末では直接共有できません。下の画像を長押しして保存し、Instagramのストーリーズから投稿してください。');
 }
 
 async function main() {
@@ -143,12 +151,20 @@ async function main() {
     const portrait = drawPortrait(), landscape = drawLandscape();
     images.instagram = await toBlob(portrait);
     images.x = await toBlob(landscape);
+    files.instagram = new File([images.instagram], 'akashi-kosen-story.png', {type: 'image/png'});
+    // Xのリンクプレビュー用に、横長の画像を縮小したJPEGをサーバーへ渡しておく。
+    const card = document.createElement('canvas'); card.width = 1200; card.height = 675;
+    card.getContext('2d').drawImage(landscape, 0, 0, 1200, 675);
+    cardUpload = new Promise((resolve) => card.toBlob(resolve, 'image/jpeg', 0.86))
+      .then((blob) => fetch(`/api/public/share/${encodeURIComponent(token)}/card`, {method: 'POST', headers: {'Content-Type': 'image/jpeg'}, body: blob}))
+      .catch(() => {});
+    if (inAppBrowser) notice('アプリ内のブラウザで開いています。Instagramに共有するときは、右上のメニューから「Safariで開く」「ブラウザで開く」を選んでください。');
     $('previewPortrait').src = portrait.toDataURL('image/png');
     $('savePortrait').href = portrait.toDataURL('image/png');
     $('saveLandscape').href = landscape.toDataURL('image/png');
     $('expires').textContent = `このページは ${new Date(data.expiresAt).toLocaleDateString('ja-JP')} まで表示できます。`;
-    $('shareX').onclick = () => share('x');
-    $('shareInstagram').onclick = () => share('instagram');
+    $('shareX').onclick = () => shareToX();
+    $('shareInstagram').onclick = () => shareToInstagram();
     $('loading').hidden = true;
     $('result').hidden = false;
   } catch (error) {

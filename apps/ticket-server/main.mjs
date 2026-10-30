@@ -36,6 +36,8 @@ export async function createTicketApp({
   const attempts = new Map();
   const commands = new Map();
   let owner = null;
+  // 共有ページごとのXカード画像（再起動で消えるが、結果ページを開けば作り直される）
+  const shareCards = new Map();
   const wss = new WebSocketServer({noServer: true, maxPayload: 8192});
 
   const json = (res, status, data) => {
@@ -230,8 +232,39 @@ export async function createTicketApp({
         const share = publicShare(queue, decodeURIComponent(url.pathname.slice('/api/public/share/'.length)));
         return share ? json(res, 200, share) : json(res, 404, {error: '結果ページが見つからないか、公開期限（7日）を過ぎました'});
       }
+      const cardMatch = /^\/(?:s\/([\w-]{20,40})\/card\.jpg|api\/public\/share\/([\w-]{20,40})\/card)$/.exec(url.pathname);
+      if (cardMatch?.[1] && req.method === 'GET') {
+        // Xのリンクカード用の画像。結果ページを開いたときに作った画像を使い、まだなければ共通の画像を返す。
+        const image = shareCards.get(cardMatch[1])?.data ?? readFileSync(path.join(webRoot, 'share-card.jpg'));
+        res.writeHead(200, {'Content-Type': 'image/jpeg', 'Content-Length': image.length, 'Cache-Control': 'public, max-age=300'});
+        return res.end(image);
+      }
+      if (cardMatch?.[2] && req.method === 'POST') {
+        if (!publicShare(queue, cardMatch[2])) return json(res, 404, {error: '結果ページが見つかりません'});
+        const chunks = []; let size = 0;
+        for await (const chunk of req) { size += chunk.length; if (size > 700_000) return json(res, 413, {error: '画像が大きすぎます'}); chunks.push(chunk); }
+        const data = Buffer.concat(chunks);
+        if (data[0] !== 0xff || data[1] !== 0xd8) return json(res, 400, {error: 'JPEG画像を送ってください'});
+        shareCards.set(cardMatch[2], {data, at: Date.now()});
+        while (shareCards.size > 400) shareCards.delete(shareCards.keys().next().value);
+        return json(res, 200, {ok: true});
+      }
       if (url.pathname.startsWith('/s/') && req.method === 'GET') {
-        const data = readFileSync(path.join(webRoot, 'share.html'));
+        // Xなどでリンクを貼ったときに結果画像が出るよう、ページごとにOGP情報を埋め込む。
+        const token = decodeURIComponent(url.pathname.slice(3));
+        const share = publicShare(queue, token);
+        const me = share?.players.find((player) => player.slot === share.me);
+        const escape = (value) => String(value).replace(/[&<>"]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+        const origin = requestOrigin(req);
+        const meta = share ? [
+          ['property', 'og:type', 'website'], ['property', 'og:site_name', '明石光線'],
+          ['property', 'og:title', `明石光線 試合結果：${me.name}は${share.draw && me.rank === 1 ? '同率1' : me.rank}位`],
+          ['property', 'og:description', `${share.rounds}ゲーム合計 ${me.kills}キル #明石光線`],
+          ['property', 'og:url', `${origin}/s/${token}`], ['property', 'og:image', `${origin}/s/${token}/card.jpg`],
+          ['property', 'og:image:width', '1200'], ['property', 'og:image:height', '675'],
+          ['name', 'twitter:card', 'summary_large_image'], ['name', 'twitter:image', `${origin}/s/${token}/card.jpg`],
+        ].map(([kind, key, value]) => `<meta ${kind}="${key}" content="${escape(value)}">`).join('\n  ') : '';
+        const data = Buffer.from(readFileSync(path.join(webRoot, 'share.html'), 'utf8').replace('<!--share-meta-->', meta));
         res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8', 'Content-Length': data.length, 'Cache-Control': 'no-cache'});
         return res.end(data);
       }

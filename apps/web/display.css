@@ -1917,6 +1917,55 @@ video {
 }
 .standby-instruction strong { font: 900 clamp(17px, 1.35vw, 28px)/1.2 Noto, sans-serif; }
 .standby-instruction span:last-child { color: var(--red); }
+/* 「左から順番に前へ出て並ぶ」ことを強く伝える案内 */
+.standby-order {
+  display: grid;
+  justify-items: center;
+  gap: 0.8vh;
+  margin-left: auto;
+  padding: 1.2vh 1.6vw;
+  background: var(--ink);
+  color: var(--paper);
+  transform: skew(-6deg);
+  box-shadow: 0.45vw 0.6vh 0 var(--red);
+  animation: stand-order-pulse 2.4s ease-in-out infinite;
+}
+.standby-order > strong { font: 900 clamp(18px, 1.75vw, 38px)/1.15 Noto, sans-serif; letter-spacing: 0.02em; white-space: nowrap; }
+.standby-order > span { color: var(--red); font: 700 clamp(12px, 0.9vw, 18px)/1 var(--condensed); letter-spacing: 0.22em; }
+.standby-order-steps { display: flex; align-items: center; gap: 0.6vw; margin: 0; padding: 0; list-style: none; }
+.standby-order-steps li {
+  display: grid;
+  place-items: center;
+  width: 3.6vw;
+  height: 3.6vw;
+  min-width: 34px;
+  min-height: 34px;
+  border: 3px solid var(--c);
+  color: var(--paper);
+  font: clamp(22px, 2.3vw, 46px)/1 var(--display);
+  animation: stand-order-step 3.2s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.8s);
+}
+.standby-order-steps li.arrow { width: auto; min-width: 0; border: 0; color: var(--red); font-size: clamp(18px, 1.8vw, 36px); animation: none; }
+.standby-slot { animation: stand-slot-turn 3.2s ease-in-out infinite; animation-delay: calc(var(--slot-index, 0) * 0.8s); }
+.standby-spot span { font-family: Noto, sans-serif; font-weight: 900; letter-spacing: 0.04em; }
+.standby-instruction strong { animation: stand-blink 1.6s steps(2, jump-none) infinite; }
+@keyframes stand-order-pulse {
+  0%, 100% { transform: skew(-6deg) scale(1); }
+  50% { transform: skew(-6deg) scale(1.04); }
+}
+@keyframes stand-order-step {
+  0%, 30%, 100% { background: transparent; transform: scale(1); }
+  8%, 22% { background: var(--c); transform: scale(1.18); }
+}
+@keyframes stand-slot-turn {
+  0%, 30%, 100% { transform: translateY(0); box-shadow: 0.35vw 0.5vh 0 var(--ink); }
+  8%, 22% { transform: translateY(-1.2vh); box-shadow: 0.35vw 0.5vh 0 var(--ink), 0 0 0 0.45vw var(--slot-color); }
+}
+@keyframes stand-blink {
+  0%, 100% { color: var(--ink); }
+  50% { color: var(--red); }
+}
 @keyframes stand-arrow {
   0%, 100% { transform: translateY(-0.5vh); opacity: 0.6; }
   55% { transform: translateY(0.7vh); opacity: 1; }
@@ -2093,4 +2142,63 @@ video {
   background: var(--red);
   color: #fff;
   font-size: clamp(15px, 1.35vw, 26px);
+}
+
+/* 途中経過：結果を見たらスタート地点へ戻る案内を目立たせる */
+#overlay[data-result='intermission'] .result-meta {
+  border-color: var(--red);
+  background: var(--red);
+  color: #fff;
+  font: 900 clamp(17px, 1.6vw, 32px)/1.35 Noto, sans-serif;
+  letter-spacing: 0.03em;
+  animation: return-start 1.6s ease-in-out infinite;
+}
+.next-countdown em {
+  margin-top: 0.4vh;
+  padding: 0.3vh 0.8vw;
+  background: var(--red);
+  color: #fff;
+  font: 900 clamp(14px, 1.3vw, 26px)/1.3 Noto, sans-serif;
+  font-style: normal;
+}
+@keyframes return-start {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+/* 最終結果：名前を大きく、1位をはっきり目立たせる */
+#overlay[data-result='final'] .result-name { font-size: clamp(24px, 2.6vw, 54px); }
+#overlay[data-result='intermission'] .result-name { font-size: clamp(20px, 2.1vw, 42px); }
+#overlay[data-result='final'] .result-lead strong { font-size: clamp(32px, 3.8vw, 76px); color: #fff; }
+#overlay[data-result='final'] .result-lead > span { font-size: clamp(16px, 1.5vw, 28px); }
+#overlay[data-result='final'] .result-row.is-leader {
+  position: relative;
+  z-index: 1;
+  background: #fff6d6;
+  outline: 0.5vh solid var(--red);
+  outline-offset: -0.25vh;
+  transform: scale(1.025);
+  box-shadow: 0 0 2.5vh #ed233580;
+}
+#overlay[data-result='final'] .result-row.is-leader .result-rank {
+  color: var(--red);
+  font-size: clamp(34px, 3.4vw, 66px);
+}
+#overlay[data-result='final'] .result-row.is-leader .result-name::before {
+  content: 'WINNER';
+  display: block;
+  width: max-content;
+  margin-bottom: 0.3vh;
+  padding: 0.1vh 0.6vw;
+  background: var(--red);
+  color: #fff;
+  font: 700 clamp(11px, 0.95vw, 18px)/1.3 var(--condensed);
+  letter-spacing: 0.18em;
+  transform: rotate(-3deg);
+}
+#overlay[data-result='final'] .result-row.is-leader .result-total { font-size: clamp(44px, 4.4vw, 86px); }
+
+/* 狭い画面では順番の案内を本文とボタン下の案内に任せる */
+@media (max-width: 900px) {
+  .standby-order { display: none; }
 }

@@ -37,7 +37,17 @@
           <div>
             <span class="standby-eyebrow">BEFORE THE MATCH <b>／</b> 立ち位置案内</span>
             <h2>STAND <em>HERE.</em></h2>
-            <p>スクリーンの前に、<strong>自分の名前の位置</strong>で<br class="standby-mobile-break" />並んでください。</p>
+            <p>スクリーンの前に、<strong>左から順番に</strong>、<br /><strong>自分の名前の位置</strong>に立ってください。</p>
+          </div>
+          <div class="standby-order" aria-label="左から1、2、3、4の順に並ぶ">
+            <strong>前に出て、順番に並ぼう！</strong>
+            <ol class="standby-order-steps" aria-hidden="true">
+              <li style="--i:0;--c:#1684a7">1</li><li class="arrow">→</li>
+              <li style="--i:1;--c:#c45e28">2</li><li class="arrow">→</li>
+              <li style="--i:2;--c:#6b9c31">3</li><li class="arrow">→</li>
+              <li style="--i:3;--c:#9a58a7">4</li>
+            </ol>
+            <span>LINE UP · LEFT TO RIGHT</span>
           </div>
           <div class="standby-direction" aria-hidden="true">
             <span>FIND YOUR NAME</span><b>↓</b>
@@ -46,7 +56,7 @@
         <div id="standbyLanes" class="standby-lanes" aria-label="左からプレイヤー1、2、3、4の立ち位置"></div>
         <div class="standby-instruction">
           <span>01—04 / POSITION GUIDE</span>
-          <strong>立ち位置を確認し、運営の合図を待ってください</strong>
+          <strong>名前の位置へ、左から順番に前へ出て立ってください</strong>
           <span>READY TO PLAY ↗</span>
         </div>
       </section>
@@ -130,6 +140,7 @@
           <span class="next-label">NEXT GAME <b id="nextRound"></b></span>
           <strong id="nextSeconds"></strong>
           <small>秒後に次のゲーム開始</small>
+          <em>スタート地点で待機</em>
         </div>
         <p id="overlayText"></p>
         <div id="slideProgress" aria-hidden="true"></div>

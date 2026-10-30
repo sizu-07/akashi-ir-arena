@@ -68,3 +68,33 @@ test('share pages show only the viewer name, are idempotent per match and expire
   now+=SHARE_TTL_MS+1;
   assert.equal(publicShare(queue,record.players[0].token),null);
 });
+
+test('share pages carry X card tags and serve the uploaded result card', async () => {
+  const {mkdtempSync, rmSync} = await import('node:fs');
+  const os = await import('node:os'), path = await import('node:path');
+  const {createTicketApp} = await import('../apps/ticket-server/main.mjs');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'share-card-'));
+  const apiKey = 'share-card-api-key-0123456789abcdef';
+  const app = await createTicketApp({dataDir: dir, operatorPassword: '135790', gameApiKey: apiKey});
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  try {
+    const created = await (await fetch(`${base}/api/game/share`, {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`}, body: JSON.stringify({gameId: 'card-1', rounds: 3, players: [{slot: 1, name: 'あかし', rank: 1, kills: 4, winner: true}, {slot: 2, name: 'こうせん', rank: 2, kills: 1}]})})).json();
+    const pageUrl = created.players[0].url;
+    const token = pageUrl.split('/s/')[1];
+    const html = await (await fetch(`${base}/s/${token}`)).text();
+    assert.match(html, /<meta name="twitter:card" content="summary_large_image">/);
+    assert.match(html, new RegExp(`og:image" content="[^"]+/s/${token}/card\.jpg"`));
+    assert.match(html, /あかしは1位/);
+    assert.doesNotMatch(html, /こうせん/);
+    const fallback = Buffer.from(await (await fetch(`${base}/s/${token}/card.jpg`)).arrayBuffer());
+    assert.equal(fallback[0], 0xff);
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9]);
+    assert.equal((await fetch(`${base}/api/public/share/${token}/card`, {method: 'POST', headers: {'Content-Type': 'image/jpeg'}, body: jpeg})).status, 200);
+    assert.deepEqual(Buffer.from(await (await fetch(`${base}/s/${token}/card.jpg`)).arrayBuffer()), jpeg);
+    assert.equal((await fetch(`${base}/api/public/share/${token}/card`, {method: 'POST', body: 'not an image'})).status, 400);
+    assert.equal((await fetch(`${base}/api/public/share/${'x'.repeat(24)}/card`, {method: 'POST', body: jpeg})).status, 404);
+  } finally {
+    await app.close();
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
