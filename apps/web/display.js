@@ -192,7 +192,8 @@ function stopBgm() {
 }
 
 function countdownPlaybackMs() {
-  if (!countdownSource || !audio) return 0;
+  // 「表示を準備」をしていない（音声なし）ときは、サーバーの時刻でカウントダウンを進める。
+  if (!countdownSource || !audio) return state?.countdownAudioStartAt ? Math.max(0, Date.now() + offset - state.countdownAudioStartAt) : 0;
   return (countdownAudioOffset + audio.currentTime - countdownAudioStartedAt) * 1000;
 }
 
@@ -253,7 +254,7 @@ function scheduleStartBurst() {
   startTimer = setTimeout(() => {
     startTimer = undefined;
     if (countdownKey !== key || connectionLost || state.media !== 'score' || !['COUNTDOWN', 'ACTIVE'].includes(state.phase)) return;
-    if (bgmFinishedKey !== bgmKey()) startBgm(bgmElapsedSeconds(Date.now() + offset));
+    if (bgmFinishedKey !== bgmKey()) { try { startBgm(bgmElapsedSeconds(Date.now() + offset)); } catch {} }
     $('startBurst').hidden = false;
     burstTimer = setTimeout(() => {
       $('startBurst').hidden = true;
@@ -643,8 +644,10 @@ function render() {
         startCountdownAudio(now);
         scheduleStartBurst();
       } catch (error) {
+        // 音声がなくても表示のカウントダウンとSTART演出は進める。
+        scheduleStartBurst();
         ready = false;
-        mediaError = `${error.message}。「表示を準備」を押し直してください`;
+        mediaError = `${error.message}（音声なしで表示しています）。音声を出す場合は「表示を準備」を押してください`;
         $('prepare').hidden = false;
         acknowledgeReady();
       }
