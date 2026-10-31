@@ -21,13 +21,13 @@ let reviewing = false;
 let reviewedData = null;
 const closedScreen=document.querySelector('#closedScreen');
 function setRegistrationState(registration) {
-  // 枠が埋まっただけのときは受付終了の全画面にせず、入場時間の欄で知らせる。
-  const closed=registration?.open===false&&registration.code!=='full';
+  // 1人でも入れないときは終了画面にする。人数を減らせば入れる場合だけ、入場時間の欄で知らせる。
+  const closed=registration?.open===false&&(registration.code!=='full'||partySize.value==='1');
   document.body.classList.toggle('is-closed',closed);
   closedScreen.hidden=!closed;
   if(closed){
     if(noticeDialog.open)noticeDialog.close();
-    document.querySelector('#closedTitle').textContent=registration.code==='ended'?'本日の受付は終了しました':registration.code==='before_open'?'受付開始前です':'整理券受付';
+    document.querySelector('#closedTitle').textContent=['ended','full'].includes(registration.code)?'本日の受付は終了しました':registration.code==='before_open'?'受付開始前です':'整理券受付';
     document.querySelector('#closedMessage').textContent=registration.message;
   }else if(!noticeConfirmed.checked&&!noticeDialog.open)noticeDialog.showModal();
 }
@@ -69,7 +69,7 @@ async function refreshAvailability() {
     if(result.registration?.open===false){
       availability=null;registerButton.disabled=true;changeArrival.hidden=true;arrivalOptions.hidden=true;
       changeArrival.setAttribute('aria-expanded','false');changeArrival.textContent='この時間が難しい場合は変更する';
-      if(result.registration.code==='full'){arrivalTime.textContent='空きがありません';arrivalMessage.textContent=result.registration.message;}
+      if(result.registration.code==='full'){arrivalTime.textContent='この人数では空きがありません';arrivalMessage.textContent=result.registration.message;}
       return;
     }
     availability = result;

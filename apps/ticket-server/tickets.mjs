@@ -34,7 +34,7 @@ const closedNotice = '受け付けは終了しました。もし枠が空いた�
 // 15:00以降に始まる枠は、設定に関係なく登録させない。すでに入っている人には整理券画面でお詫びを出す。
 const LAST_SLOT_END = '15:00';
 const clockTime = (timestamp) => new Intl.DateTimeFormat('ja-JP', {timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit'}).format(timestamp);
-const fullNotice = (slotEndAt) => `この人数で入れる${clockTime(slotEndAt)}までの枠に空きがありません。${clockTime(slotEndAt)}以降の枠には登録できません。キャンセルなどで空きが出ると、登録できる場合があります。`;
+const fullNotice = (slotEndAt) => `${clockTime(slotEndAt)}までの枠に空きがありません。${clockTime(slotEndAt)}以降の枠には登録できません。キャンセルなどで空きが出ると、登録できる場合があります。`;
 const lateSlotApology = `大変申し訳ございません。運営の都合により、${LAST_SLOT_END}以降の枠では体験をご案内できなくなりました。ご登録いただいたにもかかわらず、ご迷惑をおかけして申し訳ございません。前の枠に空きが出た場合は、この画面でご案内します。`;
 const nextSlotBoundary = (value) => (Math.floor(value / SLOT_MS) + 1) * SLOT_MS;
 const floorSlotBoundary = (value) => Math.floor(value / SLOT_MS) * SLOT_MS;
@@ -219,7 +219,15 @@ export class TicketQueue {
       requestId: randomUUID(), nicknames: Array.from({length: Number(partySize)}, (_, index) => `参加者${index + 1}`),
       partySize, consent: true, earliestCallAt,
     });
-    return {estimatedCallAt: ticket.estimatedCallAt, slotStartAt: ticket.slotStartAt, slotEndAt: ticket.slotEndAt};
+    // 少人数の組を前に詰めると、登録済みの組が最終枠より後ろへ押し出されることがある。その登録は受け付けない。
+    const limit = this.eventWindow()?.configured ? this.eventWindow().slotEndAt : null;
+    return {estimatedCallAt: ticket.estimatedCallAt, slotStartAt: ticket.slotStartAt, slotEndAt: ticket.slotEndAt,
+      pushesPastClose: copy.lateTicketCount(limit) > this.lateTicketCount(limit)};
+  }
+
+  lateTicketCount(limit) {
+    if (!Number.isFinite(limit)) return 0;
+    return this.state.tickets.filter((ticket) => mutableStates.has(ticket.status) && (this.round(ticket.roundId)?.scheduledAt ?? -Infinity) + SLOT_MS > limit).length;
   }
 
   publicAvailability(partySize) {
@@ -228,13 +236,13 @@ export class TicketQueue {
     const registration = this.registrationStatus();
     if (!registration.open) return {registration,current:null,alternatives:[],updatedAt:this.state.updatedAt};
     const current = this.registrationPreview(partySize);
-    if (registration.slotEndAt && current.slotEndAt > registration.slotEndAt) return {registration:{open:false,code:'full',message:fullNotice(registration.slotEndAt)},current:null,alternatives:[],updatedAt:this.state.updatedAt};
+    if (registration.slotEndAt && (current.slotEndAt > registration.slotEndAt || current.pushesPastClose)) return {registration:{open:false,code:'full',message:fullNotice(registration.slotEndAt)},current:null,alternatives:[],updatedAt:this.state.updatedAt};
     const first = nextSlotBoundary(Math.max(this.now(), current.estimatedCallAt ?? this.now()));
     const alternatives = Array.from({length: 8}, (_, index) => {
       const earliestCallAt = first + index * SLOT_MS;
       return earliestCallAt <= this.now() + 24 * 60 * 60_000
         ? {earliestCallAt, ...this.registrationPreview(partySize, earliestCallAt)} : null;
-    }).filter((option) => option && option.estimatedCallAt > current.estimatedCallAt && (!registration.slotEndAt || option.slotEndAt <= registration.slotEndAt));
+    }).filter((option) => option && option.estimatedCallAt > current.estimatedCallAt && (!registration.slotEndAt || (option.slotEndAt <= registration.slotEndAt && !option.pushesPastClose)));
     return {registration,current, alternatives, updatedAt: this.state.updatedAt};
   }
 
@@ -264,7 +272,8 @@ export class TicketQueue {
     if (waiting >= this.state.settings.maxWaitingGroups) throw Error('受付上限に達しました');
     if (!this.previewing) {
       const window=this.eventWindow();
-      if(window?.configured && this.registrationPreview(size,earliestCallAt).slotEndAt>window.slotEndAt) throw Error(fullNotice(window.slotEndAt));
+      const preview=window?.configured?this.registrationPreview(size,earliestCallAt):null;
+      if(preview && (preview.slotEndAt>window.slotEndAt || preview.pushesPastClose)) throw Error(fullNotice(window.slotEndAt));
     }
     if (expectedSlotStartAt !== null && this.registrationPreview(size, earliestCallAt).slotStartAt !== expectedSlotStartAt) {
       throw Error('案内時刻が更新されました。入力内容を確認し直してください');

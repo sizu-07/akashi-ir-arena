@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {TicketQueue, EVENT_WINDOWS} from '../apps/ticket-server/tickets.mjs';
+import {TicketQueue, EVENT_WINDOWS, EVENT_SCHEDULE} from '../apps/ticket-server/tickets.mjs';
 import {createTicketApp} from '../apps/ticket-server/main.mjs';
 import {Game} from '../apps/server/game.mjs';
 import {hardware} from '../apps/server/hardware.mjs';
@@ -163,4 +163,20 @@ test('slots starting at 15:00 or later cannot be registered, and late tickets ge
   assert.equal(availability.registration.code, 'full');
   assert.match(availability.registration.message, /15:00以降の枠には登録できません/);
   assert.throws(() => register(queue, '15時以降', 1), /15:00以降の枠には登録できません/);
+});
+
+test('a registration that would push a booked group past 15:00 is refused', () => {
+  const now = Date.parse('2026-10-31T12:20:00+09:00');
+  const queue = new TicketQueue({now: () => now});
+  queue.operatorAction({action: 'event_days', value: structuredClone(EVENT_SCHEDULE), operator: 'test'});
+  const at = (time) => Date.parse(`2026-10-31T${time}:00+09:00`);
+  const booked = [[2, '13:45'], [4], [2], [4], [2, '14:15'], [4], [3], [3, '14:15'], [4], [1, '13:15']];
+  for (const [size, time] of booked) {
+    queue.register({requestId: `push-${size}-${time}-${requestNumber++}`, nickname: 'g', partySize: size, consent: true, earliestCallAt: time ? at(time) : null});
+  }
+  const lastSlotStart = () => Math.max(...queue.operatorView().rounds.filter((round) => round.tickets.length).map((round) => round.slotStartAt));
+  assert.ok(lastSlotStart() < at('15:00'));
+  assert.throws(() => register(queue, 'push', 4), /15:00以降の枠には登録できません/);
+  assert.ok(lastSlotStart() < at('15:00'));
+  assert.equal(queue.publicAvailability(4).registration.code, 'full');
 });
