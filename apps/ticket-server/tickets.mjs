@@ -31,6 +31,11 @@ const eventDate = (timestamp) => new Intl.DateTimeFormat('sv-SE', {timeZone: 'As
 const eventTime = (date, time) => Date.parse(`${date}T${time}:00+09:00`);
 const validEventTime = (value) => typeof value === 'string' && /^(?:[01]\d|2[0-3]):(?:00|15|30|45)$/.test(value);
 const closedNotice = '受け付けは終了しました。もし枠が空いたら入れるかもしれません。';
+// 15:00以降に始まる枠は、設定に関係なく登録させない。すでに入っている人には整理券画面でお詫びを出す。
+const LAST_SLOT_END = '15:00';
+const clockTime = (timestamp) => new Intl.DateTimeFormat('ja-JP', {timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit'}).format(timestamp);
+const fullNotice = (slotEndAt) => `この人数で入れる${clockTime(slotEndAt)}までの枠に空きがありません。${clockTime(slotEndAt)}以降の枠には登録できません。キャンセルなどで空きが出ると、登録できる場合があります。`;
+const lateSlotApology = `大変申し訳ございません。運営の都合により、${LAST_SLOT_END}以降の枠では体験をご案内できなくなりました。ご登録いただいたにもかかわらず、ご迷惑をおかけして申し訳ございません。前の枠に空きが出た場合は、この画面でご案内します。`;
 const nextSlotBoundary = (value) => (Math.floor(value / SLOT_MS) + 1) * SLOT_MS;
 const floorSlotBoundary = (value) => Math.floor(value / SLOT_MS) * SLOT_MS;
 const isSlotBoundary = (value) => Number.isFinite(value) && value % SLOT_MS === 0;
@@ -189,7 +194,7 @@ export class TicketQueue {
     if (!this.state.settings.eventDays) return null;
     const date = eventDate(this.now());
     const windows=this.state.settings.eventDays.filter((item)=>item.date===date && item.receptionStart && item.slotStart && item.slotEnd)
-      .map((item)=>({date,period:item.period,configured:true,receptionStart:item.receptionStart,receptionStartAt:eventTime(date,item.receptionStart),slotStartAt:eventTime(date,item.slotStart),slotEndAt:eventTime(date,item.slotEnd)}))
+      .map((item)=>({date,period:item.period,configured:true,receptionStart:item.receptionStart,receptionStartAt:eventTime(date,item.receptionStart),slotStartAt:eventTime(date,item.slotStart),slotEndAt:Math.min(eventTime(date,item.slotEnd),eventTime(date,LAST_SLOT_END))}))
       .sort((a,b)=>a.receptionStartAt-b.receptionStartAt);
     const active=windows.find((item)=>this.now()>=item.receptionStartAt && this.now()<item.slotEndAt-SLOT_MS);
     if(active)return active;
@@ -223,7 +228,7 @@ export class TicketQueue {
     const registration = this.registrationStatus();
     if (!registration.open) return {registration,current:null,alternatives:[],updatedAt:this.state.updatedAt};
     const current = this.registrationPreview(partySize);
-    if (registration.slotEndAt && current.slotEndAt > registration.slotEndAt) return {registration:{open:false,code:'ended',message:closedNotice},current:null,alternatives:[],updatedAt:this.state.updatedAt};
+    if (registration.slotEndAt && current.slotEndAt > registration.slotEndAt) return {registration:{open:false,code:'full',message:fullNotice(registration.slotEndAt)},current:null,alternatives:[],updatedAt:this.state.updatedAt};
     const first = nextSlotBoundary(Math.max(this.now(), current.estimatedCallAt ?? this.now()));
     const alternatives = Array.from({length: 8}, (_, index) => {
       const earliestCallAt = first + index * SLOT_MS;
@@ -259,7 +264,7 @@ export class TicketQueue {
     if (waiting >= this.state.settings.maxWaitingGroups) throw Error('受付上限に達しました');
     if (!this.previewing) {
       const window=this.eventWindow();
-      if(window?.configured && this.registrationPreview(size,earliestCallAt).slotEndAt>window.slotEndAt) throw Error(closedNotice);
+      if(window?.configured && this.registrationPreview(size,earliestCallAt).slotEndAt>window.slotEndAt) throw Error(fullNotice(window.slotEndAt));
     }
     if (expectedSlotStartAt !== null && this.registrationPreview(size, earliestCallAt).slotStartAt !== expectedSlotStartAt) {
       throw Error('案内時刻が更新されました。入力内容を確認し直してください');
@@ -553,6 +558,8 @@ export class TicketQueue {
       ? Math.max(ticket.calledAt, plannedCallAt ?? ticket.calledAt)
       : plannedCallAt ? Math.max(plannedCallAt, this.now()) : null) : null;
     const waitMinutes = estimatedCallAt ? Math.max(0, Math.ceil((estimatedCallAt - this.now()) / 60_000)) : null;
+    const lateSlot = Boolean(this.state.settings.eventDays) && mutableStates.has(ticket.status) && Number.isFinite(round?.scheduledAt)
+      && round.scheduledAt >= eventTime(eventDate(round.scheduledAt), LAST_SLOT_END);
     return {
       ticketNumber: ticket.ticketNumber,
       nickname: ticket.nickname,
@@ -568,6 +575,7 @@ export class TicketQueue {
       slotEndAt: showSchedule && round?.scheduledAt ? round.scheduledAt + SLOT_MS : null,
       globalMessage: this.state.globalMessage,
       personalMessage: ticket.personalMessage,
+      apology: lateSlot ? lateSlotApology : '',
       qrToken: ticket.qrToken,
       accessToken: ticket.accessToken,
       updatedAt: this.state.updatedAt,

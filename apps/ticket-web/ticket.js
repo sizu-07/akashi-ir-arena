@@ -18,7 +18,10 @@ function render(ticket) {
   const checkedIn = ['CHECKED_IN', 'PLAYING', 'COMPLETED'].includes(ticket.status);
   $('checkinNotice').hidden = !checkedIn;
   $('checkinNotice').classList.toggle('is-new', checkedIn && previousStatus !== null && !['CHECKED_IN', 'PLAYING', 'COMPLETED'].includes(previousStatus));
-  const scheduleVisible = !terminal.has(ticket.status);
+  // 15:00以降の枠に入っている人だけ、お詫びを出して入場予定とQRコードを隠す。
+  $('apology').hidden = !ticket.apology;
+  $('apologyText').textContent = ticket.apology || '';
+  const scheduleVisible = !terminal.has(ticket.status) && !ticket.apology;
   $('guestTiming').hidden = !scheduleVisible;
   $('slotWindow').hidden = !scheduleVisible;
   $('queueAhead').hidden = !scheduleVisible;
@@ -30,7 +33,7 @@ function render(ticket) {
   $('messages').hidden = !ticket.globalMessage && !ticket.personalMessage;
   $('globalMessage').textContent = ticket.globalMessage;
   $('personalMessage').textContent = ticket.personalMessage ? `あなたへの連絡：${ticket.personalMessage}` : '';
-  $('qrCard').hidden = checkedIn || terminal.has(ticket.status);
+  $('qrCard').hidden = checkedIn || terminal.has(ticket.status) || Boolean(ticket.apology);
   if (!$('qrCard').hidden && !$('qr').src) $('qr').src = `/api/public/qr/${encodeURIComponent(token)}`;
   $('cancel').hidden = !['WAITING','ASSIGNED'].includes(ticket.status);
   $('updated').textContent = `最終更新：${new Date(ticket.updatedAt).toLocaleTimeString('ja-JP')}`;

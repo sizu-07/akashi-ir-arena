@@ -40,8 +40,8 @@ test('開催日ごとの受付時間と最終枠を守り、受付終了案内�
   assert.equal(first.current.slotStartAt,Date.parse('2026-10-29T10:00:00+09:00'));
   register(queue,'1枠目',4);
   register(queue,'2枠目',4);
-  assert.equal(queue.publicAvailability(4).registration.code,'ended');
-  assert.throws(()=>register(queue,'満席',4),/受け付けは終了しました/);
+  assert.equal(queue.publicAvailability(4).registration.code,'full');
+  assert.throws(()=>register(queue,'満席',4),/10:30以降の枠には登録できません/);
   now=Date.parse('2026-10-29T10:15:00+09:00');
   assert.equal(queue.publicAvailability(1).registration.code,'ended');
   now=Date.parse('2026-10-30T09:00:00+09:00');

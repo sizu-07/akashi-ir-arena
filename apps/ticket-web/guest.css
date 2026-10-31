@@ -403,3 +403,7 @@
 .entrance-guide strong { color: #b94047; font-size: 15px; letter-spacing: 0.06em; }
 .entrance-guide b { color: #b94047; font-size: 1.12em; }
 #called strong { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.apology-card { border-left: 6px solid #c2410c; background: #fff7ed; }
+.apology-card h2 { margin-top: 0; color: #9a3412; }
+.apology-card p { line-height: 1.7; }
+.apology-help { color: #6b4b3a; font-size: 14px; }

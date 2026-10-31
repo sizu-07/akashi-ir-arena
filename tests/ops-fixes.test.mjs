@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {TicketQueue} from '../apps/ticket-server/tickets.mjs';
+import {TicketQueue, EVENT_WINDOWS} from '../apps/ticket-server/tickets.mjs';
 import {createTicketApp} from '../apps/ticket-server/main.mjs';
 import {Game} from '../apps/server/game.mjs';
 import {hardware} from '../apps/server/hardware.mjs';
@@ -142,4 +142,25 @@ test('a called slot with every group skipped can be ended without playing', () =
   assert.equal(queue.round(first.id).status, 'SKIPPED');
   // 次の枠は前に詰まり、入場時刻（開始10分前）になっていれば呼び出される。
   assert.equal(queue.round(second.id).status, 'CALLED');
+});
+
+test('slots starting at 15:00 or later cannot be registered, and late tickets get an apology', () => {
+  let now = Date.parse('2026-10-31T13:50:00+09:00');
+  const queue = new TicketQueue({now: () => now});
+  for (const name of ['14:00', '14:15', '14:30', '14:45', '15:00', '15:15']) register(queue, name, 4);
+  const eventDays = EVENT_WINDOWS.map(({date, period}) => ({date, period, receptionStart: '', slotStart: '', slotEnd: ''}));
+  eventDays[3] = {date: '2026-10-31', period: 'public', receptionStart: '09:45', slotStart: '10:00', slotEnd: '17:00'};
+  queue.state.settings.eventDays = eventDays;
+  queue.scheduleRounds();
+  const tickets = queue.state.tickets.map((ticket) => queue.publicTicket(ticket.accessToken));
+  assert.equal(tickets[0].apology, '');
+  assert.equal(tickets[0].slotStartAt, Date.parse('2026-10-31T14:00:00+09:00'));
+  assert.equal(tickets[3].apology, '');
+  assert.deepEqual(tickets.slice(4).map((ticket) => ticket.slotStartAt), [Date.parse('2026-10-31T15:00:00+09:00'), Date.parse('2026-10-31T15:15:00+09:00')]);
+  assert.ok(tickets.slice(4).every((ticket) => /15:00以降の枠/.test(ticket.apology)));
+  assert.ok(queue.state.tickets.every((ticket) => ticket.status !== 'CANCELED'));
+  const availability = queue.publicAvailability(1);
+  assert.equal(availability.registration.code, 'full');
+  assert.match(availability.registration.message, /15:00以降の枠には登録できません/);
+  assert.throws(() => register(queue, '15時以降', 1), /15:00以降の枠には登録できません/);
 });

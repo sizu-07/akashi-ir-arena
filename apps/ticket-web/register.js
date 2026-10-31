@@ -21,7 +21,8 @@ let reviewing = false;
 let reviewedData = null;
 const closedScreen=document.querySelector('#closedScreen');
 function setRegistrationState(registration) {
-  const closed=registration?.open===false;
+  // 枠が埋まっただけのときは受付終了の全画面にせず、入場時間の欄で知らせる。
+  const closed=registration?.open===false&&registration.code!=='full';
   document.body.classList.toggle('is-closed',closed);
   closedScreen.hidden=!closed;
   if(closed){
@@ -65,7 +66,12 @@ async function refreshAvailability() {
     if (!response.ok) throw Error(result.error || '案内時刻を確認できません');
     if (sequence !== availabilityRequest) return;
     setRegistrationState(result.registration);
-    if(result.registration?.open===false){availability=null;registerButton.disabled=true;return;}
+    if(result.registration?.open===false){
+      availability=null;registerButton.disabled=true;changeArrival.hidden=true;arrivalOptions.hidden=true;
+      changeArrival.setAttribute('aria-expanded','false');changeArrival.textContent='この時間が難しい場合は変更する';
+      if(result.registration.code==='full'){arrivalTime.textContent='空きがありません';arrivalMessage.textContent=result.registration.message;}
+      return;
+    }
     availability = result;
     arrivalSelect.replaceChildren();
     arrivalSelect.add(new Option(`表示中の入場時間（${formatTime(result.current.estimatedCallAt)}ごろ）`, ''));
