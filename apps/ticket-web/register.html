@@ -87,25 +87,8 @@
               >画面の案内と注意事項を確認し、呼び出し時に入口へ向かうことに同意します。</span
             ></label
           >
-          <button id="registerButton" class="primary" disabled>入力内容を確認する</button>
+          <button id="registerButton" class="primary" disabled>確認して登録する</button>
         </form>
-        <section id="registrationReview" class="registration-review" aria-labelledby="reviewHeading" hidden>
-          <h3 id="reviewHeading">入力内容をご確認ください</h3>
-          <p>これで間違いないですね？</p>
-          <dl class="review-details">
-            <div><dt>参加人数</dt><dd id="reviewPartySize"></dd></div>
-            <div><dt>ニックネーム</dt><dd id="reviewNicknames"></dd></div>
-          </dl>
-          <div class="review-time-grid">
-            <div><span>入場時間</span><strong id="reviewArrival"></strong></div>
-            <div><span>ゲームプレイ予定</span><strong id="reviewPlayWindow"></strong><small id="reviewEnd"></small></div>
-          </div>
-          <p class="hint">登録後は入場時間を変更できません。運営の都合で予定が変わる場合があるため、発券後も整理券画面を適宜確認してください。</p>
-          <div class="review-actions">
-            <button id="reviewBack" type="button">入力画面に戻る</button>
-            <button id="reviewSubmit" type="button" class="primary">この内容で整理券を登録する</button>
-          </div>
-        </section>
         <p id="message" class="error" role="alert"></p>
       </section>
       <p class="hint">

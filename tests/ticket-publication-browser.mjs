@@ -39,16 +39,8 @@ try {
   await page.locator('#changeArrival').click();
   assert.equal(await page.locator('#arrivalOptions').isVisible(), true);
   await page.locator('#arrivalSelect').selectOption({index: 1});
-  await page.getByRole('button', {name: '入力内容を確認する'}).click();
-  await page.locator('#registrationReview').waitFor({state: 'visible'});
-  assert.equal(await page.locator('#reviewPartySize').innerText(), '2人');
-  assert.equal(await page.locator('#reviewNicknames').innerText(), 'あかし・ひかり');
-  assert.match(await page.locator('#reviewArrival').innerText(), /\d{2}:\d{2}/);
-  assert.match(await page.locator('#reviewEnd').innerText(), /終了予定/);
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  await page.locator('#reviewBack').click();
-  await page.getByRole('button', {name: '入力内容を確認する'}).click();
-  await page.locator('#reviewSubmit').click();
+  // 確認画面は出さず、ボタン1回でそのまま登録する。
+  await page.getByRole('button', {name: '確認して登録する'}).click();
   await page.waitForURL('**/ticket#*');
   await page.locator('#content').waitFor({state: 'visible'});
   assert.match(await page.locator('.operator-help').innerText(), /教室内の運営スタッフ/);

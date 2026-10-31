@@ -50,14 +50,8 @@ try {
   }
   await page.setViewportSize({width: 390, height: 844});
   await page.locator('[name=consent]').check();
-  await page.getByRole('button', {name: '入力内容を確認する'}).click();
-  await page.locator('#registrationReview').waitFor({state: 'visible'});
-  assert.equal(await page.locator('#registerForm').isVisible(), false);
-  assert.match(await page.locator('#reviewNicknames').innerText(), /あかし・ひかり/);
-  assert.match(await page.locator('#reviewArrival').innerText(), /\d{2}:\d{2}/);
-  assert.match(await page.locator('#reviewEnd').innerText(), /終了予定/);
-  await page.screenshot({path: 'artifacts/guest-ui/register-review.png', fullPage: true});
-  await page.getByRole('button', {name: 'この内容で整理券を登録する'}).click();
+  // 確認画面は出さず、ボタン1回でそのまま登録して整理券画面へ進む。
+  await page.getByRole('button', {name: '確認して登録する'}).click();
   await page.waitForURL('**/ticket#*');
   const ticket = app.queue.state.tickets.find(item => item.accessToken === new URL(page.url()).hash.slice(1));
   assert.ok(ticket);
@@ -117,8 +111,7 @@ try {
   await page.getByLabel('参加人数').selectOption('3');
   for (const [index, name] of ['個人甲', '個人乙', '個人丙'].entries()) await page.getByLabel(`${index + 1}人目`, {exact: true}).fill(name);
   await page.locator('[name=consent]').check();
-  await page.getByRole('button', {name: '入力内容を確認する'}).click();
-  await page.getByRole('button', {name: 'この内容で整理券を登録する'}).click();
+  await page.getByRole('button', {name: '確認して登録する'}).click();
   await page.waitForURL('**/ticket#*');
   await page.getByText('個人甲・個人乙・個人丙 / 3名').waitFor();
   await page.screenshot({path: 'artifacts/guest-ui/ticket-individual.png', fullPage: true});
@@ -134,9 +127,7 @@ try {
   const requestedCallAt = Number(await page.locator('#arrivalSelect').inputValue());
   await page.getByLabel('1人目', {exact: true}).fill('後の時刻を希望');
   await page.locator('[name=consent]').check();
-  await page.getByRole('button', {name: '入力内容を確認する'}).click();
-  assert.match(await page.locator('#reviewArrival').innerText(), /\d{2}:\d{2}/);
-  await page.getByRole('button', {name: 'この内容で整理券を登録する'}).click();
+  await page.getByRole('button', {name: '確認して登録する'}).click();
   await page.waitForURL('**/ticket#*');
   const deferredTicket = app.queue.state.tickets.find(item => item.accessToken === new URL(page.url()).hash.slice(1));
   assert.equal(deferredTicket.earliestCallAt, requestedCallAt);

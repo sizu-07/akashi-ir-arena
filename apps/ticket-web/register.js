@@ -14,9 +14,6 @@ const changeArrival = document.querySelector('#changeArrival');
 const arrivalOptions = document.querySelector('#arrivalOptions');
 const arrivalSelect = document.querySelector('#arrivalSelect');
 const registerButton = document.querySelector('#registerButton');
-const review = document.querySelector('#registrationReview');
-const reviewBack = document.querySelector('#reviewBack');
-const reviewSubmit = document.querySelector('#reviewSubmit');
 let availability = null;
 let availabilityRequest = 0;
 let submitting = false;
@@ -145,30 +142,17 @@ form.addEventListener('submit', (event) => {
     earliestCallAt: arrivalSelect.value ? Number(arrivalSelect.value) : null,
     expectedSlotStartAt: time.slotStartAt,
   };
-  document.querySelector('#reviewPartySize').textContent = `${reviewedData.partySize}人`;
-  document.querySelector('#reviewNicknames').textContent = reviewedData.nicknames.join('・');
-  document.querySelector('#reviewArrival').textContent = `${formatTime(time.estimatedCallAt)}ごろ`;
-  document.querySelector('#reviewPlayWindow').textContent = `${formatTime(time.slotStartAt)}〜${formatTime(time.slotEndAt)}`;
-  document.querySelector('#reviewEnd').textContent = `終了予定 ${formatTime(time.slotEndAt)}ごろ`;
-  reviewing = true;
-  form.hidden = true;
-  review.hidden = false;
-  review.scrollIntoView({block: 'start'});
+  // 確認画面は出さず、そのまま登録して整理券画面へ進む。
+  submitRegistration(reviewedData);
 });
-reviewBack.addEventListener('click', () => {
-  reviewing = false;
-  reviewedData = null;
-  review.hidden = true;
-  form.hidden = false;
-  refreshAvailability();
-});
-reviewSubmit.addEventListener('click', async () => {
-  if (!reviewedData || submitting) return;
+async function submitRegistration(data) {
+  if (!data || submitting) return;
   submitting = true;
-  reviewSubmit.disabled = true;
-  let shouldRefresh = false;
+  reviewing = true;
+  registerButton.disabled = true;
+  registerButton.textContent = '登録しています…';
   try {
-    const response = await fetch('/api/public/register', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(reviewedData)});
+    const response = await fetch('/api/public/register', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
     const result = await response.json();
     if (!response.ok) throw Error(result.error || '登録できませんでした');
     localStorage.setItem('akashi-ticket-url', result.ticketUrl);
@@ -176,14 +160,11 @@ reviewSubmit.addEventListener('click', async () => {
     location.href = result.ticketUrl;
   } catch (error) {
     message.textContent = error.message;
-    review.hidden = true;
-    form.hidden = false;
+    submitting = false;
     reviewing = false;
     reviewedData = null;
-    shouldRefresh = true;
-  } finally {
-    submitting = false;
-    reviewSubmit.disabled = false;
-    if (shouldRefresh) refreshAvailability();
+    registerButton.textContent = '確認して登録する';
+    registerButton.disabled = false;
+    refreshAvailability();
   }
-});
+}
