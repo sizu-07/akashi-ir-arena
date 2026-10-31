@@ -27,7 +27,7 @@ try {
   assert.equal(await page.locator('.mandatory-notice-list li').count(), 5);
   assert.equal(await page.locator('#noticeContinue').isDisabled(), true);
   assert.match(await page.locator('#mandatoryNotice').innerText(), /時間通り.*キャンセル/s);
-  assert.match(await page.locator('#mandatoryNotice').innerText(), /スクリーンショット/);
+  assert.match(await page.locator('#mandatoryNotice').innerText(), /整理券のページ.*残して/s);
   assert.match(await page.locator('#mandatoryNotice').innerText(), /名前やチーム.*変更できません/s);
   await page.locator('#noticeConfirmed').check();
   await page.locator('#noticeContinue').click();
