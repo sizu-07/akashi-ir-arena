@@ -212,6 +212,9 @@ function renderRoundControls() {
     $('calledGroups').replaceChildren();
   }
   renderStaffFill(called);
+  // 組が残っていない呼出中の枠は、実施せずに終了できる。
+  $('endCalledRound').hidden = !called || called.tickets.length > 0;
+  $('endCalledRound').dataset.roundId = called?.id ?? '';
   $('skippedGroupControls').hidden = !skipped.length;
   $('skippedGroups').replaceChildren(...skipped.map((ticket) => {
     const item = document.createElement('div');
@@ -528,6 +531,10 @@ async function applyDelaySlots(delaySlots) {
 $('takeover').onclick = guarded(async () => { if (confirm('この端末に操作権を移しますか？')) await post('/api/operator/takeover', {}); });
 $('openRegistration').onclick = guarded(() => action('registration', {value: true}));
 $('closeRegistration').onclick = guarded(() => action('registration', {value: false}));
+$('endCalledRoundButton').onclick = guarded(async () => {
+  if (!confirm('この枠を実施せずに終了し、次の枠へ進みます。よろしいですか？')) return;
+  await action('end_called_round', {roundId: $('endCalledRound').dataset.roundId});
+});
 $('staffFillForm').onsubmit = guarded(async () => {
   const names = [...$('staffFillInputs').querySelectorAll('input')].map((input) => input.value.trim());
   if (names.some((name) => !name)) throw Error('空いている席すべてに運営の名前を入力してください');

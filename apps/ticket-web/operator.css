@@ -485,3 +485,8 @@ dialog::backdrop {
 .staff-fill-inputs input { min-height: 44px; }
 .staff-fill-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .staff-fill-actions button { min-height: 44px; }
+
+/* 組が残っていない呼出中の枠を終了する */
+.end-called { display: grid; gap: 8px; margin-top: 12px; padding: 12px; border: 1px solid #e3b5b8; border-radius: 4px; background: #fff7f7; }
+.end-called .hint { margin: 0; }
+.end-called button { justify-self: start; min-height: 44px; }

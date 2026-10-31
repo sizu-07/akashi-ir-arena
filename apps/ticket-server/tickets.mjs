@@ -820,6 +820,19 @@ export class TicketQueue {
       case 'registration': this.state.registrationOpen = Boolean(value); this.persist('registration_changed', {operator, details: {open: Boolean(value)}}); break;
       case 'event_days': this.updateEventDays(value,operator); break;
       case 'call_next': this.callNext(operator); break;
+      case 'end_called_round': {
+        // 呼出中の枠を実施せずに終える（全組スキップで運営も入らない場合など）。次の枠へ進む。
+        const round = this.round(roundId);
+        if (!round || round.status !== 'CALLED') throw Error('呼出中の枠を選んでください');
+        if (round.ticketIds.length) throw Error('まだ呼出中の組があります。来ない組は「この組をスキップ」してから終了してください');
+        round.status = 'SKIPPED';
+        round.skippedAt = this.now();
+        round.staffNames = [];
+        this.scheduleRounds();
+        this.persist('called_round_ended', {operator, reason, roundId, details: {number: round.number}});
+        const next = this.callDueRound(operator);
+        return {notice: `第${round.number}枠を実施せずに終了しました。${next ? `第${next.number}枠を呼び出しました。` : '次の枠は入場時刻になると自動で呼び出します。'}`};
+      }
       case 'fill_staff': {
         // 呼出中の枠の空き席（スキップ席を含む）に、入力した名前で運営が入る。空の配列で解除。
         const round = this.round(roundId);

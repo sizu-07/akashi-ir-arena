@@ -125,3 +125,21 @@ test('rounds waiting behind a late called round never show a slot that already s
   assert.equal(waiting.slotStartAt, Date.parse('2026-09-17T17:45:00+09:00'));
   assert.ok(queue.operatorView().rounds.find((round) => round.id === waiting.id).callAt >= now);
 });
+
+test('a called slot with every group skipped can be ended without playing', () => {
+  let now = Date.parse('2026-09-17T17:07:00+09:00');
+  const queue = new TicketQueue({now: () => now});
+  const gone = register(queue, '来ない組', 4);
+  register(queue, '次の組', 4);
+  const [first, second] = queue.operatorView().rounds;
+  queue.callNext('operator');
+  assert.throws(() => queue.operatorAction({action: 'end_called_round', roundId: first.id, operator: 'operator'}), /スキップ/);
+  const goneId = queue.state.tickets.find((ticket) => ticket.ticketNumber === gone.ticketNumber).id;
+  queue.operatorAction({action: 'skip_group', ticketId: goneId, reason: '来場なし', operator: 'operator'});
+  assert.equal(queue.round(first.id).status, 'CALLED');
+  const result = queue.operatorAction({action: 'end_called_round', roundId: first.id, operator: 'operator'});
+  assert.match(result.notice, /実施せずに終了/);
+  assert.equal(queue.round(first.id).status, 'SKIPPED');
+  // 次の枠は前に詰まり、入場時刻（開始10分前）になっていれば呼び出される。
+  assert.equal(queue.round(second.id).status, 'CALLED');
+});
